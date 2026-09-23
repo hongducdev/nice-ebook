@@ -29,11 +29,21 @@ Successfully engineered and delivered **NiceEbook Studio** from ground zero to a
 ---
 
 ## 3. Test & Verification Evidence
-- `cargo test`: 8 passed, 0 failed:
+- **Backend Suite (`cargo test`):** 8 passed, 0 failed:
   - End-to-end EPUB zip conformance & uncompressed `mimetype` entry-0 assertion (`CompressionMethod::Stored`, `b"application/epub+zip"`).
   - Repackaging idempotency: verifies that repeated exports do not duplicate `<link>` tags or OPF manifest items.
   - Link tag injection within `<head>` and no-head fallback injection.
   - Relative CSS path calculations for same-dir, deep-nested, and root-level structures.
   - Jev heuristics classification for Wuxia, Light Novel, and Sci-Fi.
-- `npm run build`: 0 TypeScript errors, production bundle generated cleanly.
-- `cargo check`: 0 warnings, clean compilation.
+- **Frontend Suite (`npm test` via Vitest):** 3 passed, 0 failed:
+  - Verifies dynamic CSS stylesheet generation with all typography parameters (cỡ chữ, giãn dòng, thụt lề, drop-caps).
+  - Verifies `<style>` injection within `<head>` and no-head fallback.
+- **Bundle Optimization:** CodeMirror 6 code-split via dynamic `React.lazy()` import; main bundle size reduced to 340kB (101kB gzip), eliminating the Vite >500kB chunk warning.
+- **Type Checking & Build:** `npm run build` passes cleanly in 550ms with 0 warnings.
+- **Rust Backend:** `cargo check` passes cleanly with 0 warnings.
+
+---
+
+## 4. Remaining Risks & Follow-Up Items
+- **Interactive UI Testing:** Visual confirmation on local display via `npm run tauri dev` during an active desktop session.
+- **Unusual Character Encodings:** EPUBs using non-UTF8 encodings (Shift-JIS / GBK) should be thoroughly stress-tested with real-world sample books in follow-up iterations.

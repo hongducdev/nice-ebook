@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -13,7 +13,10 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../stores/useAppStore";
 import { generateEpubCss, injectCssIntoHtml } from "../../utils/cssGenerator";
-import { CodeMirrorCss } from "./CodeMirrorCss";
+
+const CodeMirrorCss = lazy(() =>
+  import("./CodeMirrorCss").then((m) => ({ default: m.CodeMirrorCss }))
+);
 
 export function EpubReaderViewer() {
   const {
@@ -284,7 +287,9 @@ export function EpubReaderViewer() {
           </div>
         ) : (
           <div className="w-full h-full max-w-5xl mx-auto flex">
-            <CodeMirrorCss />
+            <Suspense fallback={<div className="p-8 text-xs font-mono text-zinc-400">Đang tải trình soạn thảo CSS...</div>}>
+              <CodeMirrorCss />
+            </Suspense>
           </div>
         )}
       </div>
