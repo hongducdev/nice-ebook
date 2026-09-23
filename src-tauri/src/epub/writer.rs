@@ -277,23 +277,137 @@ mod tests {
             "../nice-ebook-style.css"
         );
         assert_eq!(
+            EpubWriter::compute_relative_css_path("OEBPS/text/sub/ch1.xhtml", "OEBPS/nice-ebook-style.css"),
+            "../../nice-ebook-style.css"
+        );
+        assert_eq!(
             EpubWriter::compute_relative_css_path("OEBPS/ch1.xhtml", "OEBPS/nice-ebook-style.css"),
+            "nice-ebook-style.css"
+        );
+        assert_eq!(
+            EpubWriter::compute_relative_css_path("ch1.xhtml", "nice-ebook-style.css"),
             "nice-ebook-style.css"
         );
     }
 
     #[test]
-    fn test_inject_link_tag() {
+    fn test_inject_link_tag_within_head() {
         let html = "<html><head><title>Test</title></head><body><p>Hello</p></body></html>";
         let updated = EpubWriter::inject_link_tag(html, "style.css");
+        
+        let link_pos = updated.find(r#"<link rel="stylesheet" type="text/css" href="style.css" />"#).unwrap();
+        let head_start = updated.find("<head>").unwrap();
+        let head_end = updated.find("</head>").unwrap();
+        
+        assert!(link_pos > head_start && link_pos < head_end);
+    }
+
+    #[test]
+    fn test_inject_link_tag_no_head_fallback() {
+        let html = "<html><body><p>No head tag</p></body></html>";
+        let updated = EpubWriter::inject_link_tag(html, "style.css");
+        assert!(updated.contains("<head>"));
+        assert!(updated.contains("</head>"));
         assert!(updated.contains(r#"<link rel="stylesheet" type="text/css" href="style.css" />"#));
     }
 
     #[test]
-    fn test_inject_css_into_opf() {
+    fn test_inject_idempotency() {
+        let html = "<html><head><title>Test</title></head><body><p>Hello</p></body></html>";
+        let first = EpubWriter::inject_link_tag(html, "style.css");
+        let second = EpubWriter::inject_link_tag(&first, "style.css");
+        assert_eq!(first, second);
+
         let opf = r#"<package><manifest><item id="ch1" href="ch1.xhtml"/></manifest></package>"#;
-        let updated = EpubWriter::inject_css_into_opf(opf, "style.css");
-        assert!(updated.contains(r#"<item id="nice-ebook-custom-style" href="style.css" media-type="text/css"/>"#));
+        let opf_first = EpubWriter::inject_css_into_opf(opf, "style.css");
+        let opf_second = EpubWriter::inject_css_into_opf(&opf_first, "style.css");
+        assert_eq!(opf_first, opf_second);
+    }
+
+    #[test]
+    fn test_e2e_epub_zip_conformance_and_mimetype_order() {
+        // Build mock input EPUB in memory
+        let mut in_buffer = Cursor::new(Vec::new());
+        {
+            let mut writer = ZipWriter::new(&mut in_buffer);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            writer.start_file("mimetype", opts).unwrap();
+            writer.write_all(b"application/epub+zip").unwrap();
+
+            let def_opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            writer.start_file("META-INF/container.xml", def_opts).unwrap();
+            writer.write_all(br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#).unwrap();
+
+            writer.start_file("OEBPS/content.opf", def_opts).unwrap();
+            writer.write_all(br#"<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <manifest>
+    <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="ch1"/>
+  </spine>
+</package>"#).unwrap();
+
+            writer.start_file("OEBPS/ch1.xhtml", def_opts).unwrap();
+            writer.write_all(r#"<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>Chương 1</title></head>
+<body><h1>Tiêu Đề</h1><p>Nội dung chương 1...</p></body>
+</html>"#.as_bytes()).unwrap();
+
+            writer.finish().unwrap();
+        }
+
+        // Repackage with custom CSS
+        in_buffer.set_position(0);
+        let mut archive = ZipArchive::new(in_buffer).unwrap();
+        let mut out_buffer = Cursor::new(Vec::new());
+        let custom_css = "body { background: #000; color: #fff; }";
+
+        EpubWriter::repackage_archive(&mut archive, &mut out_buffer, custom_css).unwrap();
+
+        // Validate resulting ZIP container strictly
+        out_buffer.set_position(0);
+        let mut result_archive = ZipArchive::new(out_buffer).unwrap();
+
+        // 1. Entry 0 MUST be mimetype, Stored (uncompressed), application/epub+zip
+        assert!(result_archive.len() >= 4);
+        let mut entry0 = result_archive.by_index(0).unwrap();
+        assert_eq!(entry0.name(), "mimetype", "First entry must be mimetype");
+        assert_eq!(entry0.compression(), CompressionMethod::Stored, "Mimetype must be Stored uncompressed");
+        let mut mime_content = Vec::new();
+        entry0.read_to_end(&mut mime_content).unwrap();
+        assert_eq!(mime_content, b"application/epub+zip");
+        drop(entry0);
+
+        // 2. Custom CSS entry must exist
+        let mut css_entry = result_archive.by_name("OEBPS/nice-ebook-style.css").unwrap();
+        let mut read_css = String::new();
+        css_entry.read_to_string(&mut read_css).unwrap();
+        assert_eq!(read_css, custom_css);
+        drop(css_entry);
+
+        // 3. OPF manifest must contain custom CSS item
+        let mut opf_entry = result_archive.by_name("OEBPS/content.opf").unwrap();
+        let mut read_opf = String::new();
+        opf_entry.read_to_string(&mut read_opf).unwrap();
+        assert!(read_opf.contains(r#"<item id="nice-ebook-custom-style" href="nice-ebook-style.css" media-type="text/css"/>"#));
+        drop(opf_entry);
+
+        // 4. Chapter XHTML must link the stylesheet inside head
+        let mut ch_entry = result_archive.by_name("OEBPS/ch1.xhtml").unwrap();
+        let mut read_ch = String::new();
+        ch_entry.read_to_string(&mut read_ch).unwrap();
+        assert!(read_ch.contains(r#"<link rel="stylesheet" type="text/css" href="nice-ebook-style.css" />"#));
+        let link_pos = read_ch.find(r#"<link rel="stylesheet" type="text/css" href="nice-ebook-style.css" />"#).unwrap();
+        let head_end = read_ch.find("</head>").unwrap();
+        assert!(link_pos < head_end);
     }
 }
 
