@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { STYLE_PRESETS, StylePreset } from "../presets/styles";
+import { AiService } from "../services/aiService";
 
 export interface ChapterItem {
   id: string;
@@ -79,6 +80,7 @@ export interface AppState {
   isScanningGateways: boolean;
   activeGateway: DetectedGateway | null;
   selectedModel: string | null;
+  isAiGenerating: boolean;
 
   // Active Styling State
   activePresetId: string;
@@ -97,6 +99,7 @@ export interface AppState {
   runJevClassification: () => Promise<void>;
   scanGateways: () => Promise<void>;
   selectPreset: (presetId: string) => void;
+  runAiDeepStyling: () => Promise<boolean>;
   updateTypography: (settings: {
     fontSize?: number;
     textAlign?: "justify" | "left";
@@ -127,6 +130,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   isScanningGateways: false,
   activeGateway: null,
   selectedModel: null,
+  isAiGenerating: false,
 
   activePresetId: "classic-hardcover",
   activePreset: STYLE_PRESETS.find((p) => p.id === "classic-hardcover") || STYLE_PRESETS[0],
@@ -237,6 +241,67 @@ export const useAppStore = create<AppState>((set, get) => ({
       dropCaps: preset.dropCaps,
       sceneDivider: preset.sceneDivider,
     });
+  },
+
+  runAiDeepStyling: async () => {
+    const { currentBook, activeGateway, selectedModel, jevDecision } = get();
+    if (!currentBook || !currentBook.sample_text) {
+      return false;
+    }
+
+    set({ isAiGenerating: true });
+    try {
+      const baseUrl = activeGateway ? activeGateway.base_url : "http://127.0.0.1:20128/v1";
+      const model = selectedModel || "claude-3-5-sonnet";
+
+      const { result, source } = await AiService.generateStyling({
+        baseUrl,
+        model,
+        title: currentBook.title,
+        author: currentBook.author,
+        sampleText: currentBook.sample_text,
+        jevGenreHint: jevDecision?.genre_label,
+      });
+
+      // Construct dynamic custom preset from AI output
+      const dynamicPreset: StylePreset = {
+        id: "ai-generated-custom",
+        name: result.theme_name,
+        genre: "ai-custom",
+        genreLabel: "AI Độc Bản",
+        description: result.genre_analysis,
+        fontFamily: result.typography.font_family,
+        lineHeight: result.typography.line_height,
+        firstLineIndent: result.typography.first_line_indent,
+        dropCaps: result.typography.drop_caps,
+        sceneDivider: result.typography.scene_divider,
+        colors: {
+          bg: result.colors.bg,
+          text: result.colors.text,
+          accent: result.colors.accent,
+          border: result.colors.border,
+          cardBg: result.colors.cardBg || "#1c1c22",
+        },
+        cssTemplate: result.custom_css || "",
+      };
+
+      set({
+        activePresetId: "ai-generated-custom",
+        activePreset: dynamicPreset,
+        customCss: result.custom_css,
+        lineHeight: result.typography.line_height,
+        firstLineIndent: result.typography.first_line_indent,
+        dropCaps: result.typography.drop_caps,
+        sceneDivider: result.typography.scene_divider,
+        isAiGenerating: false,
+      });
+
+      return source === "gateway";
+    } catch (err) {
+      console.error("Failed to run AI deep styling:", err);
+      set({ isAiGenerating: false });
+      return false;
+    }
   },
 
   updateTypography: (settings) => {

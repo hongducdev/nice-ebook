@@ -1,8 +1,11 @@
-import { RefreshCw, CheckCircle2, XCircle, Cpu, Zap, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { RefreshCw, CheckCircle2, XCircle, Cpu, Zap, Sparkles, Sliders } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
+import { GatewaySettingsModal } from "../settings/GatewaySettingsModal";
 import { toast } from "sonner";
 
 export function GatewayView() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const {
     gateways,
     isScanningGateways,
@@ -30,19 +33,29 @@ export function GatewayView() {
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            toast.loading("Đang quét lại các cổng loopback...", { id: "rescan" });
-            scanGateways().then(() => {
-              toast.success("Đã hoàn tất quét AI Gateway!", { id: "rescan" });
-            });
-          }}
-          disabled={isScanningGateways}
-          className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30 transition-all disabled:opacity-50"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${isScanningGateways ? "animate-spin" : ""}`} />
-          <span>{isScanningGateways ? "Đang quét..." : "Quét lại Gateway"}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-[#18181f] hover:bg-[#22222a] border border-[#2e2e38] text-zinc-300 transition-colors"
+          >
+            <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Tùy Biến Endpoint / Key</span>
+          </button>
+
+          <button
+            onClick={() => {
+              toast.loading("Đang quét lại các cổng loopback...", { id: "rescan" });
+              scanGateways().then(() => {
+                toast.success("Đã hoàn tất quét AI Gateway!", { id: "rescan" });
+              });
+            }}
+            disabled={isScanningGateways}
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30 transition-all disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isScanningGateways ? "animate-spin" : ""}`} />
+            <span>{isScanningGateways ? "Đang quét..." : "Quét lại Gateway"}</span>
+          </button>
+        </div>
       </div>
 
       {/* Jev Core Highlight Card (Offline 100%, 0 Key) */}
@@ -186,6 +199,8 @@ export function GatewayView() {
           })
         )}
       </div>
+
+      <GatewaySettingsModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>
   );
 }

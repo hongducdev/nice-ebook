@@ -7,10 +7,12 @@ import {
   ChevronRight, 
   Palette,
   FileText,
-  Percent
+  Percent,
+  Wand2
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { BookDropzone } from "./BookDropzone";
+import { toast } from "sonner";
 
 export function BookView() {
   const { 
@@ -81,14 +83,34 @@ export function BookView() {
               </div>
             </div>
 
-            <button
-              onClick={() => setActiveTab("presets")}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30 transition-all flex-shrink-0"
-            >
-              <Palette className="w-4 h-4" />
-              <span>Chọn Phong Cách</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={async () => {
+                  toast.loading("Đang yêu cầu AI thiết kế phong cách độc bản...", { id: "ai-deep" });
+                  const ok = await useAppStore.getState().runAiDeepStyling();
+                  if (ok) {
+                    toast.success("AI đã tạo phong cách độc bản thành công!", { id: "ai-deep" });
+                  } else {
+                    toast.info("Đã dùng Jev Core tối ưu phong cách (Offline)", { id: "ai-deep" });
+                  }
+                  setActiveTab("reader");
+                }}
+                disabled={useAppStore((s) => s.isAiGenerating)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-md shadow-indigo-600/30 transition-all disabled:opacity-50"
+              >
+                <Wand2 className={`w-4 h-4 ${useAppStore((s) => s.isAiGenerating) ? "animate-spin" : ""}`} />
+                <span>AI Thiết Kế Sâu</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab("presets")}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-[#1c1c24] hover:bg-[#252530] text-zinc-200 border border-[#2e2e38] transition-all"
+              >
+                <Palette className="w-4 h-4 text-indigo-400" />
+                <span>Chọn Mẫu</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           {currentBook.description && (
