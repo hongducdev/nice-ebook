@@ -4,7 +4,7 @@ description: >-
   Implementation roadmap for NiceEbook Studio: a lightweight, high-performance
   desktop application for AI-assisted EPUB styling with LinguaGacha-inspired UI,
   offline Jev Decision Plane, and 9router auto-discovery.
-status: in-progress
+status: completed
 priority: P1
 branch: main
 tags:
@@ -45,7 +45,7 @@ NiceEbook Studio is a modern, ultra-lightweight (< 20MB installer, < 60MB RAM) d
 | 3 | [LinguaGacha UI and Styling](./phase-03-linguagacha-ui-and-styling.md) | Completed | 4h |
 | 4 | [EPUB Preview and CSS Hot Reload](./phase-04-epub-preview-and-css-hot-reload.md) | Completed | 3h |
 | 5 | [AI Gateway and 9Router Auto-Discovery](./phase-05-ai-gateway-and-9router-auto-discovery.md) | Completed | 3h |
-| 6 | [EPUB Export and Verification](./phase-06-epub-export-and-verification.md) | Pending | 2h |
+| 6 | [EPUB Export and Verification](./phase-06-epub-export-and-verification.md) | Completed | 2h |
 
 ## Dependencies
 - Prerequisites: Node.js (v20+), Rust toolchain (`cargo`, `rustc`), Windows C++ Build Tools / WebView2.

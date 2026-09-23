@@ -1,10 +1,13 @@
 ---
 phase: 6
-title: "EPUB Export and Verification"
-status: pending
+title: EPUB Export and Verification
+status: completed
 priority: P1
-effort: "2h"
-dependencies: ["2", "4", "5"]
+effort: 2h
+dependencies:
+  - '2'
+  - '4'
+  - '5'
 ---
 
 # Phase 6: EPUB Export and Verification

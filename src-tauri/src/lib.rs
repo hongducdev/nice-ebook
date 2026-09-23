@@ -2,7 +2,7 @@ pub mod epub;
 pub mod jev;
 pub mod scanner;
 
-use epub::{EpubMetadata, EpubParser};
+use epub::{EpubMetadata, EpubParser, EpubWriter};
 use jev::{JevClassifier, JevDecision};
 use scanner::{DetectedGateway, GatewayScanner};
 
@@ -35,6 +35,31 @@ async fn read_chapter_bytes(bytes: Vec<u8>, href: String) -> Result<String, Stri
 }
 
 #[tauri::command]
+async fn export_epub(
+    input_path: Option<String>,
+    input_bytes: Option<Vec<u8>>,
+    output_path: String,
+    custom_css: String,
+) -> Result<u64, String> {
+    tokio::task::spawn_blocking(move || {
+        if let Some(path) = input_path {
+            EpubWriter::repackage_file(&path, &output_path, &custom_css)?;
+        } else if let Some(bytes) = input_bytes {
+            EpubWriter::repackage_bytes(&bytes, &output_path, &custom_css)?;
+        } else {
+            return Err("No input EPUB source provided".to_string());
+        }
+
+        let file = std::fs::File::open(&output_path)
+            .map_err(|e| format!("Cannot read exported file metadata: {}", e))?;
+        let size = file.metadata().map(|m| m.len()).unwrap_or(0);
+        Ok(size)
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+#[tauri::command]
 fn classify_text_jev(text: String) -> JevDecision {
     JevClassifier::classify(&text)
 }
@@ -56,7 +81,8 @@ pub fn run() {
             read_chapter,
             read_chapter_bytes,
             classify_text_jev,
-            scan_ai_gateways
+            scan_ai_gateways,
+            export_epub
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,9 +1,12 @@
-import { FolderOpen, RefreshCw, Sparkles, BookOpen } from "lucide-react";
+import { useState } from "react";
+import { FolderOpen, RefreshCw, Sparkles, BookOpen, Download } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { open } from "@tauri-apps/plugin-dialog";
+import { ExportModal } from "../export/ExportModal";
 import { toast } from "sonner";
 
 export function Header() {
+  const [isExportOpen, setIsExportOpen] = useState(false);
   const { 
     currentBook, 
     loadBookFromPath, 
@@ -101,7 +104,19 @@ export function Header() {
           <FolderOpen className="w-3.5 h-3.5" />
           <span>Mở sách EPUB</span>
         </button>
+
+        {currentBook && (
+          <button
+            onClick={() => setIsExportOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/30 transition-all hover:shadow-emerald-600/50"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Xuất EPUB</span>
+          </button>
+        )}
       </div>
+
+      <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} />
     </header>
   );
 }
