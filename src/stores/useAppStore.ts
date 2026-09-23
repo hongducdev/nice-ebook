@@ -60,8 +60,8 @@ export interface DetectedGateway {
 
 export interface AppState {
   // Navigation
-  activeTab: "books" | "presets" | "editor" | "ai" | "settings";
-  setActiveTab: (tab: "books" | "presets" | "editor" | "ai" | "settings") => void;
+  activeTab: "books" | "presets" | "editor" | "reader" | "ai" | "settings";
+  setActiveTab: (tab: "books" | "presets" | "editor" | "reader" | "ai" | "settings") => void;
 
   // Book State
   currentBook: EpubMetadata | null;

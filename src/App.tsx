@@ -7,6 +7,7 @@ import { StatusBar } from "./components/layout/StatusBar";
 import { BookView } from "./components/books/BookView";
 import { PresetGallery } from "./components/styles/PresetGallery";
 import { TypographyControls } from "./components/styles/TypographyControls";
+import { EpubReaderViewer } from "./components/preview/EpubReaderViewer";
 import { GatewayView } from "./components/ai/GatewayView";
 import { Settings as SettingsIcon, Info, ShieldCheck, Zap } from "lucide-react";
 
@@ -32,6 +33,7 @@ export default function App() {
         {/* Dynamic Tab Content */}
         <main className="flex-1 overflow-hidden flex flex-col">
           {activeTab === "books" && <BookView />}
+          {activeTab === "reader" && <EpubReaderViewer />}
           {activeTab === "presets" && <PresetGallery />}
           {activeTab === "editor" && <TypographyControls />}
           {activeTab === "ai" && <GatewayView />}

@@ -1,10 +1,12 @@
 ---
 phase: 4
-title: "EPUB Preview and CSS Hot Reload"
-status: pending
+title: EPUB Preview and CSS Hot Reload
+status: completed
 priority: P1
-effort: "3h"
-dependencies: ["2", "3"]
+effort: 3h
+dependencies:
+  - '2'
+  - '3'
 ---
 
 # Phase 4: EPUB Preview and CSS Hot Reload

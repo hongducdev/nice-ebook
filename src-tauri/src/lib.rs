@@ -21,6 +21,20 @@ async fn read_epub_bytes(bytes: Vec<u8>) -> Result<EpubMetadata, String> {
 }
 
 #[tauri::command]
+async fn read_chapter(path: String, href: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || EpubParser::read_chapter_content(&path, &href))
+        .await
+        .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+#[tauri::command]
+async fn read_chapter_bytes(bytes: Vec<u8>, href: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || EpubParser::read_chapter_content_bytes(&bytes, &href))
+        .await
+        .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+#[tauri::command]
 fn classify_text_jev(text: String) -> JevDecision {
     JevClassifier::classify(&text)
 }
@@ -39,6 +53,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             read_epub,
             read_epub_bytes,
+            read_chapter,
+            read_chapter_bytes,
             classify_text_jev,
             scan_ai_gateways
         ])

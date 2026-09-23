@@ -46,6 +46,38 @@ impl EpubParser {
         Self::parse_archive(&mut archive, bytes.len() as u64)
     }
 
+    pub fn read_chapter_content<P: AsRef<Path>>(
+        file_path: P,
+        chapter_href: &str,
+    ) -> Result<String, String> {
+        let file = File::open(file_path.as_ref()).map_err(|e| format!("Cannot open file: {}", e))?;
+        let mut archive = ZipArchive::new(file).map_err(|e| format!("Invalid EPUB ZIP: {}", e))?;
+        let mut ch_file = archive
+            .by_name(chapter_href)
+            .map_err(|e| format!("Cannot find chapter file '{}': {}", chapter_href, e))?;
+        let mut content = String::new();
+        ch_file
+            .read_to_string(&mut content)
+            .map_err(|e| format!("Failed to read chapter content: {}", e))?;
+        Ok(content)
+    }
+
+    pub fn read_chapter_content_bytes(
+        bytes: &[u8],
+        chapter_href: &str,
+    ) -> Result<String, String> {
+        let cursor = Cursor::new(bytes);
+        let mut archive = ZipArchive::new(cursor).map_err(|e| format!("Invalid EPUB ZIP: {}", e))?;
+        let mut ch_file = archive
+            .by_name(chapter_href)
+            .map_err(|e| format!("Cannot find chapter file '{}': {}", chapter_href, e))?;
+        let mut content = String::new();
+        ch_file
+            .read_to_string(&mut content)
+            .map_err(|e| format!("Failed to read chapter content: {}", e))?;
+        Ok(content)
+    }
+
     fn parse_archive<R: Read + std::io::Seek>(
         archive: &mut ZipArchive<R>,
         file_size: u64,

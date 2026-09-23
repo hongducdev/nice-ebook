@@ -13,8 +13,9 @@ export function Sidebar() {
 
   const navItems = [
     { id: "books" as const, label: "Sách", icon: Layers, badge: currentBook ? "1" : null },
+    { id: "reader" as const, label: "Đọc Thử", icon: BookOpen },
     { id: "presets" as const, label: "Phong cách", icon: Palette },
-    { id: "editor" as const, label: "Tùy chỉnh", icon: Sliders },
+    { id: "editor" as const, label: "Typography", icon: Sliders },
     { id: "ai" as const, label: "AI Gateway", icon: Cpu, badge: activeGateway ? "Online" : null },
     { id: "settings" as const, label: "Cài đặt", icon: Settings },
   ];
