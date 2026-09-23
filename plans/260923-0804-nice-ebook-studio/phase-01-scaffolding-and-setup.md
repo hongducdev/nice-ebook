@@ -1,9 +1,9 @@
 ---
 phase: 1
-title: "Scaffolding and Setup"
-status: in-progress
+title: Scaffolding and Setup
+status: completed
 priority: P1
-effort: "2h"
+effort: 2h
 dependencies: []
 ---
 
