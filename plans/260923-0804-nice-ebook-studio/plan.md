@@ -42,7 +42,7 @@ NiceEbook Studio is a modern, ultra-lightweight (< 20MB installer, < 60MB RAM) d
 |---|---|---|---|
 | 1 | [Scaffolding and Setup](./phase-01-scaffolding-and-setup.md) | Completed | 2h |
 | 2 | [Rust Core and Jev Engine](./phase-02-rust-core-and-jev-engine.md) | Completed | 4h |
-| 3 | [LinguaGacha UI and Styling](./phase-03-linguagacha-ui-and-styling.md) | Pending | 4h |
+| 3 | [LinguaGacha UI and Styling](./phase-03-linguagacha-ui-and-styling.md) | Completed | 4h |
 | 4 | [EPUB Preview and CSS Hot Reload](./phase-04-epub-preview-and-css-hot-reload.md) | Pending | 3h |
 | 5 | [AI Gateway and 9Router Auto-Discovery](./phase-05-ai-gateway-and-9router-auto-discovery.md) | Pending | 3h |
 | 6 | [EPUB Export and Verification](./phase-06-epub-export-and-verification.md) | Pending | 2h |

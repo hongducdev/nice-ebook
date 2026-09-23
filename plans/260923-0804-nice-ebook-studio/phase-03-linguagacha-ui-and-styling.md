@@ -1,10 +1,11 @@
 ---
 phase: 3
-title: "LinguaGacha UI and Styling"
-status: pending
+title: LinguaGacha UI and Styling
+status: completed
 priority: P1
-effort: "4h"
-dependencies: ["1"]
+effort: 4h
+dependencies:
+  - '1'
 ---
 
 # Phase 3: LinguaGacha UI and Styling
