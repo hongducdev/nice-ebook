@@ -1,10 +1,11 @@
 ---
 phase: 2
-title: "Rust Core and Jev Engine"
-status: pending
+title: Rust Core and Jev Engine
+status: completed
 priority: P1
-effort: "4h"
-dependencies: ["1"]
+effort: 4h
+dependencies:
+  - '1'
 ---
 
 # Phase 2: Rust Core and Jev Engine
