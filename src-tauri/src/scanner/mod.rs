@@ -37,13 +37,38 @@ pub struct GatewayScanner;
 impl GatewayScanner {
     pub async fn scan_all() -> Vec<DetectedGateway> {
         let targets = vec![
-            (20128, "9Router (Chính)", "9router", "http://127.0.0.1:20128/v1"),
-            (8000, "9Router / AI Proxy", "9router", "http://127.0.0.1:8000/v1"),
-            (3000, "9Router Web Gateway", "9router", "http://127.0.0.1:3000/v1"),
+            (
+                20128,
+                "9Router (Chính)",
+                "9router",
+                "http://127.0.0.1:20128/v1",
+            ),
+            (
+                8000,
+                "9Router / AI Proxy",
+                "9router",
+                "http://127.0.0.1:8000/v1",
+            ),
+            (
+                3000,
+                "9Router Web Gateway",
+                "9router",
+                "http://127.0.0.1:3000/v1",
+            ),
             (5000, "Cockpit Tools", "cockpit", "http://127.0.0.1:5000/v1"),
-            (8080, "Cockpit / One-API", "cockpit", "http://127.0.0.1:8080/v1"),
+            (
+                8080,
+                "Cockpit / One-API",
+                "cockpit",
+                "http://127.0.0.1:8080/v1",
+            ),
             (11434, "Ollama Local", "ollama", "http://127.0.0.1:11434"),
-            (1234, "LM Studio Local", "lmstudio", "http://127.0.0.1:1234/v1"),
+            (
+                1234,
+                "LM Studio Local",
+                "lmstudio",
+                "http://127.0.0.1:1234/v1",
+            ),
         ];
 
         let client = reqwest::Client::builder()
@@ -66,9 +91,69 @@ impl GatewayScanner {
             }
         }
 
+        // Also probe OpenCode CLI free models if opencode is installed
+        if let Some(opencode_gw) = Self::probe_opencode().await {
+            results.push(opencode_gw);
+        }
+
         // Sort so online gateways with models appear first
-        results.sort_by(|a, b| b.is_online.cmp(&a.is_online).then(a.latency_ms.cmp(&b.latency_ms)));
+        results.sort_by(|a, b| {
+            b.is_online
+                .cmp(&a.is_online)
+                .then(a.latency_ms.cmp(&b.latency_ms))
+        });
         results
+    }
+
+    async fn probe_opencode() -> Option<DetectedGateway> {
+        let start = Instant::now();
+
+        tokio::task::spawn_blocking(move || {
+            let mut cmd = std::process::Command::new("opencode");
+            cmd.args(["models", "opencode"]);
+
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+            }
+
+            if let Ok(output) = cmd.output() {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let mut models: Vec<String> = stdout
+                        .lines()
+                        .map(|l| l.trim().to_string())
+                        .filter(|l| l.starts_with("opencode/"))
+                        .collect();
+
+                    if models.is_empty() {
+                        models = vec![
+                            "opencode/mimo-v2.6-flash-free".to_string(),
+                            "opencode/ling-3.0-flash-fin-free".to_string(),
+                            "opencode/nemotron-3.5-lightning-free".to_string(),
+                            "opencode/nemotron-3-ultra-free".to_string(),
+                            "opencode/muse-spark-1.3-contributor-free".to_string(),
+                            "opencode/big-pickle".to_string(),
+                        ];
+                    }
+
+                    let latency = start.elapsed().as_millis() as u64;
+                    return Some(DetectedGateway {
+                        name: "OpenCode Engine (Free)".to_string(),
+                        base_url: "opencode://cli".to_string(),
+                        port: 0,
+                        is_online: true,
+                        models,
+                        gateway_type: "opencode".to_string(),
+                        latency_ms: latency,
+                    });
+                }
+            }
+            None
+        })
+        .await
+        .ok()?
     }
 
     async fn probe_target(

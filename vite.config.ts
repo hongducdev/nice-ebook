@@ -14,6 +14,11 @@ export default defineConfig(() => ({
       "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
+  // @ts-ignore
+  test: {
+    include: ["src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}"],
+    exclude: ["**/node_modules/**", "**/temp-linguagacha/**"],
+  },
 
   // Prevent Vite from obscuring rust errors
   clearScreen: false,

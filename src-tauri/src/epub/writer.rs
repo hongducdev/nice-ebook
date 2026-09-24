@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, Write};
 use std::path::Path;
@@ -11,43 +12,46 @@ impl EpubWriter {
         input_path: P,
         output_path: Q,
         custom_css: &str,
+        chapter_overrides: Option<&HashMap<String, String>>,
     ) -> Result<u64, String> {
         let in_file = File::open(input_path.as_ref())
             .map_err(|e| format!("Cannot open input file: {}", e))?;
-        let mut archive = ZipArchive::new(in_file)
-            .map_err(|e| format!("Invalid EPUB ZIP: {}", e))?;
+        let mut archive =
+            ZipArchive::new(in_file).map_err(|e| format!("Invalid EPUB ZIP: {}", e))?;
 
         let out_file = File::create(output_path.as_ref())
             .map_err(|e| format!("Cannot create output file: {}", e))?;
 
-        Self::repackage_archive(&mut archive, out_file, custom_css)
+        Self::repackage_archive(&mut archive, out_file, custom_css, chapter_overrides)
     }
 
     pub fn repackage_bytes<Q: AsRef<Path>>(
         input_bytes: &[u8],
         output_path: Q,
         custom_css: &str,
+        chapter_overrides: Option<&HashMap<String, String>>,
     ) -> Result<u64, String> {
         let cursor = Cursor::new(input_bytes);
-        let mut archive = ZipArchive::new(cursor)
-            .map_err(|e| format!("Invalid EPUB ZIP: {}", e))?;
+        let mut archive =
+            ZipArchive::new(cursor).map_err(|e| format!("Invalid EPUB ZIP: {}", e))?;
 
         let out_file = File::create(output_path.as_ref())
             .map_err(|e| format!("Cannot create output file: {}", e))?;
 
-        Self::repackage_archive(&mut archive, out_file, custom_css)
+        Self::repackage_archive(&mut archive, out_file, custom_css, chapter_overrides)
     }
 
     fn repackage_archive<R: Read + Seek, W: Write + Seek>(
         archive: &mut ZipArchive<R>,
         out_stream: W,
         custom_css: &str,
+        chapter_overrides: Option<&HashMap<String, String>>,
     ) -> Result<u64, String> {
         let mut zip_writer = ZipWriter::new(out_stream);
 
         // 1. MUST write `mimetype` FIRST and UNCOMPRESSED (EPUB Spec requirement)
-        let mimetype_opts = SimpleFileOptions::default()
-            .compression_method(CompressionMethod::Stored);
+        let mimetype_opts =
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
 
         zip_writer
             .start_file("mimetype", mimetype_opts)
@@ -67,13 +71,15 @@ impl EpubWriter {
         let css_file_name = "nice-ebook-style.css";
         let full_css_path = format!("{}{}", opf_base_dir, css_file_name);
 
-        let default_opts = SimpleFileOptions::default()
-            .compression_method(CompressionMethod::Deflated);
+        let default_opts =
+            SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
         // 3. Write all entries from original archive (except mimetype, and modify OPF + XHTML)
         let num_files = archive.len();
         for i in 0..num_files {
-            let mut file = archive.by_index(i).map_err(|e| format!("Read zip error: {}", e))?;
+            let mut file = archive
+                .by_index(i)
+                .map_err(|e| format!("Read zip error: {}", e))?;
             let name = file.name().to_string();
 
             if name == "mimetype" {
@@ -94,11 +100,27 @@ impl EpubWriter {
                 zip_writer
                     .write_all(updated_opf.as_bytes())
                     .map_err(|e| format!("Zip write OPF error: {}", e))?;
-            } else if name.ends_with(".xhtml") || name.ends_with(".html") || name.ends_with(".htm") {
-                // Inject <link rel="stylesheet"> into chapter HTML
-                let mut html_content = String::new();
-                file.read_to_string(&mut html_content)
-                    .map_err(|e| format!("Error reading chapter: {}", e))?;
+            } else if name.ends_with(".xhtml") || name.ends_with(".html") || name.ends_with(".htm")
+            {
+                // Check if chapter has an override content (e.g. from AI editing)
+                let clean_name = name.trim_start_matches('/');
+                let html_content = if let Some(overrides) = chapter_overrides {
+                    if let Some(custom_html) =
+                        overrides.get(&name).or_else(|| overrides.get(clean_name))
+                    {
+                        custom_html.clone()
+                    } else {
+                        let mut orig = String::new();
+                        file.read_to_string(&mut orig)
+                            .map_err(|e| format!("Error reading chapter: {}", e))?;
+                        orig
+                    }
+                } else {
+                    let mut orig = String::new();
+                    file.read_to_string(&mut orig)
+                        .map_err(|e| format!("Error reading chapter: {}", e))?;
+                    orig
+                };
 
                 // Determine relative path from chapter file to CSS file
                 let rel_css_path = Self::compute_relative_css_path(&name, &full_css_path);
@@ -273,11 +295,17 @@ mod tests {
     #[test]
     fn test_relative_css_path_calculation() {
         assert_eq!(
-            EpubWriter::compute_relative_css_path("OEBPS/text/ch1.xhtml", "OEBPS/nice-ebook-style.css"),
+            EpubWriter::compute_relative_css_path(
+                "OEBPS/text/ch1.xhtml",
+                "OEBPS/nice-ebook-style.css"
+            ),
             "../nice-ebook-style.css"
         );
         assert_eq!(
-            EpubWriter::compute_relative_css_path("OEBPS/text/sub/ch1.xhtml", "OEBPS/nice-ebook-style.css"),
+            EpubWriter::compute_relative_css_path(
+                "OEBPS/text/sub/ch1.xhtml",
+                "OEBPS/nice-ebook-style.css"
+            ),
             "../../nice-ebook-style.css"
         );
         assert_eq!(
@@ -294,11 +322,13 @@ mod tests {
     fn test_inject_link_tag_within_head() {
         let html = "<html><head><title>Test</title></head><body><p>Hello</p></body></html>";
         let updated = EpubWriter::inject_link_tag(html, "style.css");
-        
-        let link_pos = updated.find(r#"<link rel="stylesheet" type="text/css" href="style.css" />"#).unwrap();
+
+        let link_pos = updated
+            .find(r#"<link rel="stylesheet" type="text/css" href="style.css" />"#)
+            .unwrap();
         let head_start = updated.find("<head>").unwrap();
         let head_end = updated.find("</head>").unwrap();
-        
+
         assert!(link_pos > head_start && link_pos < head_end);
     }
 
@@ -334,32 +364,48 @@ mod tests {
             writer.start_file("mimetype", opts).unwrap();
             writer.write_all(b"application/epub+zip").unwrap();
 
-            let def_opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-            writer.start_file("META-INF/container.xml", def_opts).unwrap();
-            writer.write_all(br#"<?xml version="1.0"?>
+            let def_opts =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            writer
+                .start_file("META-INF/container.xml", def_opts)
+                .unwrap();
+            writer
+                .write_all(
+                    br#"<?xml version="1.0"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
   <rootfiles>
     <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
   </rootfiles>
-</container>"#).unwrap();
+</container>"#,
+                )
+                .unwrap();
 
             writer.start_file("OEBPS/content.opf", def_opts).unwrap();
-            writer.write_all(br#"<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+            writer
+                .write_all(
+                    br#"<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
   <manifest>
     <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
   </manifest>
   <spine>
     <itemref idref="ch1"/>
   </spine>
-</package>"#).unwrap();
+</package>"#,
+                )
+                .unwrap();
 
             writer.start_file("OEBPS/ch1.xhtml", def_opts).unwrap();
-            writer.write_all(r#"<?xml version="1.0" encoding="utf-8"?>
+            writer
+                .write_all(
+                    r#"<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head><title>Chương 1</title></head>
 <body><h1>Tiêu Đề</h1><p>Nội dung chương 1...</p></body>
-</html>"#.as_bytes()).unwrap();
+</html>"#
+                        .as_bytes(),
+                )
+                .unwrap();
 
             writer.finish().unwrap();
         }
@@ -370,7 +416,7 @@ mod tests {
         let mut out_buffer = Cursor::new(Vec::new());
         let custom_css = "body { background: #000; color: #fff; }";
 
-        EpubWriter::repackage_archive(&mut archive, &mut out_buffer, custom_css).unwrap();
+        EpubWriter::repackage_archive(&mut archive, &mut out_buffer, custom_css, None).unwrap();
 
         // Validate resulting ZIP container strictly
         out_buffer.set_position(0);
@@ -380,14 +426,20 @@ mod tests {
         assert!(result_archive.len() >= 4);
         let mut entry0 = result_archive.by_index(0).unwrap();
         assert_eq!(entry0.name(), "mimetype", "First entry must be mimetype");
-        assert_eq!(entry0.compression(), CompressionMethod::Stored, "Mimetype must be Stored uncompressed");
+        assert_eq!(
+            entry0.compression(),
+            CompressionMethod::Stored,
+            "Mimetype must be Stored uncompressed"
+        );
         let mut mime_content = Vec::new();
         entry0.read_to_end(&mut mime_content).unwrap();
         assert_eq!(mime_content, b"application/epub+zip");
         drop(entry0);
 
         // 2. Custom CSS entry must exist
-        let mut css_entry = result_archive.by_name("OEBPS/nice-ebook-style.css").unwrap();
+        let mut css_entry = result_archive
+            .by_name("OEBPS/nice-ebook-style.css")
+            .unwrap();
         let mut read_css = String::new();
         css_entry.read_to_string(&mut read_css).unwrap();
         assert_eq!(read_css, custom_css);
@@ -404,10 +456,122 @@ mod tests {
         let mut ch_entry = result_archive.by_name("OEBPS/ch1.xhtml").unwrap();
         let mut read_ch = String::new();
         ch_entry.read_to_string(&mut read_ch).unwrap();
-        assert!(read_ch.contains(r#"<link rel="stylesheet" type="text/css" href="nice-ebook-style.css" />"#));
-        let link_pos = read_ch.find(r#"<link rel="stylesheet" type="text/css" href="nice-ebook-style.css" />"#).unwrap();
+        assert!(read_ch
+            .contains(r#"<link rel="stylesheet" type="text/css" href="nice-ebook-style.css" />"#));
+        let link_pos = read_ch
+            .find(r#"<link rel="stylesheet" type="text/css" href="nice-ebook-style.css" />"#)
+            .unwrap();
         let head_end = read_ch.find("</head>").unwrap();
         assert!(link_pos < head_end);
     }
-}
 
+    #[test]
+    fn test_chapter_overrides_repackaging() {
+        let mut in_buffer = Cursor::new(Vec::new());
+        {
+            let mut writer = ZipWriter::new(&mut in_buffer);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            writer.start_file("mimetype", opts).unwrap();
+            writer.write_all(b"application/epub+zip").unwrap();
+
+            let def_opts =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            writer
+                .start_file("META-INF/container.xml", def_opts)
+                .unwrap();
+            writer
+                .write_all(
+                    br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#,
+                )
+                .unwrap();
+
+            writer.start_file("OEBPS/content.opf", def_opts).unwrap();
+            writer
+                .write_all(
+                    br#"<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <manifest>
+    <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+    <item id="ch2" href="ch2.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="ch1"/>
+    <itemref idref="ch2"/>
+  </spine>
+</package>"#,
+                )
+                .unwrap();
+
+            writer.start_file("OEBPS/ch1.xhtml", def_opts).unwrap();
+            writer
+                .write_all(
+                    b"<html><head><title>C1</title></head><body><p>Goc chuong 1</p></body></html>",
+                )
+                .unwrap();
+
+            writer.start_file("OEBPS/ch2.xhtml", def_opts).unwrap();
+            writer
+                .write_all(
+                    b"<html><head><title>C2</title></head><body><p>Goc chuong 2</p></body></html>",
+                )
+                .unwrap();
+
+            writer.finish().unwrap();
+        }
+
+        // Repackage with an override for OEBPS/ch1.xhtml
+        in_buffer.set_position(0);
+        let mut archive = ZipArchive::new(in_buffer).unwrap();
+        let mut out_buffer = Cursor::new(Vec::new());
+        let custom_css = "body { margin: 0; }";
+
+        let mut overrides = HashMap::new();
+        let modified_ch1 = "<html><head><title>C1</title></head><body><h1>H1 Chuan</h1><h2>H2 Bo Sung</h2><p>Da sua loi chinh ta</p></body></html>";
+        overrides.insert("OEBPS/ch1.xhtml".to_string(), modified_ch1.to_string());
+
+        EpubWriter::repackage_archive(&mut archive, &mut out_buffer, custom_css, Some(&overrides))
+            .unwrap();
+
+        // Inspect output archive
+        out_buffer.set_position(0);
+        let mut result_archive = ZipArchive::new(out_buffer).unwrap();
+
+        // 1. First entry MUST be mimetype, Stored
+        let mut entry0 = result_archive.by_index(0).unwrap();
+        assert_eq!(entry0.name(), "mimetype");
+        assert_eq!(entry0.compression(), CompressionMethod::Stored);
+        let mut mime_content = Vec::new();
+        entry0.read_to_end(&mut mime_content).unwrap();
+        assert_eq!(mime_content, b"application/epub+zip");
+        drop(entry0);
+
+        // 2. ch1.xhtml MUST contain modified content and exactly one CSS link
+        let mut ch1_entry = result_archive.by_name("OEBPS/ch1.xhtml").unwrap();
+        let mut read_ch1 = String::new();
+        ch1_entry.read_to_string(&mut read_ch1).unwrap();
+        assert!(read_ch1.contains("<h1>H1 Chuan</h1>"));
+        assert!(read_ch1.contains("<h2>H2 Bo Sung</h2>"));
+        assert!(read_ch1.contains("<p>Da sua loi chinh ta</p>"));
+        assert!(read_ch1
+            .contains(r#"<link rel="stylesheet" type="text/css" href="nice-ebook-style.css" />"#));
+        assert_eq!(
+            read_ch1.matches(r#"<link rel="stylesheet""#).count(),
+            1,
+            "CSS link must be idempotent and injected only once"
+        );
+        drop(ch1_entry);
+
+        // 3. ch2.xhtml MUST preserve original content and have exactly one CSS link
+        let mut ch2_entry = result_archive.by_name("OEBPS/ch2.xhtml").unwrap();
+        let mut read_ch2 = String::new();
+        ch2_entry.read_to_string(&mut read_ch2).unwrap();
+        assert!(read_ch2.contains("<p>Goc chuong 2</p>"));
+        assert!(read_ch2
+            .contains(r#"<link rel="stylesheet" type="text/css" href="nice-ebook-style.css" />"#));
+        assert_eq!(read_ch2.matches(r#"<link rel="stylesheet""#).count(), 1);
+    }
+}

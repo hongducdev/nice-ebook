@@ -1,4 +1,4 @@
-import { Check, Sparkles, Sliders } from "lucide-react";
+import { Check, Sparkles, SlidersHorizontal, Palette } from "lucide-react";
 import { STYLE_PRESETS, StylePreset } from "../../presets/styles";
 import { useAppStore } from "../../stores/useAppStore";
 import { toast } from "sonner";
@@ -12,27 +12,31 @@ export function PresetGallery() {
   }
 
   return (
-    <div className="flex-1 flex flex-col p-6 overflow-y-auto select-none max-w-5xl mx-auto w-full">
-      {/* Header info */}
-      <div className="flex items-center justify-between mb-6">
+    <div className="flex-1 flex flex-col p-4 overflow-y-auto select-none max-w-5xl mx-auto w-full gap-4">
+      {/* Header bar */}
+      <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-zinc-100">Thư Viện Phong Cách Ebook</h2>
-          <p className="text-xs text-[#71717a] mt-0.5">
-            Chọn gói giao diện mẫu tối ưu sẵn chuẩn quốc tế, phù hợp cho Apple Books, Kindle, Kobo.
+          <h2 className="text-base font-semibold text-[var(--foreground)] tracking-tight flex items-center gap-2">
+            <Palette size={18} className="text-[var(--primary)]" />
+            <span>Thư Viện Phong Cách EPUB</span>
+          </h2>
+          <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+            Các gói giao diện và định dạng CSS được thiết kế chuẩn quốc tế cho Apple Books, Kindle và Kobo.
           </p>
         </div>
 
         <button
+          type="button"
           onClick={() => setActiveTab("editor")}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium bg-[#18181b] hover:bg-[#222226] border border-[#27272a] text-[#d4d4d8] transition-colors"
+          className="lg-button lg-button--secondary h-7 text-xs px-2.5"
         >
-          <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+          <SlidersHorizontal size={13} />
           <span>Tùy Chỉnh Thông Số</span>
         </button>
       </div>
 
       {/* Presets Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
         {STYLE_PRESETS.map((preset) => {
           const isSelected = activePresetId === preset.id;
           const isJevRecommended = jevDecision?.recommended_preset === preset.id;
@@ -41,37 +45,37 @@ export function PresetGallery() {
             <div
               key={preset.id}
               onClick={() => handleSelect(preset)}
-              className={`p-5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between group ${
-                isSelected
-                  ? "bg-[#181820] border-indigo-500 ring-2 ring-indigo-500/20 shadow-xl shadow-indigo-500/10"
-                  : "bg-[#141418] hover:bg-[#191920] border-[#27272a]"
+              className={`card-surface p-4 cursor-pointer relative transition-all flex flex-col justify-between ${
+                isSelected 
+                  ? "ring-2 ring-[var(--primary)] shadow-md" 
+                  : ""
               }`}
             >
               {/* Jev Recommendation Badge */}
               {isJevRecommended && (
-                <div className="absolute top-0 right-0 bg-gradient-to-l from-purple-600 to-indigo-600 text-white text-[10px] font-bold px-3 py-0.5 rounded-bl-xl shadow-md flex items-center gap-1">
-                  <Sparkles className="w-2.5 h-2.5" />
-                  <span>Jev Khuyên Dùng</span>
+                <div className="absolute top-2 right-2">
+                  <span className="app-badge app-badge--brand text-[10px] h-[18px] px-1.5 font-mono">
+                    <Sparkles size={10} />
+                    <span>Jev Đề Xuất</span>
+                  </span>
                 </div>
               )}
 
               <div>
                 <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-zinc-100 group-hover:text-indigo-300 transition-colors flex items-center gap-2">
-                      <span>{preset.name}</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-[#222228] text-zinc-400 font-normal">
+                  <div className="pr-16">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-[var(--foreground)]">
+                        {preset.name}
+                      </h3>
+                      <span className="app-badge app-badge--neutral text-[10px] h-[18px]">
                         {preset.genreLabel}
                       </span>
-                    </h3>
-                    <p className="text-xs text-[#71717a] mt-1 leading-relaxed">{preset.description}</p>
-                  </div>
-
-                  {isSelected && (
-                    <div className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 shadow-sm shadow-indigo-600/50">
-                      <Check className="w-3.5 h-3.5" />
                     </div>
-                  )}
+                    <p className="text-xs text-[var(--muted-foreground)] mt-1 leading-relaxed">
+                      {preset.description}
+                    </p>
+                  </div>
                 </div>
 
                 {/* Typography Mini Preview Box */}
@@ -81,7 +85,7 @@ export function PresetGallery() {
                     color: preset.colors.text,
                     fontFamily: preset.fontFamily,
                   }}
-                  className="p-3.5 rounded-xl border border-white/10 my-3 text-xs leading-relaxed shadow-inner"
+                  className="p-3.5 rounded border border-[var(--border)] my-2.5 text-xs leading-relaxed shadow-sm"
                 >
                   <div
                     style={{ color: preset.colors.accent }}
@@ -92,38 +96,53 @@ export function PresetGallery() {
                   <p className="text-[11px] opacity-90 line-clamp-2" style={{ textIndent: preset.firstLineIndent }}>
                     Ánh trăng bàng bạc chiếu qua khung cửa sổ mờ sương, tiếng gió đêm rít từng cơn lạnh buốt qua rừng trúc tịch mịch...
                   </p>
-                  <div style={{ color: preset.colors.accent }} className="text-center text-[10px] mt-1.5 opacity-80">
+                  <div style={{ color: preset.colors.accent }} className="text-center text-[10px] mt-1.5 opacity-80 font-mono">
                     {preset.sceneDivider}
                   </div>
                 </div>
               </div>
 
               {/* Card Footer: Metadata & Colors */}
-              <div className="flex items-center justify-between pt-2 border-t border-[#222228] text-[11px] text-[#71717a]">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px]">Bảng màu:</span>
+              <div className="flex items-center justify-between pt-2.5 border-t border-[var(--border)] text-xs text-[var(--muted-foreground)]">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px]">Bảng màu:</span>
                   <div className="flex items-center -space-x-1">
                     <span
-                      className="w-3.5 h-3.5 rounded-full border border-black/30"
+                      className="w-3.5 h-3.5 rounded-full border border-black/30 shadow-xs"
                       style={{ backgroundColor: preset.colors.bg }}
                       title="Nền"
                     />
                     <span
-                      className="w-3.5 h-3.5 rounded-full border border-black/30"
+                      className="w-3.5 h-3.5 rounded-full border border-black/30 shadow-xs"
                       style={{ backgroundColor: preset.colors.text }}
                       title="Chữ"
                     />
                     <span
-                      className="w-3.5 h-3.5 rounded-full border border-black/30"
+                      className="w-3.5 h-3.5 rounded-full border border-black/30 shadow-xs"
                       style={{ backgroundColor: preset.colors.accent }}
                       title="Điểm nhấn"
                     />
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 text-[10px] font-mono text-zinc-400">
-                  <span>Line {preset.lineHeight}</span>
-                  <span>{preset.dropCaps ? "DropCap: Bật" : "DropCap: Tắt"}</span>
+                <div className="flex items-center gap-2">
+                  {isSelected ? (
+                    <span className="flex items-center gap-1 text-[var(--primary)] font-medium text-xs">
+                      <Check size={13} />
+                      <span>Đang sử dụng</span>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelect(preset);
+                      }}
+                      className="lg-button lg-button--secondary h-6 text-xs px-2"
+                    >
+                      Áp dụng
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

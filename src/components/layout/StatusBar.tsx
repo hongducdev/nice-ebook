@@ -1,64 +1,65 @@
-import { Activity, Cpu, Sparkles } from "lucide-react";
+import { Cpu, Activity, Sparkles, Layers, Zap } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 
 export function StatusBar() {
   const { activeGateway, jevDecision, activePreset } = useAppStore();
 
   return (
-    <footer className="h-8 border-t border-[#27272a] px-4 flex items-center justify-between bg-[#101014] text-[11px] text-[#71717a] select-none z-10">
-      <div className="flex items-center gap-4">
+    <footer className="h-7 border-t border-[var(--sidebar-border)] px-3 flex items-center justify-between bg-[var(--ui-titlebar-surface)] text-[11px] text-[var(--muted-foreground)] select-none flex-shrink-0 z-20">
+      <div className="flex items-center gap-3">
         {/* Gateway connection status */}
         <div className="flex items-center gap-1.5">
-          <span
-            className={`w-2 h-2 rounded-full ${
-              activeGateway
-                ? "bg-emerald-500 shadow-sm shadow-emerald-500/50 animate-pulse"
-                : "bg-zinc-600"
-            }`}
-          />
-          <span className="text-[#a1a1aa] font-medium">Gateway:</span>
+          <span className="font-medium text-[var(--foreground)]">Gateway:</span>
           {activeGateway ? (
-            <span className="text-emerald-400 font-mono flex items-center gap-1">
-              <span>{activeGateway.name} (Port {activeGateway.port})</span>
-              <span className="text-[9px] text-[#71717a]">[{activeGateway.latency_ms}ms]</span>
+            <span className="app-badge app-badge--success h-[18px] text-[10px] px-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>{activeGateway.name} ({activeGateway.latency_ms}ms)</span>
             </span>
           ) : (
-            <span className="text-[#71717a] font-mono">Chưa kết nối (Dùng Jev Core)</span>
+            <span className="app-badge app-badge--neutral h-[18px] text-[10px] px-1.5">
+              <span>Jev Zero-Key Core</span>
+            </span>
           )}
         </div>
 
-        <span className="text-[#3f3f46]">|</span>
+        <span className="text-[var(--border)]">|</span>
 
         {/* Jev System-1 Decision Badge */}
         <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-indigo-500" />
-          <span className="text-[#a1a1aa] font-medium">Jev Core:</span>
+          <span className="font-medium text-[var(--foreground)]">Jev Core:</span>
           {jevDecision ? (
-            <span className="text-indigo-400 font-mono flex items-center gap-1">
-              <Sparkles className="w-2.5 h-2.5 text-indigo-400" />
+            <span className="app-badge app-badge--brand h-[18px] text-[10px] px-1.5 font-mono">
+              <Sparkles size={10} />
               <span>{jevDecision.genre_label} ({(jevDecision.confidence * 100).toFixed(0)}%)</span>
             </span>
           ) : (
-            <span className="text-indigo-400/80 font-mono">System-1 Heuristic Sẵn Sàng</span>
+            <span className="app-badge app-badge--neutral h-[18px] text-[10px] px-1.5">
+              <Zap size={10} />
+              <span>Heuristic Ready</span>
+            </span>
           )}
         </div>
 
-        <span className="text-[#3f3f46]">|</span>
+        <span className="text-[var(--border)]">|</span>
 
         {/* Active Preset */}
         <div className="flex items-center gap-1.5">
-          <span className="text-[#a1a1aa] font-medium">Preset:</span>
-          <span className="text-zinc-200 font-mono">{activePreset.name}</span>
+          <span className="font-medium text-[var(--foreground)]">Phong cách:</span>
+          <span className="text-[var(--foreground)] font-mono text-[11px] flex items-center gap-1">
+            <Layers size={11} className="text-[var(--primary)]" />
+            <span>{activePreset.name}</span>
+          </span>
         </div>
       </div>
 
-      <div className="flex items-center gap-4 font-mono text-[10px] text-[#52525b]">
+      <div className="flex items-center gap-3 font-mono text-[10px] text-[var(--muted-foreground)]">
         <span className="flex items-center gap-1">
-          <Cpu className="w-3 h-3 text-[#71717a]" />
-          <span>Rust Native Core</span>
+          <Cpu size={12} className="text-[var(--primary)]" />
+          <span>Tauri v2 + Rust</span>
         </span>
+        <span className="text-[var(--border)]">|</span>
         <span className="flex items-center gap-1">
-          <Activity className="w-3 h-3 text-[#71717a]" />
+          <Activity size={12} className="text-emerald-500" />
           <span>RAM ~38MB</span>
         </span>
       </div>

@@ -3,7 +3,7 @@ pub mod jev;
 pub mod scanner;
 
 use epub::{EpubMetadata, EpubParser, EpubWriter};
-use jev::{JevClassifier, JevDecision};
+use jev::{JevClassifier, JevDecision, JevVerdictChapterPlan, JevVerdictEngine};
 use scanner::{DetectedGateway, GatewayScanner};
 
 #[tauri::command]
@@ -40,12 +40,23 @@ async fn export_epub(
     input_bytes: Option<Vec<u8>>,
     output_path: String,
     custom_css: String,
+    chapter_overrides: Option<std::collections::HashMap<String, String>>,
 ) -> Result<u64, String> {
     tokio::task::spawn_blocking(move || {
         if let Some(path) = input_path {
-            EpubWriter::repackage_file(&path, &output_path, &custom_css)?;
+            EpubWriter::repackage_file(
+                &path,
+                &output_path,
+                &custom_css,
+                chapter_overrides.as_ref(),
+            )?;
         } else if let Some(bytes) = input_bytes {
-            EpubWriter::repackage_bytes(&bytes, &output_path, &custom_css)?;
+            EpubWriter::repackage_bytes(
+                &bytes,
+                &output_path,
+                &custom_css,
+                chapter_overrides.as_ref(),
+            )?;
         } else {
             return Err("No input EPUB source provided".to_string());
         }
@@ -65,8 +76,98 @@ fn classify_text_jev(text: String) -> JevDecision {
 }
 
 #[tauri::command]
+fn run_jev_verdict_chapter(
+    chapter_title: String,
+    chapter_html: String,
+    book_title: String,
+    author: String,
+) -> JevVerdictChapterPlan {
+    JevVerdictEngine::enhance_chapter_fast(&chapter_title, &chapter_html, &book_title, &author)
+}
+
+#[tauri::command]
 async fn scan_ai_gateways() -> Vec<DetectedGateway> {
     GatewayScanner::scan_all().await
+}
+
+#[tauri::command]
+async fn run_opencode_prompt(model: String, prompt: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let mut cmd = std::process::Command::new("opencode");
+        cmd.args(["run", &model, &prompt]);
+
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+
+        let mut child = cmd.spawn().map_err(|e| {
+            format!(
+                "Không thể khởi động OpenCode CLI: {}. Vui lòng đảm bảo đã cài đặt OpenCode.",
+                e
+            )
+        })?;
+
+        let timeout = std::time::Duration::from_secs(45);
+        let start = std::time::Instant::now();
+
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    if !status.success() {
+                        let mut stderr_buf = Vec::new();
+                        if let Some(mut stderr) = child.stderr.take() {
+                            use std::io::Read;
+                            let _ = stderr.read_to_end(&mut stderr_buf);
+                        }
+                        let stderr_str = String::from_utf8_lossy(&stderr_buf);
+                        return Err(format!("Lỗi OpenCode: {}", stderr_str.trim()));
+                    }
+
+                    let mut stdout_buf = Vec::new();
+                    if let Some(stdout) = child.stdout.take() {
+                        use std::io::Read;
+                        let _ = stdout.take(2 * 1024 * 1024).read_to_end(&mut stdout_buf);
+                    }
+
+                    let raw = String::from_utf8_lossy(&stdout_buf);
+                    let mut clean_lines = Vec::new();
+                    for line in raw.lines() {
+                        let trimmed = line.trim();
+                        if trimmed.starts_with('>') || trimmed.starts_with("build ·") {
+                            continue;
+                        }
+                        clean_lines.push(line);
+                    }
+                    return Ok(clean_lines.join("\n").trim().to_string());
+                }
+                Ok(None) => {
+                    if start.elapsed() > timeout {
+                        let _ = child.kill();
+                        return Err("OpenCode CLI timeout (quá 45 giây không phản hồi)".to_string());
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Err(e) => {
+                    let _ = child.kill();
+                    return Err(format!("Lỗi kiểm tra tiến trình OpenCode: {}", e));
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+#[tauri::command]
+async fn test_opencode_model(model: String) -> Result<u64, String> {
+    let start = std::time::Instant::now();
+    run_opencode_prompt(model, "Reply with 'OK'".to_string()).await?;
+    Ok(start.elapsed().as_millis() as u64)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -81,7 +182,10 @@ pub fn run() {
             read_chapter,
             read_chapter_bytes,
             classify_text_jev,
+            run_jev_verdict_chapter,
             scan_ai_gateways,
+            run_opencode_prompt,
+            test_opencode_model,
             export_epub
         ])
         .run(tauri::generate_context!())

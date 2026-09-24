@@ -40,4 +40,39 @@ describe("cssGenerator", () => {
     expect(injected).toContain("<head><style");
     expect(injected).toContain("</head><body");
   });
+
+  it("injects Vietnamese Google Fonts @import and uses Vietnamese font family when isVietnamese is true", () => {
+    const preset = STYLE_PRESETS[0]; // Wuxia preset
+    const css = generateEpubCss({
+      preset,
+      fontSize: 16,
+      lineHeight: 1.8,
+      firstLineIndent: "2em",
+      dropCaps: true,
+      textAlign: "justify",
+      sceneDivider: "☁ ☁ ☁",
+      isVietnamese: true,
+    });
+
+    expect(css).toContain("Google Fonts for Full Vietnamese Diacritics Support");
+    expect(css).toContain("family=Literata");
+    expect(css).toContain("family=Be+Vietnam+Pro");
+    expect(css).toContain("font-family: 'Literata', 'Noto Serif', 'Times New Roman', serif;");
+  });
+
+  it("allows custom fontFamily override", () => {
+    const preset = STYLE_PRESETS[0];
+    const css = generateEpubCss({
+      preset,
+      fontSize: 16,
+      lineHeight: 1.8,
+      firstLineIndent: "2em",
+      dropCaps: false,
+      textAlign: "justify",
+      sceneDivider: "♦ ♦ ♦",
+      fontFamily: "'Be Vietnam Pro', sans-serif",
+    });
+
+    expect(css).toContain("font-family: 'Be Vietnam Pro', sans-serif;");
+  });
 });

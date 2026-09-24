@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Download, X, CheckCircle2, Sparkles } from "lucide-react";
+import { Download, X, CheckCircle2 } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../stores/useAppStore";
@@ -15,6 +15,9 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
   const {
     currentBook,
     currentFilePath,
+    currentFileBytes,
+    isVietnameseBook,
+    fontFamily,
     activePreset,
     fontSize,
     lineHeight,
@@ -23,6 +26,7 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
     textAlign,
     sceneDivider,
     customCss,
+    modifiedChapters,
   } = useAppStore();
 
   const [isExporting, setIsExporting] = useState(false);
@@ -55,13 +59,18 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
         textAlign,
         sceneDivider,
         customOverrides: customCss,
+        isVietnamese: isVietnameseBook,
+        fontFamily,
       });
+
+      const overrides = Object.keys(modifiedChapters).length > 0 ? modifiedChapters : null;
 
       const size = await invoke<number>("export_epub", {
         inputPath: currentFilePath,
-        inputBytes: null,
+        inputBytes: currentFileBytes,
         outputPath,
         customCss: fullCss,
+        chapterOverrides: overrides,
       });
 
       setExportedSize(size);
@@ -82,83 +91,85 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 select-none">
-      <div className="bg-[#141418] border border-[#27272a] rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 select-none">
+      <div className="card-surface rounded-[var(--ui-radius-card)] w-full max-w-md overflow-hidden shadow-2xl">
         {/* Header */}
-        <div className="h-14 px-6 border-b border-[#27272a] flex items-center justify-between bg-[#101013]">
+        <div className="h-11 px-4 border-b border-[var(--border)] flex items-center justify-between bg-[var(--ui-titlebar-surface)]">
           <div className="flex items-center gap-2">
-            <Download className="w-4 h-4 text-indigo-400" />
-            <span className="font-bold text-sm text-zinc-100">Xuất File Sách (EPUB 3)</span>
+            <Download size={15} className="text-[var(--primary)]" />
+            <span className="font-semibold text-xs text-[var(--foreground)]">Xuất Bản File Sách (EPUB 3)</span>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-[#1f1f26] transition-colors"
+            className="p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--accent)] transition-colors"
           >
-            <X className="w-4 h-4" />
+            <X size={15} />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-4">
-          <div className="p-4 rounded-xl bg-[#18181f] border border-[#27272a] space-y-2">
+        <div className="p-4 space-y-3">
+          <div className="p-3 rounded bg-[var(--secondary)] border border-[var(--border)] space-y-2">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-[#71717a]">Tựa sách:</span>
-              <span className="font-semibold text-zinc-200 truncate max-w-[200px]">{currentBook.title}</span>
+              <span className="text-[var(--muted-foreground)]">Tựa sách:</span>
+              <span className="font-semibold text-[var(--foreground)] truncate max-w-[220px]">{currentBook.title}</span>
             </div>
             <div className="flex items-center justify-between text-xs">
-              <span className="text-[#71717a]">Phong cách:</span>
-              <span className="text-indigo-400 font-medium">{activePreset.name}</span>
+              <span className="text-[var(--muted-foreground)]">Phong cách:</span>
+              <span className="text-[var(--primary)] font-medium">{activePreset.name}</span>
             </div>
             <div className="flex items-center justify-between text-xs">
-              <span className="text-[#71717a]">Số chương:</span>
-              <span className="font-mono text-zinc-300">{currentBook.chapter_count} chương</span>
+              <span className="text-[var(--muted-foreground)]">Số chương:</span>
+              <span className="font-mono text-[var(--foreground)]">{currentBook.chapter_count} chương</span>
             </div>
             <div className="flex items-center justify-between text-xs">
-              <span className="text-[#71717a]">Typography:</span>
-              <span className="text-zinc-300 font-mono text-[11px]">
-                {fontSize}px · Line {lineHeight.toFixed(2)} · {dropCaps ? "DropCap" : "No DropCap"}
+              <span className="text-[var(--muted-foreground)]">Typography:</span>
+              <span className="text-[var(--foreground)] font-mono text-[11px]">
+                {fontSize}px · {lineHeight.toFixed(2)} · {dropCaps ? "DropCap" : "No DropCap"}
               </span>
             </div>
           </div>
 
-          {/* Success Box */}
-          {exportedSize !== null && (
-            <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 text-emerald-300 flex items-start gap-3 text-xs">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-              <div className="min-w-0">
-                <span className="font-bold block">Xuất sách thành công!</span>
-                <span className="text-[11px] text-emerald-400/90 font-mono block">
-                  Dung lượng: {formatSize(exportedSize)}
-                </span>
-                <span className="text-[10px] text-[#71717a] truncate block mt-0.5">
-                  {exportedPath}
-                </span>
+          {/* Success Banner */}
+          {exportedSize !== null && exportedPath && (
+            <div className="p-3 rounded bg-[color-mix(in_srgb,var(--ui-success)_12%,var(--card))] border border-[color-mix(in_srgb,var(--ui-success)_30%,var(--border))] text-xs space-y-1">
+              <div className="flex items-center gap-1.5 text-[var(--ui-success)] font-semibold">
+                <CheckCircle2 size={14} />
+                <span>Đã đóng gói hoàn tất!</span>
+              </div>
+              <p className="text-[11px] text-[var(--foreground)] font-mono truncate">
+                {exportedPath}
+              </p>
+              <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)] pt-1 border-t border-[var(--border)]">
+                <span>Dung lượng file mới:</span>
+                <span className="font-mono font-semibold text-[var(--foreground)]">{formatSize(exportedSize)}</span>
               </div>
             </div>
           )}
 
-          <div className="p-3 rounded-xl bg-[#181820] border border-[#27272a] text-[11px] text-[#71717a] flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-purple-400 flex-shrink-0" />
-            <span>File xuất ra tuân thủ chuẩn EPUB quốc tế, đọc mượt trên Apple Books, Kindle, Kobo, Calibre.</span>
-          </div>
+          <p className="text-[11px] text-[var(--muted-foreground)] leading-relaxed">
+            Hệ thống sẽ giữ nguyên cấu trúc tệp, hình ảnh bìa và phân đoạn của EPUB gốc, đồng thời tích hợp toàn bộ bảng CSS tùy biến vào từng chương sách.
+          </p>
         </div>
 
         {/* Footer */}
-        <div className="h-14 px-6 border-t border-[#27272a] bg-[#101013] flex items-center justify-end gap-2.5">
+        <div className="p-3 border-t border-[var(--border)] bg-[var(--ui-titlebar-surface)] flex items-center justify-end gap-2">
           <button
+            type="button"
             onClick={onClose}
-            className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-[#a1a1aa] hover:text-zinc-200 hover:bg-[#18181f] transition-colors"
+            className="lg-button lg-button--secondary h-7 text-xs px-3"
           >
             Đóng
           </button>
-
           <button
+            type="button"
             onClick={handleExport}
             disabled={isExporting}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30 transition-all disabled:opacity-50"
+            className="lg-button lg-button--primary h-7 text-xs px-3"
           >
-            <Download className={`w-3.5 h-3.5 ${isExporting ? "animate-bounce" : ""}`} />
-            <span>{isExporting ? "Đang đóng gói..." : "Chọn Nơi Lưu & Xuất"}</span>
+            <Download size={13} className={isExporting ? "animate-bounce" : ""} />
+            <span>{isExporting ? "Đang xuất..." : "Chọn Nơi Lưu & Xuất"}</span>
           </button>
         </div>
       </div>

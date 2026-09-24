@@ -5,6 +5,7 @@ export interface StylePreset {
   genreLabel: string;
   description: string;
   fontFamily: string;
+  vietnameseFontFamily?: string;
   lineHeight: number;
   firstLineIndent: string;
   dropCaps: boolean;
@@ -27,6 +28,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     genreLabel: "Tiên Hiệp",
     description: "Đậm nét cổ trang phương Đông, tiêu đề ấn triện đỏ, mây cuộn phân cảnh, font chữ thư pháp thanh nhã.",
     fontFamily: "'Noto Serif', 'Times New Roman', serif",
+    vietnameseFontFamily: "'Literata', 'Noto Serif', 'Times New Roman', serif",
     lineHeight: 1.8,
     firstLineIndent: "2em",
     dropCaps: true,
@@ -84,6 +86,7 @@ p {
     genreLabel: "Light Novel",
     description: "Khoảng cách dòng thoáng đãng, font không chân hiện đại, khối hội thoại nổi bật, dấu hoa anh đào dịu mắt.",
     fontFamily: "'Inter', -apple-system, sans-serif",
+    vietnameseFontFamily: "'Be Vietnam Pro', 'Inter', -apple-system, sans-serif",
     lineHeight: 1.75,
     firstLineIndent: "1.5em",
     dropCaps: false,
@@ -130,6 +133,7 @@ p {
     genreLabel: "Sci-Fi",
     description: "Tông nền OLED sâu thẳm, điểm nhấn xanh Cyan huỳnh quang, font monospaced kỹ thuật số, đường chia sắc nét.",
     fontFamily: "'JetBrains Mono', 'Segoe UI', monospace",
+    vietnameseFontFamily: "'JetBrains Mono', 'Segoe UI', monospace",
     lineHeight: 1.65,
     firstLineIndent: "1em",
     dropCaps: false,
@@ -176,6 +180,7 @@ p {
     genreLabel: "Kinh Điển",
     description: "Đẳng cấp sách in bìa cứng châu Âu, font có chân Lora trang trọng, chữ cái đầu chương Drop-cap quý phái.",
     fontFamily: "'Lora', 'Georgia', serif",
+    vietnameseFontFamily: "'Literata', 'Lora', 'Georgia', serif",
     lineHeight: 1.75,
     firstLineIndent: "2em",
     dropCaps: true,
@@ -228,6 +233,7 @@ p {
     genreLabel: "Trinh Thám",
     description: "Bầu không khí hồi hộp, tím thẫm ma mị, chữ cái đầu chương nổi bật, nhịp điệu ngắt cảnh dứt khoát.",
     fontFamily: "'Merriweather', Georgia, serif",
+    vietnameseFontFamily: "'Merriweather', 'Lora', Georgia, serif",
     lineHeight: 1.7,
     firstLineIndent: "1.75em",
     dropCaps: true,

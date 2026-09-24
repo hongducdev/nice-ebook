@@ -1,38 +1,78 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Sparkles, ChevronRight, BookOpen, Upload } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../../stores/useAppStore";
 import { toast } from "sonner";
 
 export function BookDropzone() {
-  const { loadBookFromPath, loadBookFromBytes, isLoadingBook } = useAppStore();
-  const [isDragOver, setIsDragOver] = useState(false);
+  const { loadBookFromPath, loadBookFromBytes, isLoadingBook, isDraggingFile } = useAppStore();
+  const [isHtmlDragOver, setIsHtmlDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isDragOver = isDraggingFile || isHtmlDragOver;
 
   async function handleOpenFileDialog() {
-    try {
-      const selected = await open({
-        multiple: false,
-        filters: [{ name: "Ebook", extensions: ["epub"] }],
-      });
+    const isTauri = typeof window !== "undefined" && Boolean((window as any).__TAURI_INTERNALS__);
+    if (isTauri) {
+      try {
+        const selected = await open({
+          multiple: false,
+          filters: [{ name: "Ebook", extensions: ["epub"] }],
+        });
 
-      if (selected && typeof selected === "string") {
-        toast.loading("Đang đọc file EPUB...", { id: "load-epub" });
-        const ok = await loadBookFromPath(selected);
-        if (ok) {
-          toast.success("Đã nạp sách thành công!", { id: "load-epub" });
-        } else {
-          toast.error("Không thể đọc file EPUB này", { id: "load-epub" });
+        if (selected && typeof selected === "string") {
+          toast.loading("Đang đọc file EPUB...", { id: "load-epub" });
+          const ok = await loadBookFromPath(selected);
+          if (ok) {
+            toast.success("Đã nạp sách thành công!", { id: "load-epub" });
+          } else {
+            toast.error("Không thể đọc file EPUB này", { id: "load-epub" });
+          }
+          return;
+        } else if (selected === null) {
+          return;
         }
+      } catch (err) {
+        console.warn("Tauri open dialog error, falling back to file input:", err);
+      }
+    }
+
+    // Fallback if not Tauri or if open dialog errored
+    fileInputRef.current?.click();
+  }
+
+  async function handleFileInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith(".epub")) {
+      toast.error("Vui lòng chọn file có đuôi .epub");
+      e.target.value = "";
+      return;
+    }
+
+    toast.loading(`Đang đọc file: ${file.name}...`, { id: "load-bytes" });
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = Array.from(new Uint8Array(arrayBuffer));
+
+      const ok = await loadBookFromBytes(bytes);
+      if (ok) {
+        toast.success(`Đã nạp sách "${file.name}" thành công!`, { id: "load-bytes" });
+      } else {
+        toast.error("Không thể giải nén file EPUB này", { id: "load-bytes" });
       }
     } catch (err) {
-      console.error("Open file dialog error:", err);
-      toast.error("Lỗi khi mở hộp thoại");
+      console.error("Read file error:", err);
+      toast.error("Lỗi khi đọc file");
+    } finally {
+      e.target.value = "";
     }
   }
 
   async function handleDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
-    setIsDragOver(false);
+    setIsHtmlDragOver(false);
 
     const files = e.dataTransfer.files;
     if (files.length > 0) {
@@ -43,28 +83,42 @@ export function BookDropzone() {
       }
 
       toast.loading(`Đang đọc file: ${file.name}...`, { id: "load-bytes" });
-      const arrayBuffer = await file.arrayBuffer();
-      const bytes = Array.from(new Uint8Array(arrayBuffer));
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const bytes = Array.from(new Uint8Array(arrayBuffer));
 
-      const ok = await loadBookFromBytes(bytes);
-      if (ok) {
-        toast.success(`Đã nạp sách "${file.name}" thành công!`, { id: "load-bytes" });
-      } else {
-        toast.error("Không thể giải nén file EPUB này", { id: "load-bytes" });
+        const ok = await loadBookFromBytes(bytes);
+        if (ok) {
+          toast.success(`Đã nạp sách "${file.name}" thành công!`, { id: "load-bytes" });
+        } else {
+          toast.error("Không thể giải nén file EPUB này", { id: "load-bytes" });
+        }
+      } catch (err) {
+        console.error("Drop file error:", err);
+        toast.error("Lỗi khi đọc file kéo thả");
       }
     }
   }
 
   return (
     <div className="max-w-xl w-full flex flex-col items-center text-center">
+      {/* Hidden file input for web fallback / file selector */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".epub,application/epub+zip"
+        className="hidden"
+        onChange={handleFileInputChange}
+      />
+
       {/* Drag & Drop Hero Box */}
       <div
         onClick={handleOpenFileDialog}
         onDragOver={(e) => {
           e.preventDefault();
-          setIsDragOver(true);
+          setIsHtmlDragOver(true);
         }}
-        onDragLeave={() => setIsDragOver(false)}
+        onDragLeave={() => setIsHtmlDragOver(false)}
         onDrop={handleDrop}
         className={`w-full p-10 rounded-2xl border-2 border-dashed transition-all cursor-pointer group flex flex-col items-center select-none ${
           isDragOver

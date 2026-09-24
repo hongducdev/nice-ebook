@@ -35,14 +35,16 @@ impl EpubParser {
         let path = file_path.as_ref();
         let file = File::open(path).map_err(|e| format!("Cannot open file: {}", e))?;
         let file_size = file.metadata().map(|m| m.len()).unwrap_or(0);
-        let mut archive = ZipArchive::new(file).map_err(|e| format!("Not a valid EPUB ZIP: {}", e))?;
+        let mut archive =
+            ZipArchive::new(file).map_err(|e| format!("Not a valid EPUB ZIP: {}", e))?;
 
         Self::parse_archive(&mut archive, file_size)
     }
 
     pub fn parse_bytes(bytes: &[u8]) -> Result<EpubMetadata, String> {
         let cursor = Cursor::new(bytes);
-        let mut archive = ZipArchive::new(cursor).map_err(|e| format!("Not a valid EPUB ZIP: {}", e))?;
+        let mut archive =
+            ZipArchive::new(cursor).map_err(|e| format!("Not a valid EPUB ZIP: {}", e))?;
         Self::parse_archive(&mut archive, bytes.len() as u64)
     }
 
@@ -50,7 +52,8 @@ impl EpubParser {
         file_path: P,
         chapter_href: &str,
     ) -> Result<String, String> {
-        let file = File::open(file_path.as_ref()).map_err(|e| format!("Cannot open file: {}", e))?;
+        let file =
+            File::open(file_path.as_ref()).map_err(|e| format!("Cannot open file: {}", e))?;
         let mut archive = ZipArchive::new(file).map_err(|e| format!("Invalid EPUB ZIP: {}", e))?;
         let mut ch_file = archive
             .by_name(chapter_href)
@@ -62,12 +65,10 @@ impl EpubParser {
         Ok(content)
     }
 
-    pub fn read_chapter_content_bytes(
-        bytes: &[u8],
-        chapter_href: &str,
-    ) -> Result<String, String> {
+    pub fn read_chapter_content_bytes(bytes: &[u8], chapter_href: &str) -> Result<String, String> {
         let cursor = Cursor::new(bytes);
-        let mut archive = ZipArchive::new(cursor).map_err(|e| format!("Invalid EPUB ZIP: {}", e))?;
+        let mut archive =
+            ZipArchive::new(cursor).map_err(|e| format!("Invalid EPUB ZIP: {}", e))?;
         let mut ch_file = archive
             .by_name(chapter_href)
             .map_err(|e| format!("Cannot find chapter file '{}': {}", chapter_href, e))?;
@@ -140,9 +141,9 @@ impl EpubParser {
                         let plain = Self::strip_html_tags(&ch_content);
                         let title = Self::extract_title_from_html(&ch_content)
                             .unwrap_or_else(|| format!("Chương {}", chapters.len() + 1));
-                        
+
                         let preview: String = plain.chars().take(200).collect();
-                        
+
                         // Collect text for Jev classification (first 5 chapters or 50,000 chars)
                         if sample_text_collector.len() < 50_000 {
                             sample_text_collector.push(plain.clone());
@@ -166,7 +167,9 @@ impl EpubParser {
         Ok(meta)
     }
 
-    fn find_opf_path<R: Read + std::io::Seek>(archive: &mut ZipArchive<R>) -> Result<String, String> {
+    fn find_opf_path<R: Read + std::io::Seek>(
+        archive: &mut ZipArchive<R>,
+    ) -> Result<String, String> {
         let mut container_file = archive
             .by_name("META-INF/container.xml")
             .map_err(|_| "Invalid EPUB: META-INF/container.xml not found".to_string())?;
@@ -287,10 +290,8 @@ impl EpubParser {
                         if !text.is_empty() {
                             language = text;
                         }
-                    } else if current_tag.ends_with(b"description") {
-                        if !text.is_empty() {
-                            description = Some(text);
-                        }
+                    } else if current_tag.ends_with(b"description") && !text.is_empty() {
+                        description = Some(text);
                     }
                 }
                 Ok(Event::End(_)) => {
@@ -360,7 +361,7 @@ impl EpubParser {
 
     fn base64_encode(bytes: &[u8]) -> String {
         const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        let mut result = String::with_capacity((bytes.len() + 2) / 3 * 4);
+        let mut result = String::with_capacity(bytes.len().div_ceil(3) * 4);
         for chunk in bytes.chunks(3) {
             let b0 = chunk[0];
             let b1 = if chunk.len() > 1 { chunk[1] } else { 0 };
@@ -382,5 +383,90 @@ impl EpubParser {
             }
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
+    use zip::{CompressionMethod, ZipWriter};
+
+    #[test]
+    fn test_parse_bytes_valid_epub() {
+        let mut buffer = Cursor::new(Vec::new());
+        {
+            let mut writer = ZipWriter::new(&mut buffer);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            writer.start_file("mimetype", opts).unwrap();
+            writer.write_all(b"application/epub+zip").unwrap();
+
+            let def_opts =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            writer
+                .start_file("META-INF/container.xml", def_opts)
+                .unwrap();
+            writer
+                .write_all(
+                    br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#,
+                )
+                .unwrap();
+
+            writer.start_file("OEBPS/content.opf", def_opts).unwrap();
+            writer
+                .write_all(
+                    br#"<?xml version="1.0"?>
+<package version="3.0" unique-identifier="pub-id" xmlns="http://www.idpf.org/2007/opf">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Test Book</dc:title>
+    <dc:creator>Test Author</dc:creator>
+    <dc:language>vi</dc:language>
+  </metadata>
+  <manifest>
+    <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="ch1"/>
+  </spine>
+</package>"#,
+                )
+                .unwrap();
+
+            writer.start_file("OEBPS/ch1.xhtml", def_opts).unwrap();
+            writer
+                .write_all(
+                    r#"<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.idpf.org/2007/ops">
+<head><title>Chương 1</title></head>
+<body><h1>Chương 1</h1><p>Nội dung thử nghiệm</p></body>
+</html>"#
+                        .as_bytes(),
+                )
+                .unwrap();
+
+            writer.finish().unwrap();
+        }
+
+        let bytes = buffer.into_inner();
+        let meta = EpubParser::parse_bytes(&bytes).expect("Failed to parse bytes");
+        assert_eq!(meta.title, "Test Book");
+        assert_eq!(meta.author, "Test Author");
+        assert_eq!(meta.language, "vi");
+        assert_eq!(meta.chapter_count, 1);
+        assert_eq!(meta.chapters[0].title, "Chương 1");
+    }
+
+    #[test]
+    fn test_parse_bytes_invalid_zip() {
+        let bad_bytes = vec![0, 1, 2, 3, 4];
+        let res = EpubParser::parse_bytes(&bad_bytes);
+        assert!(res.is_err());
     }
 }
