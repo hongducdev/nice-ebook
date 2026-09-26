@@ -411,5 +411,133 @@ describe("useAppStore - Book Loading & Drag-and-Drop", () => {
       expect(state.currentBook).toBeNull();
     });
   });
+
+  describe("Gateway Adaptation & Error-Checked Fallback Mechanism", () => {
+    it("dynamically adapts fallback models when selecting a gateway", () => {
+      const mockOllamaGateway = {
+        name: "Ollama Local",
+        base_url: "http://127.0.0.1:11434",
+        port: 11434,
+        is_online: true,
+        models: ["llama3.2:latest", "qwen2.5:latest", "mistral:latest", "gemma2:latest"],
+        gateway_type: "ollama",
+        latency_ms: 20,
+      };
+
+      useAppStore.getState().selectGateway(mockOllamaGateway);
+
+      const state = useAppStore.getState();
+      expect(state.selectedModel).toBe("llama3.2:latest");
+      // Fallback chain must adapt to this gateway's other models and include offline Jev Verdict
+      expect(state.fallbackModels).toContain("qwen2.5:latest");
+      expect(state.fallbackModels).toContain("mistral:latest");
+      expect(state.fallbackModels).toContain("jev-verdict-2.0");
+      // Must not contain primary model
+      expect(state.fallbackModels).not.toContain("llama3.2:latest");
+    });
+
+    it("resets to offline jev-verdict when gateway is deselected (null)", () => {
+      useAppStore.getState().selectGateway(null);
+
+      const state = useAppStore.getState();
+      expect(state.activeGateway).toBeNull();
+      expect(state.selectedModel).toBe("jev-verdict-2.0");
+      expect(state.fallbackModels).toEqual(["jev-verdict-2.0"]);
+    });
+
+    it("filters out errored models during validateAndFilterFallbackModels", async () => {
+      useAppStore.setState({
+        fallbackModels: ["opencode/working-model", "opencode/broken-model", "jev-verdict-2.0"],
+      });
+
+      (invoke as any).mockImplementation((cmd: string, args: any) => {
+        if (cmd === "test_opencode_model") {
+          if (args.model === "opencode/broken-model") {
+            return Promise.reject(new Error("Connection refused (503)"));
+          }
+          return Promise.resolve(80);
+        }
+        return Promise.resolve({});
+      });
+
+      const verified = await useAppStore.getState().validateAndFilterFallbackModels();
+
+      expect(verified).toContain("opencode/working-model");
+      expect(verified).toContain("jev-verdict-2.0");
+      // Broken model must be removed from fallbackModels
+      expect(verified).not.toContain("opencode/broken-model");
+      expect(useAppStore.getState().fallbackModels).toEqual(verified);
+    });
+  });
+
+  describe("Project Completed Parts Checking & Resumption", () => {
+    it("checks and skips already-completed chapters in batchEnhanceChapters", async () => {
+      const mockMeta = {
+        title: "Sách Dự Án",
+        author: "Tác Giả",
+        language: "vi",
+        description: null,
+        cover_data_url: null,
+        chapter_count: 3,
+        file_size_bytes: 1000,
+        chapters: [
+          { id: "c1", href: "c1.xhtml", title: "Chương 1", preview_text: "" },
+          { id: "c2", href: "c2.xhtml", title: "Chương 2", preview_text: "" },
+          { id: "c3", href: "c3.xhtml", title: "Chương 3", preview_text: "" },
+        ],
+        sample_text: "",
+      };
+
+      // Set state where c1 and c2 are ALREADY enhanced in the project
+      useAppStore.setState({
+        currentBook: mockMeta,
+        currentFilePath: "C:\\test.epub",
+        activeProjectId: "prj_existing",
+        modifiedChapters: {
+          "c1.xhtml": "<h1>Chương 1 Đã Làm</h1>",
+          "c2.xhtml": "<h1>Chương 2 Đã Làm</h1>",
+        },
+        terminalLogs: [],
+      });
+
+      (invoke as any).mockImplementation((cmd: string) => {
+        if (cmd === "read_chapter") {
+          return Promise.resolve("<p>Nội dung gốc chương 3.</p>");
+        }
+        if (cmd === "run_jev_verdict_chapter") {
+          return Promise.resolve({
+            h1_title: "Chương 3 Hoàn Thành",
+            top_junk_indices: [],
+            headings: [],
+            spelling_corrections: [],
+            confidence: 0.95,
+            concentration: 0.9,
+            latency_ms: 10,
+            engine: "jev",
+            needs_cloud_escalation: false,
+            ambiguous_paragraphs: [],
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      const completed = await useAppStore.getState().batchEnhanceChapters(
+        [0, 1, 2],
+        {},
+        { skipAlreadyEnhanced: true }
+      );
+
+      expect(completed).toBe(true);
+
+      const logs = useAppStore.getState().terminalLogs.map((l) => l.text);
+      // Verify that it detected already completed chapters and skipped them
+      expect(logs.some((l) => l.includes("Đã phát hiện 2/3 chương đã hoàn thành"))).toBe(true);
+      // c1 and c2 content should be unchanged
+      expect(useAppStore.getState().modifiedChapters["c1.xhtml"]).toBe("<h1>Chương 1 Đã Làm</h1>");
+      expect(useAppStore.getState().modifiedChapters["c2.xhtml"]).toBe("<h1>Chương 2 Đã Làm</h1>");
+      // c3 should be enhanced
+      expect(useAppStore.getState().modifiedChapters["c3.xhtml"]).toContain("Chương 3 Hoàn Thành");
+    });
+  });
 });
 

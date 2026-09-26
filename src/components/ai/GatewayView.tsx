@@ -6,7 +6,8 @@ import {
   Check, 
   Play, 
   Activity, 
-  Search 
+  Search,
+  ShieldCheck 
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { GatewaySettingsModal } from "../settings/GatewaySettingsModal";
@@ -84,7 +85,6 @@ export function GatewayView() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [testingModels, setTestingModels] = useState<Record<string, boolean>>({});
-  const [testResults, setTestResults] = useState<Record<string, { success: boolean; latencyMs: number; message: string }>>({});
   
   const [isTestingJev, setIsTestingJev] = useState(false);
   const [jevTestResult, setJevTestResult] = useState<{ success: boolean; latencyMs: number } | null>(null);
@@ -97,93 +97,65 @@ export function GatewayView() {
     selectGateway,
     selectedModel,
     setSelectedModel,
+    fallbackModels,
+    setFallbackModels,
+    testModel,
+    modelTestResults,
     jevDecision,
   } = useAppStore();
 
   // Test a single model connection via the active gateway or OpenCode CLI
   async function handleTestModel(modelName: string) {
-    // If testing an OpenCode model or running through OpenCode CLI
-    if (modelName.startsWith("opencode/") || activeGateway?.gateway_type === "opencode") {
-      setTestingModels((prev) => ({ ...prev, [modelName]: true }));
-      toast.loading(`Đang kiểm tra mô hình ${modelName} qua OpenCode...`, { id: `test-${modelName}` });
-      try {
-        const latencyMs = await invoke<number>("test_opencode_model", { model: modelName });
-        setTestResults((prev) => ({
-          ...prev,
-          [modelName]: { success: true, latencyMs, message: `Hoạt động tốt (${latencyMs}ms - Free)` },
-        }));
-        toast.success(`Mô hình ${modelName} phản hồi tốt (${latencyMs}ms)!`, { id: `test-${modelName}` });
-      } catch (err: any) {
-        setTestResults((prev) => ({
-          ...prev,
-          [modelName]: { success: false, latencyMs: 0, message: String(err) },
-        }));
-        toast.error(`Mô hình ${modelName} không phản hồi: ${err}`, { id: `test-${modelName}` });
-      } finally {
-        setTestingModels((prev) => ({ ...prev, [modelName]: false }));
-      }
-      return;
-    }
-
-    if (!activeGateway || !activeGateway.is_online) {
-      toast.error("Vui lòng chọn một AI Gateway trực tuyến trước khi test mô hình");
-      return;
-    }
-
     setTestingModels((prev) => ({ ...prev, [modelName]: true }));
     toast.loading(`Đang kiểm tra mô hình ${modelName}...`, { id: `test-${modelName}` });
 
-    const start = performance.now();
-    let url = activeGateway.base_url.trim();
-    if (url.endsWith("/")) url = url.slice(0, -1);
-    if (!url.endsWith("/chat/completions")) {
-      url = `${url}/chat/completions`;
-    }
-
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
-
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: modelName,
-          messages: [{ role: "user", content: "hi" }],
-          max_tokens: 3,
-          stream: false,
-        }),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-      const latencyMs = Math.round(performance.now() - start);
-
-      if (res.ok) {
-        setTestResults((prev) => ({
-          ...prev,
-          [modelName]: { success: true, latencyMs, message: `Hoạt động tốt (${latencyMs}ms)` },
-        }));
-        toast.success(`Mô hình ${modelName} phản hồi tốt (${latencyMs}ms)!`, { id: `test-${modelName}` });
+      const result = await testModel(modelName);
+      if (result.success) {
+        toast.success(`Mô hình ${modelName} phản hồi tốt (${result.latencyMs}ms)!`, { id: `test-${modelName}` });
       } else {
-        const errorText = await res.text();
-        setTestResults((prev) => ({
-          ...prev,
-          [modelName]: { success: false, latencyMs, message: `HTTP ${res.status}: ${errorText.slice(0, 60)}` },
-        }));
-        toast.error(`Mô hình ${modelName} lỗi HTTP ${res.status}`, { id: `test-${modelName}` });
+        toast.error(`Mô hình ${modelName} lỗi: ${result.message}`, { id: `test-${modelName}` });
+        if (fallbackModels.includes(modelName)) {
+          toast.warning(`Đã loại ${modelName} khỏi chuỗi fallback vì phát hiện lỗi!`);
+        }
       }
-    } catch (err: any) {
-      const latencyMs = Math.round(performance.now() - start);
-      const msg = err.name === "AbortError" ? "Hết thời gian chờ (Timeout > 6s)" : String(err.message || err);
-      setTestResults((prev) => ({
-        ...prev,
-        [modelName]: { success: false, latencyMs, message: msg },
-      }));
-      toast.error(`Mô hình ${modelName} không phản hồi: ${msg}`, { id: `test-${modelName}` });
     } finally {
       setTestingModels((prev) => ({ ...prev, [modelName]: false }));
     }
+  }
+
+  // Toggle or add a model to fallback models with pre-validation
+  async function handleSetAsFallback(model: string, e: React.MouseEvent) {
+    e.stopPropagation();
+
+    if (fallbackModels.includes(model)) {
+      const updated = fallbackModels.filter((m) => m !== model);
+      if (!updated.includes("jev-verdict-2.0")) updated.push("jev-verdict-2.0");
+      setFallbackModels(updated);
+      toast.info(`Đã gỡ "${model}" khỏi chuỗi fallback`);
+      return;
+    }
+
+    // Kiểm tra có lỗi không trước khi chọn làm model fallback
+    let testResult = modelTestResults[model];
+    if (!testResult) {
+      toast.loading(`Đang kiểm tra lỗi của "${model}" trước khi chọn làm fallback...`, { id: `check-${model}` });
+      setTestingModels((prev) => ({ ...prev, [model]: true }));
+      try {
+        testResult = await testModel(model);
+      } finally {
+        setTestingModels((prev) => ({ ...prev, [model]: false }));
+      }
+    }
+
+    if (!testResult.success) {
+      toast.error(`Mô hình "${model}" gặp lỗi (${testResult.message}), không thể chọn làm model fallback!`, { id: `check-${model}` });
+      return;
+    }
+
+    const updated = [...fallbackModels.filter((m) => m !== "jev-verdict-2.0"), model, "jev-verdict-2.0"];
+    setFallbackModels(updated);
+    toast.success(`Đã kiểm tra OK (${testResult.latencyMs}ms) & đặt "${model}" làm fallback!`, { id: `check-${model}` });
   }
 
   // Test Jev Core Heuristic
@@ -256,7 +228,7 @@ export function GatewayView() {
     }
 
     return Object.entries(buckets)
-      .filter(([_, list]) => list.length > 0)
+      .filter(([, list]) => list.length > 0)
       .map(([id, list]) => ({
         id,
         name: DEFAULT_PROVIDER_CATALOG[id]?.name || id,
@@ -522,7 +494,8 @@ export function GatewayView() {
               {category.models.map((model) => {
                 const isSelected = selectedModel === model;
                 const isTesting = Boolean(testingModels[model]);
-                const testResult = testResults[model];
+                const testResult = modelTestResults[model];
+                const isFallback = fallbackModels.includes(model);
 
                 return (
                   <div
@@ -551,24 +524,43 @@ export function GatewayView() {
                       </span>
                     )}
 
-                    {/* Test Action Button inside Chip */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleTestModel(model);
-                      }}
-                      disabled={isTesting}
-                      className="model-page__item-chip-test-btn"
-                      title="Kiểm tra kết nối và độ trễ của mô hình này"
-                      aria-label={`Test ${model}`}
-                    >
-                      {isTesting ? (
-                        <Activity size={11} className="animate-spin text-[var(--primary)]" />
-                      ) : (
-                        <Play size={10} className="opacity-70 group-hover:opacity-100" />
-                      )}
-                    </button>
+                    {/* Fallback badge */}
+                    {isFallback && (
+                      <span className="app-badge app-badge--brand text-[8px] h-[16px] px-1 font-mono">
+                        Fallback
+                      </span>
+                    )}
+
+                    {/* Action buttons inside Chip */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => handleSetAsFallback(model, e)}
+                        className="model-page__item-chip-test-btn"
+                        title={isFallback ? "Bỏ khỏi chuỗi fallback" : "Kiểm tra lỗi & đặt làm fallback"}
+                        aria-label={`Toggle fallback ${model}`}
+                      >
+                        <ShieldCheck size={11} className={isFallback ? "text-emerald-400" : "opacity-40 group-hover:opacity-100"} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleTestModel(model);
+                        }}
+                        disabled={isTesting}
+                        className="model-page__item-chip-test-btn"
+                        title="Kiểm tra kết nối và độ trễ của mô hình này"
+                        aria-label={`Test ${model}`}
+                      >
+                        {isTesting ? (
+                          <Activity size={11} className="animate-spin text-[var(--primary)]" />
+                        ) : (
+                          <Play size={10} className="opacity-70 group-hover:opacity-100" />
+                        )}
+                      </button>
+                    </div>
                   </div>
                 );
               })}

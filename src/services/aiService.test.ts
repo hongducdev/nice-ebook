@@ -367,4 +367,52 @@ describe("AiService - OpenCode Free Model Routing", () => {
 
     expect(fallbackEvents).toHaveLength(0);
   });
+
+  describe("AiService.testModel", () => {
+    it("tests jev-verdict-2.0 offline model instantly with success", async () => {
+      const res = await AiService.testModel({
+        baseUrl: "http://127.0.0.1:20128/v1",
+        model: "jev-verdict-2.0",
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.latencyMs).toBeLessThanOrEqual(5);
+      expect(res.message).toContain("Jev Verdict 2.0");
+    });
+
+    it("tests opencode model via test_opencode_model invoke", async () => {
+      (invoke as any).mockImplementation((cmd: string) => {
+        if (cmd === "test_opencode_model") {
+          return Promise.resolve(120);
+        }
+        return Promise.resolve({});
+      });
+
+      const res = await AiService.testModel({
+        baseUrl: "opencode://cli",
+        model: "opencode/mimo-v2.6-flash-free",
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.latencyMs).toBe(120);
+      expect(res.message).toContain("OpenCode Free");
+    });
+
+    it("handles opencode model test failure gracefully", async () => {
+      (invoke as any).mockImplementation((cmd: string) => {
+        if (cmd === "test_opencode_model") {
+          return Promise.reject(new Error("Model not pulled"));
+        }
+        return Promise.resolve({});
+      });
+
+      const res = await AiService.testModel({
+        baseUrl: "opencode://cli",
+        model: "opencode/nonexistent",
+      });
+
+      expect(res.success).toBe(false);
+      expect(res.message).toContain("Model not pulled");
+    });
+  });
 });

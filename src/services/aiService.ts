@@ -80,7 +80,123 @@ export interface ChapterEnhanceExecutionResult {
   updatedHtml: string;
 }
 
+export interface TestModelOptions {
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+  gatewayType?: string;
+  timeoutMs?: number;
+}
+
+export interface ModelTestResult {
+  success: boolean;
+  latencyMs: number;
+  message: string;
+}
+
+export interface VisionOcrRequestOptions {
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+  imageBase64Url: string;
+  prompt?: string;
+  timeoutMs?: number;
+}
+
 export class AiService {
+  public static async testModel(options: TestModelOptions): Promise<ModelTestResult> {
+    const { baseUrl, apiKey, model, gatewayType, timeoutMs = 6000 } = options;
+
+    if (!model || model.trim().length === 0) {
+      return { success: false, latencyMs: 0, message: "Tên mô hình không được rỗng" };
+    }
+
+    if (model === "jev-verdict-2.0" || model.startsWith("jev-verdict")) {
+      return {
+        success: true,
+        latencyMs: 1,
+        message: "Jev Verdict 2.0 (Offline Rust Core - Sẵn sàng)",
+      };
+    }
+
+    if (model.startsWith("opencode/") || gatewayType === "opencode" || baseUrl.startsWith("opencode:")) {
+      const start = performance.now();
+      try {
+        const latencyMs = await invoke<number>("test_opencode_model", { model });
+        return {
+          success: true,
+          latencyMs,
+          message: `Hoạt động tốt (${latencyMs}ms - OpenCode Free)`,
+        };
+      } catch (err: unknown) {
+        return {
+          success: false,
+          latencyMs: Math.round(performance.now() - start),
+          message: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+
+    let url = baseUrl.trim();
+    if (url.endsWith("/")) url = url.slice(0, -1);
+    if (!url.endsWith("/chat/completions")) {
+      url = `${url}/chat/completions`;
+    }
+
+    const start = performance.now();
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (apiKey && apiKey.trim().length > 0) {
+        headers["Authorization"] = `Bearer ${apiKey.trim()}`;
+      }
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: "hi" }],
+          max_tokens: 3,
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      const latencyMs = Math.round(performance.now() - start);
+
+      if (res.ok) {
+        return {
+          success: true,
+          latencyMs,
+          message: `Hoạt động tốt (${latencyMs}ms)`,
+        };
+      } else {
+        const errorText = await res.text();
+        return {
+          success: false,
+          latencyMs,
+          message: `HTTP ${res.status}: ${errorText.slice(0, 80)}`,
+        };
+      }
+    } catch (err: unknown) {
+      const latencyMs = Math.round(performance.now() - start);
+      const isTimeout =
+        err instanceof Error &&
+        (err.name === "TimeoutError" || err.name === "AbortError");
+      const msg = isTimeout
+        ? `Hết thời gian chờ (Timeout > ${timeoutMs / 1000}s)`
+        : err instanceof Error
+        ? err.message
+        : String(err);
+      return {
+        success: false,
+        latencyMs,
+        message: msg,
+      };
+    }
+  }
   public static async generateStyling(options: AiRequestOptions): Promise<{
     result: AiStylingResult;
     source: "gateway" | "jev_fallback";
@@ -514,5 +630,89 @@ export class AiService {
     }
 
     throw overallLastError || new Error("Tất cả các mô hình trong chuỗi dự phòng đều thất bại");
+  }
+
+  /**
+   * AI Vision OCR extraction using multi-modal chat completions endpoint
+   */
+  public static async extractTextWithVision(
+    options: VisionOcrRequestOptions
+  ): Promise<string> {
+    const {
+      baseUrl,
+      apiKey,
+      model,
+      imageBase64Url,
+      prompt = "Hãy nhận diện và chuyển toàn bộ văn bản trong ảnh trang sách scan này thành nội dung chính xác. Giữ nguyên cấu trúc dòng, tiêu đề, thơ ca, hội thoại. Sửa các lỗi mờ nhòe do scan. Chỉ trả về văn bản của trang sách, không thêm lời dẫn.",
+      timeoutMs = 60000,
+    } = options;
+
+    let url = baseUrl.trim();
+    if (url.endsWith("/")) url = url.slice(0, -1);
+    if (!url.endsWith("/chat/completions")) {
+      url = `${url}/chat/completions`;
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (apiKey && apiKey.trim().length > 0) {
+      headers["Authorization"] = `Bearer ${apiKey.trim()}`;
+    }
+
+    const payload = {
+      model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Bạn là chuyên gia chuyển đổi sách và tài liệu scan sang văn bản số sạch (clean text/markdown). Hãy nhận diện toàn bộ chữ trong ảnh một cách trung thực nhất. Chỉ trả về nội dung của sách, không bọc trong ```markdown hoặc thêm bất kỳ lời bình nào.",
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            {
+              type: "image_url",
+              image_url: {
+                url: imageBase64Url,
+              },
+            },
+          ],
+        },
+      ],
+      temperature: 0.1,
+    };
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`AI Gateway Vision HTTP ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) {
+      throw new Error("Không nhận được nội dung phản hồi từ AI Vision");
+    }
+
+    // Clean markdown code blocks if model wrapped it in ```
+    let clean = content.trim();
+    if (clean.startsWith("```markdown")) {
+      clean = clean.slice(11);
+    } else if (clean.startsWith("```")) {
+      clean = clean.slice(3);
+    }
+    if (clean.endsWith("```")) {
+      clean = clean.slice(0, -3);
+    }
+
+    return clean.trim();
   }
 }

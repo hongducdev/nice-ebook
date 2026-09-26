@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { STYLE_PRESETS, StylePreset } from "../presets/styles";
 import { AiService } from "../services/aiService";
 import { detectIsVietnameseBook } from "../utils/vietnameseHelper";
+import { cleanChapterHtmlWatermarks } from "../utils/watermarkCleaner";
 
 export interface ChapterItem {
   id: string;
@@ -107,10 +108,19 @@ export interface EnhanceFeaturesConfig {
   fixVietnameseTypos?: boolean;
 }
 
+export interface EnhanceExecutionOptions {
+  skipAlreadyEnhanced?: boolean;
+  forceReprocess?: boolean;
+}
+
 export interface AppState {
   // Navigation
-  activeTab: "books" | "presets" | "editor" | "reader" | "ai" | "settings" | "ai-editor";
-  setActiveTab: (tab: "books" | "presets" | "editor" | "reader" | "ai" | "settings" | "ai-editor") => void;
+  activeTab: "books" | "presets" | "editor" | "reader" | "ai" | "settings" | "ai-editor" | "converter";
+  setActiveTab: (tab: "books" | "presets" | "editor" | "reader" | "ai" | "settings" | "ai-editor" | "converter") => void;
+
+  // Pending file for Ebook Converter
+  pendingConverterFile: { name: string; bytes: Uint8Array; type: "pdf" | "txt" | "md" } | null;
+  setPendingConverterFile: (file: { name: string; bytes: Uint8Array; type: "pdf" | "txt" | "md" } | null) => void;
 
   // Theme & Shell State
   theme: "dark" | "light" | "system";
@@ -146,6 +156,9 @@ export interface AppState {
   setFallbackModels: (models: string[]) => void;
   isFallbackEnabled: boolean;
   setIsFallbackEnabled: (enabled: boolean) => void;
+  modelTestResults: Record<string, { success: boolean; latencyMs: number; message: string }>;
+  testModel: (modelName: string) => Promise<{ success: boolean; latencyMs: number; message: string }>;
+  validateAndFilterFallbackModels: (candidates?: string[]) => Promise<string[]>;
 
   // Active Styling State
   activePresetId: string;
@@ -189,9 +202,10 @@ export interface AppState {
   addTerminalLog: (log: { type: "info" | "warning" | "success" | "detail"; text: string }) => void;
   clearTerminalLogs: () => void;
   resetChapterOverrides: () => void;
-  enhanceSingleChapter: (chapterIndex: number, features?: EnhanceFeaturesConfig) => Promise<boolean>;
-  batchEnhanceChapters: (chapterIndices?: number[], features?: EnhanceFeaturesConfig) => Promise<boolean>;
+  enhanceSingleChapter: (chapterIndex: number, features?: EnhanceFeaturesConfig, options?: EnhanceExecutionOptions) => Promise<boolean>;
+  batchEnhanceChapters: (chapterIndices?: number[], features?: EnhanceFeaturesConfig, options?: EnhanceExecutionOptions) => Promise<boolean>;
   stopBatchEnhance: () => void;
+  cleanWatermarksInBook: (customKeywords?: string[]) => Promise<{ affectedChapters: number; removedCount: number }>;
 
   // Projects Library State & Actions
   projects: EbookProject[];
@@ -261,6 +275,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeTab: "books",
   setActiveTab: (tab) => set({ activeTab: tab }),
 
+  pendingConverterFile: null,
+  setPendingConverterFile: (file) => set({ pendingConverterFile: file }),
+
   theme: initialTheme,
   setTheme: (theme) => {
     if (typeof window !== "undefined") {
@@ -309,6 +326,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setFallbackModels: (models) => set({ fallbackModels: models }),
   isFallbackEnabled: true,
   setIsFallbackEnabled: (enabled) => set({ isFallbackEnabled: enabled }),
+  modelTestResults: {},
 
   activePresetId: "classic-hardcover",
   activePreset: STYLE_PRESETS.find((p) => p.id === "classic-hardcover") || STYLE_PRESETS[0],
@@ -531,14 +549,121 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   selectGateway: (gw) => {
+    if (!gw) {
+      set({
+        activeGateway: null,
+        selectedModel: "jev-verdict-2.0",
+        fallbackModels: ["jev-verdict-2.0"],
+      });
+      return;
+    }
+
+    const primaryModel = gw.models.length > 0 ? gw.models[0] : null;
+
+    // Dynamically derive fallback models from this gateway's models, excluding primaryModel
+    const candidates = gw.models.filter((m) => m !== primaryModel).slice(0, 3);
+
+    // Filter out any models previously tested and known to have failed
+    const testedResults = get().modelTestResults;
+    const cleanFallbacks = candidates.filter((m) => {
+      const test = testedResults[m];
+      return !test || test.success; // keep if untested or tested successfully
+    });
+
+    if (!cleanFallbacks.includes("jev-verdict-2.0")) {
+      cleanFallbacks.push("jev-verdict-2.0");
+    }
+
     set({
       activeGateway: gw,
-      selectedModel: gw && gw.models.length > 0 ? gw.models[0] : null,
+      selectedModel: primaryModel,
+      fallbackModels: cleanFallbacks,
     });
   },
 
   setSelectedModel: (model) => {
-    set({ selectedModel: model });
+    const { activeGateway, fallbackModels, modelTestResults } = get();
+    if (!model) {
+      set({ selectedModel: null });
+      return;
+    }
+
+    // Ensure newly selected primary model is not in fallback list
+    let nextFallbacks = fallbackModels.filter((m) => m !== model);
+
+    // If activeGateway has other models and nextFallbacks has only jev-verdict, suggest alternative gateway models
+    if (activeGateway && activeGateway.models.length > 1) {
+      for (const m of activeGateway.models) {
+        if (m !== model && !nextFallbacks.includes(m) && (!modelTestResults[m] || modelTestResults[m].success)) {
+          nextFallbacks.unshift(m);
+          break;
+        }
+      }
+    }
+    if (!nextFallbacks.includes("jev-verdict-2.0")) {
+      nextFallbacks.push("jev-verdict-2.0");
+    }
+
+    set({ selectedModel: model, fallbackModels: nextFallbacks });
+  },
+
+  testModel: async (modelName: string) => {
+    const { activeGateway } = get();
+    const baseUrl = activeGateway ? activeGateway.base_url : "http://127.0.0.1:20128/v1";
+    const gatewayType = activeGateway ? activeGateway.gateway_type : undefined;
+
+    const result = await AiService.testModel({
+      baseUrl,
+      model: modelName,
+      gatewayType,
+    });
+
+    set((state) => ({
+      modelTestResults: {
+        ...state.modelTestResults,
+        [modelName]: result,
+      },
+    }));
+
+    // If a model failed and is in fallbackModels, automatically remove it
+    if (!result.success) {
+      const currentFallbacks = get().fallbackModels;
+      if (currentFallbacks.includes(modelName)) {
+        const filtered = currentFallbacks.filter((m) => m !== modelName);
+        if (!filtered.includes("jev-verdict-2.0")) {
+          filtered.push("jev-verdict-2.0");
+        }
+        set({ fallbackModels: filtered });
+      }
+    }
+
+    return result;
+  },
+
+  validateAndFilterFallbackModels: async (candidates) => {
+    const targetCandidates = candidates && candidates.length > 0 ? candidates : get().fallbackModels;
+    const verifiedModels: string[] = [];
+
+    for (const m of targetCandidates) {
+      if (m === "jev-verdict-2.0" || m.startsWith("jev-verdict")) {
+        if (!verifiedModels.includes("jev-verdict-2.0")) {
+          verifiedModels.push("jev-verdict-2.0");
+        }
+        continue;
+      }
+
+      const res = await get().testModel(m);
+      if (res.success) {
+        verifiedModels.push(m);
+      }
+    }
+
+    if (!verifiedModels.includes("jev-verdict-2.0")) {
+      verifiedModels.push("jev-verdict-2.0");
+    }
+
+    set({ fallbackModels: verifiedModels });
+    return verifiedModels;
   },
 
   // AI Chapter Enhancement Implementation
@@ -575,41 +700,50 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  enhanceSingleChapter: async (chapterIndex, features) => {
-    const { currentBook, currentFilePath, currentFileBytes, activeGateway, selectedModel, modifiedChapters } = get();
+  enhanceSingleChapter: async (chapterIndex, features, options) => {
+    const { currentBook, currentFilePath, currentFileBytes, activeGateway, selectedModel, modifiedChapters, activeProjectId } = get();
     if (!currentBook || !currentBook.chapters[chapterIndex]) {
       return false;
     }
 
     const chapter = currentBook.chapters[chapterIndex];
-    let chapterHtml = modifiedChapters[chapter.href];
+    const isAlreadyModified = Boolean(modifiedChapters[chapter.href]);
+
+    // Check if already completed and user did not explicitly request re-processing
+    if (isAlreadyModified && !options?.forceReprocess) {
+      get().addTerminalLog({
+        type: "info",
+        text: `⏭️ [Đã làm] Chương [${chapterIndex + 1}] "${chapter.title}" (${chapter.href}) đã được biên tập trước đó trong dự án. Bỏ qua để không phải làm lại.`,
+      });
+      return true;
+    }
+
+    // Always fetch fresh original HTML from source when reprocessing or first time
+    let chapterHtml: string | null = null;
+    try {
+      if (currentFilePath) {
+        chapterHtml = await invoke<string>("read_chapter", {
+          path: currentFilePath,
+          href: chapter.href,
+        });
+      } else if (currentFileBytes) {
+        chapterHtml = await invoke<string>("read_chapter_bytes", {
+          bytes: currentFileBytes,
+          href: chapter.href,
+        });
+      }
+    } catch (err) {
+      console.warn("Could not read original chapter bytes/path, falling back to modified:", err);
+    }
 
     if (!chapterHtml) {
-      try {
-        if (currentFilePath) {
-          chapterHtml = await invoke<string>("read_chapter", {
-            path: currentFilePath,
-            href: chapter.href,
-          });
-        } else if (currentFileBytes) {
-          chapterHtml = await invoke<string>("read_chapter_bytes", {
-            bytes: currentFileBytes,
-            href: chapter.href,
-          });
-        }
-      } catch (err) {
-        get().addTerminalLog({
-          type: "warning",
-          text: `❌ Không thể đọc file chương: ${chapter.href} (${err})`,
-        });
-        return false;
-      }
+      chapterHtml = modifiedChapters[chapter.href] || "";
     }
 
     if (!chapterHtml) {
       get().addTerminalLog({
         type: "warning",
-        text: `❌ Nội dung chương ${chapter.href} rỗng`,
+        text: `❌ Không thể đọc nội dung chương: ${chapter.href}`,
       });
       return false;
     }
@@ -653,6 +787,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
       }));
 
+      // Automatically auto-save active project progress
+      if (activeProjectId) {
+        get().saveActiveProject();
+      }
+
       return true;
     } catch (err) {
       get().addTerminalLog({
@@ -663,8 +802,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  batchEnhanceChapters: async (chapterIndices, features) => {
-    const { currentBook } = get();
+  batchEnhanceChapters: async (chapterIndices, features, options) => {
+    const { currentBook, modifiedChapters } = get();
     if (!currentBook || currentBook.chapters.length === 0) return false;
 
     let cancelRequested = false;
@@ -677,9 +816,39 @@ export const useAppStore = create<AppState>((set, get) => ({
       ? chapterIndices
       : currentBook.chapters.map((_, idx) => idx);
 
+    const skipAlreadyDone = options?.skipAlreadyEnhanced ?? true;
+
+    // Filter or inspect already completed parts in the project
+    const alreadyDoneIndices: number[] = [];
+    const pendingIndices: number[] = [];
+
+    for (const idx of targetIndices) {
+      const ch = currentBook.chapters[idx];
+      if (ch && modifiedChapters[ch.href] && skipAlreadyDone) {
+        alreadyDoneIndices.push(idx);
+      } else {
+        pendingIndices.push(idx);
+      }
+    }
+
+    if (skipAlreadyDone && alreadyDoneIndices.length > 0) {
+      get().addTerminalLog({
+        type: "info",
+        text: `🔍 [Kiểm tra dự án] Đã phát hiện ${alreadyDoneIndices.length}/${targetIndices.length} chương đã hoàn thành trước đó. Sẽ tự động bỏ qua để không phải làm lại.`,
+      });
+    }
+
+    if (pendingIndices.length === 0) {
+      get().addTerminalLog({
+        type: "success",
+        text: `✅ Tất cả ${targetIndices.length} chương trong phạm vi này đều đã được biên tập xong trong dự án! Không cần làm lại.`,
+      });
+      return true;
+    }
+
     set({ isBatchEnhancing: true });
 
-    for (let i = 0; i < targetIndices.length; i++) {
+    for (let i = 0; i < pendingIndices.length; i++) {
       if (cancelRequested) {
         get().addTerminalLog({
           type: "warning",
@@ -688,24 +857,24 @@ export const useAppStore = create<AppState>((set, get) => ({
         break;
       }
 
-      const idx = targetIndices[i];
+      const idx = pendingIndices[i];
       const ch = currentBook.chapters[idx];
       if (!ch) continue;
 
       set({
         enhanceProgress: {
           current: i + 1,
-          total: targetIndices.length,
+          total: pendingIndices.length,
           currentChapterHref: ch.href,
         },
       });
 
       get().addTerminalLog({
         type: "info",
-        text: `⌛ [${i + 1}/${targetIndices.length}] Đang xử lý: ${ch.href}...`,
+        text: `⌛ [${i + 1}/${pendingIndices.length}] Đang xử lý: ${ch.href}...`,
       });
 
-      await get().enhanceSingleChapter(idx, features);
+      await get().enhanceSingleChapter(idx, features, { forceReprocess: !skipAlreadyDone });
     }
 
     set({
@@ -720,6 +889,71 @@ export const useAppStore = create<AppState>((set, get) => ({
       (get() as any)._cancelBatch();
     }
     set({ isBatchEnhancing: false });
+  },
+
+  cleanWatermarksInBook: async (customKeywords?: string[]) => {
+    const { currentBook, currentFilePath, currentFileBytes, modifiedChapters, activeProjectId } = get();
+    if (!currentBook || currentBook.chapters.length === 0) {
+      return { affectedChapters: 0, removedCount: 0 };
+    }
+
+    const updatedModified = { ...modifiedChapters };
+    let affectedChapters = 0;
+    let totalRemoved = 0;
+
+    for (const ch of currentBook.chapters) {
+      let chapterHtml = updatedModified[ch.href];
+      if (!chapterHtml) {
+        try {
+          if (currentFilePath) {
+            chapterHtml = await invoke<string>("read_chapter", {
+              path: currentFilePath,
+              href: ch.href,
+            });
+          } else if (currentFileBytes) {
+            chapterHtml = await invoke<string>("read_chapter_bytes", {
+              bytes: currentFileBytes,
+              href: ch.href,
+            });
+          }
+        } catch (err) {
+          console.warn(`Could not read chapter ${ch.href}:`, err);
+        }
+      }
+
+      if (chapterHtml) {
+        const res = cleanChapterHtmlWatermarks(chapterHtml, { customKeywords });
+        if (res.removedBlocksCount > 0 || res.inlineFixesCount > 0) {
+          updatedModified[ch.href] = res.cleanedHtml;
+          affectedChapters++;
+          totalRemoved += res.removedBlocksCount + res.inlineFixesCount;
+        }
+      }
+    }
+
+    const updatedChapters = currentBook.chapters.map((ch) => {
+      const html = updatedModified[ch.href];
+      if (html) {
+        const plain = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+        return {
+          ...ch,
+          preview_text: plain.slice(0, 200),
+        };
+      }
+      return ch;
+    });
+
+    set({
+      modifiedChapters: updatedModified,
+      currentBook: {
+        ...currentBook,
+        chapters: updatedChapters,
+      },
+    });
+    if (activeProjectId) {
+      get().saveActiveProject();
+    }
+    return { affectedChapters, removedCount: totalRemoved };
   },
 
   // Projects Library Implementation
