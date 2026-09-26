@@ -107,7 +107,8 @@ export function AppTitlebar({ onOpenExport }: AppTitlebarProps) {
           <SidebarToggleIcon size={18} />
         </button>
 
-        <div className="topbar__brand">
+        <div className="topbar__brand flex items-center gap-2">
+          <img src="/app-icon.png" alt="NiceEbook Studio" className="w-5 h-5 rounded object-contain shadow-2xs" />
           <strong className="tracking-tight text-foreground font-semibold">NiceEbook Studio</strong>
           <span className="app-badge app-badge--brand text-[10px] px-1.5 h-[18px]">v0.1.0</span>
         </div>

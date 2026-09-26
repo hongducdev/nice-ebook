@@ -11,6 +11,7 @@ import { EpubReaderViewer } from "./components/preview/EpubReaderViewer";
 import { GatewayView } from "./components/ai/GatewayView";
 import { ChapterEnhancerView } from "./components/ai/ChapterEnhancerView";
 import { ExportModal } from "./components/export/ExportModal";
+import { ConverterView } from "./components/converter/ConverterView";
 import { 
   Settings as SettingsIcon, 
   Upload 
@@ -26,6 +27,7 @@ export default function App() {
     isDraggingFile, 
     setIsDraggingFile,
     setActiveTab,
+    setPendingConverterFile,
     theme,
     setTheme
   } = useAppStore();
@@ -56,18 +58,42 @@ export default function App() {
             const paths = event.payload.paths;
             if (paths && paths.length > 0) {
               const filePath = paths[0];
-              if (!filePath.toLowerCase().endsWith(".epub")) {
-                toast.error("Vui lòng kéo thả file có đuôi .epub");
-                return;
-              }
+              const lower = filePath.toLowerCase();
 
-              toast.loading("Đang đọc file EPUB...", { id: "load-epub" });
-              const ok = await loadBookFromPath(filePath);
-              if (ok) {
-                toast.success("Đã nạp sách thành công!", { id: "load-epub" });
-                setActiveTab("books");
+              if (lower.endsWith(".epub")) {
+                toast.loading("Đang đọc file EPUB...", { id: "load-epub" });
+                const ok = await loadBookFromPath(filePath);
+                if (ok) {
+                  toast.success("Đã nạp sách thành công!", { id: "load-epub" });
+                  setActiveTab("books");
+                } else {
+                  toast.error("Không thể đọc file EPUB này", { id: "load-epub" });
+                }
+              } else if (
+                lower.endsWith(".pdf") ||
+                lower.endsWith(".txt") ||
+                lower.endsWith(".md") ||
+                lower.endsWith(".markdown")
+              ) {
+                toast.loading("Đang nạp file vào trình chuyển đổi Ebook...", { id: "convert-file" });
+                try {
+                  const { readFile } = await import("@tauri-apps/plugin-fs");
+                  const bytes = await readFile(filePath);
+                  const fileName = filePath.split(/[\\/]/).pop() || "document";
+                  const ext = lower.endsWith(".pdf")
+                    ? "pdf"
+                    : lower.endsWith(".md") || lower.endsWith(".markdown")
+                    ? "md"
+                    : "txt";
+                  setPendingConverterFile({ name: fileName, bytes, type: ext });
+                  setActiveTab("converter");
+                  toast.success("Đã mở trình chuyển đổi Ebook!", { id: "convert-file" });
+                } catch (err) {
+                  console.error(err);
+                  toast.error("Không thể đọc file đã thả", { id: "convert-file" });
+                }
               } else {
-                toast.error("Không thể đọc file EPUB này", { id: "load-epub" });
+                toast.error("Vui lòng kéo thả file sách (.epub, .pdf, .txt, .md)");
               }
             }
           }
@@ -101,10 +127,10 @@ export default function App() {
             <Upload size={32} />
           </div>
           <h3 className="text-base font-semibold text-[var(--foreground)] mb-1">
-            Thả file sách điện tử (.epub) vào đây
+            Thả file sách (.epub, .pdf, .txt, .md) vào đây
           </h3>
           <p className="text-xs text-[var(--muted-foreground)] max-w-sm text-center">
-            Hệ thống sẽ tự động giải nén và phân tích phong cách bằng Jev Core.
+            Hệ thống sẽ tự động phân tích định dạng, bóc tách OCR hoặc nạp vào Studio.
           </p>
         </div>
       )}
@@ -120,6 +146,7 @@ export default function App() {
         {/* LinguaGacha Workspace Frame with 8px Corner */}
         <main className="workspace-frame">
           {activeTab === "books" && <BookView />}
+          {activeTab === "converter" && <ConverterView />}
           {activeTab === "reader" && <EpubReaderViewer />}
           {activeTab === "presets" && <PresetGallery />}
           {activeTab === "editor" && <TypographyControls />}

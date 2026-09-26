@@ -220,44 +220,122 @@ impl JevVerdictEngine {
         let start = Instant::now();
         let raw_blocks = Self::parse_blocks(chapter_html);
 
-        // 1. Stage 1: Detect Top Junk Tags
+        // 1. Stage 1: Detect Top Junk Tags & Watermarks
         let mut top_junk_indices = Vec::new();
         let clean_book_title = book_title.trim().to_lowercase();
         let clean_author = author.trim().to_lowercase();
         let clean_chapter_title = chapter_title.trim().to_lowercase();
 
-        // Examine first 5 blocks for top junk
-        let max_top_scan = raw_blocks.len().min(5);
+        let watermark_keywords = [
+            "dtv-ebook",
+            "dtv-ebook.com",
+            "dtvebook",
+            "dtv ebook",
+            "tve-4u",
+            "e-thuvien",
+            "truyenfull",
+            "tangthuvien",
+            "bachngocsach",
+            "metruyenchu",
+            "santruyen",
+            "wikidich",
+            "wattpad",
+            "truyencv",
+            "isach.info",
+            "bản quyền",
+            "ebook miễn phí",
+            "tải ebook miễn phí",
+            "download ebook",
+            "chia sẻ bởi",
+            "đăng tải tại",
+            "convert by",
+            "create by",
+            "thực hiện bởi",
+            "nguồn:",
+            "nguồn :",
+            "chúc các bạn đọc truyện",
+            "chúc bạn đọc truyện",
+        ];
+
+        let is_page_num_text = |text: &str| -> bool {
+            let trimmed = text.trim();
+            let lower = trimmed.to_lowercase();
+            lower.starts_with("trang ")
+                || lower.starts_with("page ")
+                || (lower.starts_with('-')
+                    && lower.ends_with('-')
+                    && lower.chars().any(|c| c.is_ascii_digit()))
+                || (!trimmed.is_empty()
+                    && trimmed
+                        .chars()
+                        .all(|c| c.is_ascii_digit() || c == '-' || c == ' '))
+        };
+
+        let is_watermark_text = |text: &str| -> bool {
+            let lower = text.to_lowercase();
+            if text.chars().count() < 300 {
+                for kw in watermark_keywords {
+                    if lower.contains(kw) {
+                        return true;
+                    }
+                }
+            }
+            false
+        };
+
+        // Examine first 6 blocks for top junk
+        let max_top_scan = raw_blocks.len().min(6);
         for (i, block) in raw_blocks.iter().enumerate().take(max_top_scan) {
             let text = Self::strip_tags(block);
             let lower = text.to_lowercase();
 
             let is_empty = text.is_empty() || text == " ";
-            let is_page_num = text.chars().all(|c| c.is_ascii_digit());
+            let is_page_num = is_page_num_text(&text);
             let is_redundant_title = !clean_book_title.is_empty()
                 && (lower == clean_book_title || lower.starts_with(&clean_book_title));
             let is_redundant_author = !clean_author.is_empty()
                 && (lower == clean_author || lower.starts_with(&clean_author));
             let is_redundant_chapter = lower == clean_chapter_title && i == 0;
-            let is_ocr_junk = lower.contains("bản quyền")
-                || lower.contains("ebook miễn phí")
-                || lower.contains("convert by")
-                || lower.contains("nguồn:")
-                || lower.contains("create by");
+            let is_watermark = is_watermark_text(&text);
 
             if is_empty
                 || is_page_num
                 || is_redundant_title
                 || is_redundant_author
                 || is_redundant_chapter
-                || is_ocr_junk
+                || is_watermark
             {
-                top_junk_indices.push(i);
-            } else {
-                // Stop scanning when a substantive narrative paragraph is reached
-                if text.chars().count() > 80 {
-                    break;
+                if !top_junk_indices.contains(&i) {
+                    top_junk_indices.push(i);
                 }
+            } else if text.chars().count() > 80 {
+                // Stop scanning top when substantive narrative text is reached
+                break;
+            }
+        }
+
+        // Examine bottom 5 blocks for footer watermarks and page numbers
+        let total_blocks = raw_blocks.len();
+        if total_blocks > 5 {
+            let bottom_start = total_blocks.saturating_sub(5);
+            for (offset, block) in raw_blocks[bottom_start..total_blocks].iter().enumerate() {
+                let i = bottom_start + offset;
+                let text = Self::strip_tags(block);
+                let is_empty = text.is_empty() || text == " ";
+                let is_page_num = is_page_num_text(&text);
+                let is_watermark = is_watermark_text(&text);
+
+                if (is_empty || is_page_num || is_watermark) && !top_junk_indices.contains(&i) {
+                    top_junk_indices.push(i);
+                }
+            }
+        }
+
+        // Examine any block in the entire chapter that is an obvious watermark block
+        for (i, block) in raw_blocks.iter().enumerate() {
+            let text = Self::strip_tags(block);
+            if is_watermark_text(&text) && !top_junk_indices.contains(&i) {
+                top_junk_indices.push(i);
             }
         }
 
@@ -446,5 +524,39 @@ mod tests {
         assert!(originals.contains(&"tiêu sử"));
         assert!(originals.contains(&"nổ lực"));
         assert!(originals.contains(&"cuộc sông"));
+    }
+
+    #[test]
+    fn test_dtv_ebook_watermark_removal() {
+        let chapter_html = r#"
+            <html>
+                <body>
+                    <p>Chia sẻ bởi: dtv-ebook.com</p>
+                    <p>DTV EBOOK</p>
+                    <h1>Chương 1: Mở Đầu</h1>
+                    <p>Nội dung câu chuyện bắt đầu ở đây rất liền mạch.</p>
+                    <p>Đoạn thứ hai tiếp diễn.</p>
+                    <p>Nguồn: https://dtv-ebook.com - Chúc bạn đọc truyện vui vẻ</p>
+                    <p>Trang 1</p>
+                </body>
+            </html>
+        "#;
+
+        let plan = JevVerdictEngine::enhance_chapter_fast(
+            "Chương 1: Mở Đầu",
+            chapter_html,
+            "Tên Sách",
+            "Tác Giả",
+        );
+
+        // Blocks 0 (Chia sẻ bởi: dtv-ebook.com), 1 (DTV EBOOK), 5 (Nguồn: dtv-ebook.com), 6 (Trang 1) MUST be in top_junk_indices
+        assert!(plan.top_junk_indices.contains(&0));
+        assert!(plan.top_junk_indices.contains(&1));
+        assert!(plan.top_junk_indices.contains(&5));
+        assert!(plan.top_junk_indices.contains(&6));
+
+        // Substantive narrative content (block 3, 4) must NOT be junk
+        assert!(!plan.top_junk_indices.contains(&3));
+        assert!(!plan.top_junk_indices.contains(&4));
     }
 }

@@ -15,6 +15,7 @@ import {
   Upload
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
+import { detectBookWatermarks } from "../../utils/watermarkCleaner";
 import { open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 
@@ -56,7 +57,38 @@ export function BookView() {
     deleteProject,
     closeActiveProject,
     modifiedChapters,
+    cleanWatermarksInBook,
   } = useAppStore();
+
+  const [isCleaningWatermarks, setIsCleaningWatermarks] = useState(false);
+
+  const watermarkReport = useMemo(() => {
+    if (!currentBook || currentBook.chapters.length === 0) return null;
+    return detectBookWatermarks(currentBook.chapters);
+  }, [currentBook]);
+
+  async function handleAutoCleanAllWatermarks() {
+    if (!currentBook) return;
+    setIsCleaningWatermarks(true);
+    toast.loading("Đang tự động quét và làm sạch watermark trên toàn bộ sách...", { id: "clean-wm" });
+
+    try {
+      const res = await cleanWatermarksInBook();
+      if (res.affectedChapters > 0 || res.removedCount > 0) {
+        toast.success(
+          `Đã xóa sạch ${res.removedCount} đoạn watermark (dtv-ebook) và sửa dấu tiếng Việt trong ${res.affectedChapters} chương!`,
+          { id: "clean-wm" }
+        );
+      } else {
+        toast.info("Không phát hiện thêm watermark nào trong sách.", { id: "clean-wm" });
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Lỗi khi làm sạch watermark", { id: "clean-wm" });
+    } finally {
+      setIsCleaningWatermarks(false);
+    }
+  }
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -407,6 +439,42 @@ export function BookView() {
           </span>
         </div>
       </section>
+
+      {/* Auto-detected Watermark Alert Banner */}
+      {currentBook && watermarkReport?.hasWatermarks && (
+        <div className="mb-4 p-4 rounded-xl border border-amber-500/40 bg-amber-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-500 shadow-sm animate-in fade-in duration-200">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0 text-amber-500">
+              <Trash2 size={18} />
+            </div>
+            <div className="text-xs">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-semibold text-sm text-[var(--foreground)]">
+                  Tự Động Phát Hiện Watermark &amp; Header Rác!
+                </span>
+                <span className="app-badge bg-amber-500/20 text-amber-500 border-amber-500/30 text-[10px]">
+                  {watermarkReport.affectedChaptersCount} / {currentBook.chapter_count} chương bị dính
+                </span>
+              </div>
+              <p className="text-[var(--foreground)] opacity-90 mt-1">
+                Phát hiện watermark nguồn <strong className="text-amber-500">{watermarkReport.detectedDomains.join(", ") || "dtv-ebook.com"}</strong> kèm lỗi tách dấu tiếng Việt trong các chương.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+            <button
+              type="button"
+              disabled={isCleaningWatermarks}
+              onClick={handleAutoCleanAllWatermarks}
+              className="app-button app-button--primary text-xs shadow-md flex items-center gap-1.5"
+            >
+              <Sparkles size={14} />
+              <span>{isCleaningWatermarks ? "Đang quét & xóa sạch..." : "Tự Động Xóa Sạch Watermark"}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Middle: FileDropZone wrapping Chapter Table */}
       <div 

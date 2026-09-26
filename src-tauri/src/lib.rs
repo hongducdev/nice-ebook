@@ -2,7 +2,7 @@ pub mod epub;
 pub mod jev;
 pub mod scanner;
 
-use epub::{EpubMetadata, EpubParser, EpubWriter};
+use epub::{CreateEpubOptions, EpubMetadata, EpubParser, EpubWriter};
 use jev::{JevClassifier, JevDecision, JevVerdictChapterPlan, JevVerdictEngine};
 use scanner::{DetectedGateway, GatewayScanner};
 
@@ -170,6 +170,13 @@ async fn test_opencode_model(model: String) -> Result<u64, String> {
     Ok(start.elapsed().as_millis() as u64)
 }
 
+#[tauri::command]
+async fn create_new_epub(options: CreateEpubOptions) -> Result<Vec<u8>, String> {
+    tokio::task::spawn_blocking(move || EpubWriter::create_epub(&options))
+        .await
+        .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -186,7 +193,8 @@ pub fn run() {
             scan_ai_gateways,
             run_opencode_prompt,
             test_opencode_model,
-            export_epub
+            export_epub,
+            create_new_epub
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

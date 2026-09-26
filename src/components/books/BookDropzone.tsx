@@ -5,7 +5,14 @@ import { useAppStore } from "../../stores/useAppStore";
 import { toast } from "sonner";
 
 export function BookDropzone() {
-  const { loadBookFromPath, loadBookFromBytes, isLoadingBook, isDraggingFile } = useAppStore();
+  const { 
+    loadBookFromPath, 
+    loadBookFromBytes, 
+    isLoadingBook, 
+    isDraggingFile,
+    setActiveTab,
+    setPendingConverterFile
+  } = useAppStore();
   const [isHtmlDragOver, setIsHtmlDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -17,16 +24,37 @@ export function BookDropzone() {
       try {
         const selected = await open({
           multiple: false,
-          filters: [{ name: "Ebook", extensions: ["epub"] }],
+          filters: [
+            { name: "Sách & Tài liệu", extensions: ["epub", "pdf", "txt", "md"] },
+            { name: "Ebook", extensions: ["epub"] },
+            { name: "PDF Document", extensions: ["pdf"] },
+            { name: "Text File", extensions: ["txt", "md"] },
+          ],
         });
 
         if (selected && typeof selected === "string") {
-          toast.loading("Đang đọc file EPUB...", { id: "load-epub" });
-          const ok = await loadBookFromPath(selected);
-          if (ok) {
-            toast.success("Đã nạp sách thành công!", { id: "load-epub" });
-          } else {
-            toast.error("Không thể đọc file EPUB này", { id: "load-epub" });
+          const lower = selected.toLowerCase();
+          if (lower.endsWith(".epub")) {
+            toast.loading("Đang đọc file EPUB...", { id: "load-epub" });
+            const ok = await loadBookFromPath(selected);
+            if (ok) {
+              toast.success("Đã nạp sách thành công!", { id: "load-epub" });
+            } else {
+              toast.error("Không thể đọc file EPUB này", { id: "load-epub" });
+            }
+          } else if (
+            lower.endsWith(".pdf") ||
+            lower.endsWith(".txt") ||
+            lower.endsWith(".md")
+          ) {
+            toast.loading("Đang nạp vào trình chuyển đổi...", { id: "convert-file" });
+            const { readFile } = await import("@tauri-apps/plugin-fs");
+            const bytes = await readFile(selected);
+            const fileName = selected.split(/[\\/]/).pop() || "document";
+            const ext = lower.endsWith(".pdf") ? "pdf" : lower.endsWith(".md") ? "md" : "txt";
+            setPendingConverterFile({ name: fileName, bytes, type: ext });
+            setActiveTab("converter");
+            toast.success("Đã mở trình chuyển đổi Ebook!", { id: "convert-file" });
           }
           return;
         } else if (selected === null) {
@@ -45,43 +73,8 @@ export function BookDropzone() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.name.toLowerCase().endsWith(".epub")) {
-      toast.error("Vui lòng chọn file có đuôi .epub");
-      e.target.value = "";
-      return;
-    }
-
-    toast.loading(`Đang đọc file: ${file.name}...`, { id: "load-bytes" });
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const bytes = Array.from(new Uint8Array(arrayBuffer));
-
-      const ok = await loadBookFromBytes(bytes);
-      if (ok) {
-        toast.success(`Đã nạp sách "${file.name}" thành công!`, { id: "load-bytes" });
-      } else {
-        toast.error("Không thể giải nén file EPUB này", { id: "load-bytes" });
-      }
-    } catch (err) {
-      console.error("Read file error:", err);
-      toast.error("Lỗi khi đọc file");
-    } finally {
-      e.target.value = "";
-    }
-  }
-
-  async function handleDrop(e: React.DragEvent<HTMLDivElement>) {
-    e.preventDefault();
-    setIsHtmlDragOver(false);
-
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      const file = files[0];
-      if (!file.name.toLowerCase().endsWith(".epub")) {
-        toast.error("Vui lòng kéo thả file có đuôi .epub");
-        return;
-      }
-
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith(".epub")) {
       toast.loading(`Đang đọc file: ${file.name}...`, { id: "load-bytes" });
       try {
         const arrayBuffer = await file.arrayBuffer();
@@ -94,8 +87,86 @@ export function BookDropzone() {
           toast.error("Không thể giải nén file EPUB này", { id: "load-bytes" });
         }
       } catch (err) {
-        console.error("Drop file error:", err);
-        toast.error("Lỗi khi đọc file kéo thả");
+        console.error("Read file error:", err);
+        toast.error("Lỗi khi đọc file");
+      } finally {
+        e.target.value = "";
+      }
+    } else if (
+      lower.endsWith(".pdf") ||
+      lower.endsWith(".txt") ||
+      lower.endsWith(".md")
+    ) {
+      toast.loading(`Đang nạp file: ${file.name}...`, { id: "convert-bytes" });
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const ext = lower.endsWith(".pdf") ? "pdf" : lower.endsWith(".md") ? "md" : "txt";
+        setPendingConverterFile({
+          name: file.name,
+          bytes: new Uint8Array(arrayBuffer),
+          type: ext,
+        });
+        setActiveTab("converter");
+        toast.success("Đã mở trình chuyển đổi Ebook!", { id: "convert-bytes" });
+      } catch (err) {
+        console.error(err);
+        toast.error("Lỗi đọc file");
+      } finally {
+        e.target.value = "";
+      }
+    } else {
+      toast.error("Vui lòng chọn file .epub, .pdf, .txt, hoặc .md");
+      e.target.value = "";
+    }
+  }
+
+  async function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setIsHtmlDragOver(false);
+
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      const file = files[0];
+      const lower = file.name.toLowerCase();
+
+      if (lower.endsWith(".epub")) {
+        toast.loading(`Đang đọc file: ${file.name}...`, { id: "load-bytes" });
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const bytes = Array.from(new Uint8Array(arrayBuffer));
+
+          const ok = await loadBookFromBytes(bytes);
+          if (ok) {
+            toast.success(`Đã nạp sách "${file.name}" thành công!`, { id: "load-bytes" });
+          } else {
+            toast.error("Không thể giải nén file EPUB này", { id: "load-bytes" });
+          }
+        } catch (err) {
+          console.error("Drop file error:", err);
+          toast.error("Lỗi khi đọc file kéo thả");
+        }
+      } else if (
+        lower.endsWith(".pdf") ||
+        lower.endsWith(".txt") ||
+        lower.endsWith(".md")
+      ) {
+        toast.loading(`Đang nạp file: ${file.name}...`, { id: "convert-bytes" });
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const ext = lower.endsWith(".pdf") ? "pdf" : lower.endsWith(".md") ? "md" : "txt";
+          setPendingConverterFile({
+            name: file.name,
+            bytes: new Uint8Array(arrayBuffer),
+            type: ext,
+          });
+          setActiveTab("converter");
+          toast.success("Đã mở trình chuyển đổi Ebook!", { id: "convert-bytes" });
+        } catch (err) {
+          console.error(err);
+          toast.error("Lỗi nạp file kéo thả");
+        }
+      } else {
+        toast.error("Vui lòng kéo thả file có đuôi .epub, .pdf, .txt, hoặc .md");
       }
     }
   }
@@ -106,7 +177,7 @@ export function BookDropzone() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".epub,application/epub+zip"
+        accept=".epub,.pdf,.txt,.md,application/epub+zip,application/pdf"
         className="hidden"
         onChange={handleFileInputChange}
       />
@@ -135,10 +206,10 @@ export function BookDropzone() {
         </div>
 
         <h3 className="text-base font-semibold text-zinc-100 mb-1">
-          {isLoadingBook ? "Đang xử lý sách..." : "Kéo thả file sách (.epub) vào đây"}
+          {isLoadingBook ? "Đang xử lý sách..." : "Kéo thả file sách (.epub, .pdf, .txt, .md) vào đây"}
         </h3>
         <p className="text-xs text-[#71717a] max-w-sm mb-4">
-          Lõi Jev Core sẽ tự động phân tích cấu trúc chương, văn phong và đề xuất bộ CSS phù hợp nhất mà không cần API key.
+          Hỗ trợ mở file EPUB trực tiếp, hoặc chuyển đổi từ PDF (kể cả PDF scan ảnh với OCR) và TXT/Markdown sang EPUB chuẩn mực.
         </p>
         <div className="flex items-center gap-2 text-xs text-indigo-400 font-medium group-hover:underline">
           <span>Hoặc bấm để duyệt file trên máy tính</span>

@@ -66,6 +66,18 @@
 - Injects generated CSS and font definitions into spine documents.
 - Preserves table of contents, cover image, and metadata.
 - Exports standards-compliant EPUB file.
+- Provides `create_new_epub` Rust command for instant ground-up EPUB 3 archive construction from raw chapters.
+
+### D. Ebook Converter & Scanned PDF OCR Pipeline
+- Ingests PDF, TXT, and Markdown files.
+- Automatic Scanned PDF Detection: calculates text character density (< 50 chars/page or > 75% empty pages flags scanned image PDF).
+- Digital PDF Extraction: layout coordinate sorting, de-hyphenation, running header/footer removal.
+- Scanned PDF OCR Engine:
+  - Local Tesseract.js Web Worker (100% offline, zero-cloud, multi-language with Vietnamese & English).
+  - AI Vision OCR via configured AI Gateway multi-modal models (GPT-4o, Gemini, Qwen-VL).
+  - High-DPI canvas rasterization (2.0x DPI scale).
+  - Vietnamese diacritic repair and OCR speckle cleaning.
+- 1-click Studio Integration: converts and directly loads new EPUB into NiceEbook Studio reader & Jev styling.
 
 ## 5. Style Preset Catalog
 1. **Wuxia / Xianxia (Tiên Hiệp - Cổ Phong):** Parchment tones, seal marks, classical header motifs.

@@ -5,9 +5,396 @@ use std::path::Path;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct NewEpubChapter {
+    pub title: String,
+    pub content_html: String,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct CreateEpubOptions {
+    pub title: String,
+    pub author: String,
+    pub language: Option<String>,
+    pub description: Option<String>,
+    pub cover_base64: Option<String>,
+    pub custom_css: Option<String>,
+    pub chapters: Vec<NewEpubChapter>,
+    pub output_path: Option<String>,
+}
+
+fn escape_xml(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
 pub struct EpubWriter;
 
 impl EpubWriter {
+    pub fn create_epub(options: &CreateEpubOptions) -> Result<Vec<u8>, String> {
+        if options.chapters.is_empty() {
+            return Err("Không có chương nào để tạo EPUB".to_string());
+        }
+
+        let title = if options.title.trim().is_empty() {
+            "Không Tiêu Đề".to_string()
+        } else {
+            options.title.trim().to_string()
+        };
+
+        let author = if options.author.trim().is_empty() {
+            "Khuyết Danh".to_string()
+        } else {
+            options.author.trim().to_string()
+        };
+
+        let language = options.language.as_deref().unwrap_or("vi");
+        let timestamp_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let book_id = format!("urn:uuid:nice-ebook-{}", timestamp_ms);
+
+        let mut buffer = Cursor::new(Vec::new());
+        {
+            let mut zip_writer = ZipWriter::new(&mut buffer);
+
+            // 1. MUST write `mimetype` FIRST and UNCOMPRESSED (EPUB Spec requirement)
+            let mimetype_opts =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            zip_writer
+                .start_file("mimetype", mimetype_opts)
+                .map_err(|e| format!("Failed to write mimetype entry: {}", e))?;
+            zip_writer
+                .write_all(b"application/epub+zip")
+                .map_err(|e| format!("Failed to write mimetype content: {}", e))?;
+
+            let def_opts =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+
+            // 2. Write META-INF/container.xml
+            zip_writer
+                .start_file("META-INF/container.xml", def_opts)
+                .map_err(|e| format!("Failed to write container.xml entry: {}", e))?;
+            let container_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#;
+            zip_writer
+                .write_all(container_xml.as_bytes())
+                .map_err(|e| format!("Failed to write container.xml content: {}", e))?;
+
+            // 3. Write CSS stylesheet
+            let default_css = r#"/* NiceEbook Default Clean Stylesheet */
+body {
+  margin: 5% 8%;
+  font-family: serif;
+  line-height: 1.65;
+  text-align: justify;
+}
+h1 {
+  font-size: 1.8em;
+  margin-top: 1.5em;
+  margin-bottom: 1em;
+  text-align: center;
+  font-weight: bold;
+}
+h2 {
+  font-size: 1.4em;
+  margin-top: 1.2em;
+  margin-bottom: 0.8em;
+  text-align: center;
+}
+p {
+  margin: 0.6em 0;
+  text-indent: 1.5em;
+}
+.first-para {
+  text-indent: 0;
+}
+"#;
+            let css_content = options.custom_css.as_deref().unwrap_or(default_css);
+            zip_writer
+                .start_file("OEBPS/nice-ebook-style.css", def_opts)
+                .map_err(|e| format!("Failed to write CSS entry: {}", e))?;
+            zip_writer
+                .write_all(css_content.as_bytes())
+                .map_err(|e| format!("Failed to write CSS content: {}", e))?;
+
+            // 4. Handle cover image if provided
+            let mut has_cover = false;
+            if let Some(ref cover_data) = options.cover_base64 {
+                let base64_str = if let Some(idx) = cover_data.find(',') {
+                    &cover_data[idx + 1..]
+                } else {
+                    cover_data.as_str()
+                };
+                use base64::Engine;
+                if let Ok(cover_bytes) =
+                    base64::engine::general_purpose::STANDARD.decode(base64_str.trim())
+                {
+                    if !cover_bytes.is_empty() {
+                        zip_writer
+                            .start_file("OEBPS/cover.jpg", def_opts)
+                            .map_err(|e| format!("Failed to write cover entry: {}", e))?;
+                        zip_writer
+                            .write_all(&cover_bytes)
+                            .map_err(|e| format!("Failed to write cover bytes: {}", e))?;
+                        has_cover = true;
+                    }
+                }
+            }
+
+            // 5. Write each chapter XHTML
+            for (i, chapter) in options.chapters.iter().enumerate() {
+                let chapter_filename = format!("OEBPS/chapter_{}.xhtml", i + 1);
+                zip_writer
+                    .start_file(&chapter_filename, def_opts)
+                    .map_err(|e| format!("Failed to start chapter entry: {}", e))?;
+
+                let ch_title = if chapter.title.trim().is_empty() {
+                    format!("Chương {}", i + 1)
+                } else {
+                    chapter.title.trim().to_string()
+                };
+
+                let mut body_content = chapter.content_html.trim().to_string();
+                if !body_content.contains("<p>")
+                    && !body_content.contains("<div>")
+                    && !body_content.contains("<h")
+                {
+                    let wrapped = body_content
+                        .split('\n')
+                        .map(|line| line.trim())
+                        .filter(|line| !line.is_empty())
+                        .map(|line| format!("<p>{}</p>", escape_xml(line)))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    body_content = wrapped;
+                }
+
+                let h1_tag = if !body_content.contains("<h1") {
+                    format!("<h1>{}</h1>\n", escape_xml(&ch_title))
+                } else {
+                    String::new()
+                };
+
+                let xhtml = format!(
+                    r#"<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="{}">
+<head>
+  <meta charset="utf-8" />
+  <title>{}</title>
+  <link rel="stylesheet" type="text/css" href="nice-ebook-style.css" />
+</head>
+<body>
+  {}{}
+</body>
+</html>"#,
+                    escape_xml(language),
+                    escape_xml(&ch_title),
+                    h1_tag,
+                    body_content
+                );
+
+                zip_writer
+                    .write_all(xhtml.as_bytes())
+                    .map_err(|e| format!("Failed to write chapter content: {}", e))?;
+            }
+
+            // 6. Write OEBPS/nav.xhtml (EPUB 3 Navigation Document)
+            zip_writer
+                .start_file("OEBPS/nav.xhtml", def_opts)
+                .map_err(|e| format!("Failed to start nav.xhtml: {}", e))?;
+
+            let mut nav_items = String::new();
+            for (i, chapter) in options.chapters.iter().enumerate() {
+                let ch_title = if chapter.title.trim().is_empty() {
+                    format!("Chương {}", i + 1)
+                } else {
+                    chapter.title.trim().to_string()
+                };
+                nav_items.push_str(&format!(
+                    r#"      <li><a href="chapter_{}.xhtml">{}</a></li>"#,
+                    i + 1,
+                    escape_xml(&ch_title)
+                ));
+                nav_items.push('\n');
+            }
+
+            let nav_xhtml = format!(
+                r#"<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="{}">
+<head>
+  <meta charset="utf-8" />
+  <title>Mục Lục</title>
+  <link rel="stylesheet" type="text/css" href="nice-ebook-style.css" />
+</head>
+<body>
+  <nav epub:type="toc" id="toc">
+    <h1>Mục Lục</h1>
+    <ol>
+{}    </ol>
+  </nav>
+</body>
+</html>"#,
+                escape_xml(language),
+                nav_items
+            );
+            zip_writer
+                .write_all(nav_xhtml.as_bytes())
+                .map_err(|e| format!("Failed to write nav.xhtml: {}", e))?;
+
+            // 7. Write OEBPS/toc.ncx (EPUB 2 NCX navigation)
+            zip_writer
+                .start_file("OEBPS/toc.ncx", def_opts)
+                .map_err(|e| format!("Failed to start toc.ncx: {}", e))?;
+
+            let mut ncx_navmap = String::new();
+            for (i, chapter) in options.chapters.iter().enumerate() {
+                let ch_title = if chapter.title.trim().is_empty() {
+                    format!("Chương {}", i + 1)
+                } else {
+                    chapter.title.trim().to_string()
+                };
+                ncx_navmap.push_str(&format!(
+                    r#"    <navPoint id="navPoint-{}" playOrder="{}">
+      <navLabel><text>{}</text></navLabel>
+      <content src="chapter_{}.xhtml"/>
+    </navPoint>
+"#,
+                    i + 1,
+                    i + 1,
+                    escape_xml(&ch_title),
+                    i + 1
+                ));
+            }
+
+            let toc_ncx = format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head>
+    <meta name="dtb:uid" content="{}"/>
+    <meta name="dtb:depth" content="1"/>
+    <meta name="dtb:totalPageCount" content="0"/>
+    <meta name="dtb:maxPageNumber" content="0"/>
+  </head>
+  <docTitle><text>{}</text></docTitle>
+  <docAuthor><text>{}</text></docAuthor>
+  <navMap>
+{}  </navMap>
+</ncx>"#,
+                escape_xml(&book_id),
+                escape_xml(&title),
+                escape_xml(&author),
+                ncx_navmap
+            );
+            zip_writer
+                .write_all(toc_ncx.as_bytes())
+                .map_err(|e| format!("Failed to write toc.ncx: {}", e))?;
+
+            // 8. Write OEBPS/content.opf (Package Document)
+            zip_writer
+                .start_file("OEBPS/content.opf", def_opts)
+                .map_err(|e| format!("Failed to start content.opf: {}", e))?;
+
+            let mut manifest_items = String::new();
+            manifest_items.push_str(
+                r#"    <item id="style" href="nice-ebook-style.css" media-type="text/css"/>"#,
+            );
+            manifest_items.push('\n');
+            manifest_items.push_str(
+                r#"    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>"#,
+            );
+            manifest_items.push('\n');
+            manifest_items.push_str(
+                r#"    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>"#,
+            );
+            manifest_items.push('\n');
+
+            if has_cover {
+                manifest_items.push_str(r#"    <item id="cover-image" href="cover.jpg" media-type="image/jpeg" properties="cover-image"/>"#);
+                manifest_items.push('\n');
+            }
+
+            let mut spine_items = String::new();
+            for (i, _) in options.chapters.iter().enumerate() {
+                manifest_items.push_str(&format!(
+                    r#"    <item id="chapter_{}" href="chapter_{}.xhtml" media-type="application/xhtml+xml"/>"#,
+                    i + 1,
+                    i + 1
+                ));
+                manifest_items.push('\n');
+
+                spine_items.push_str(&format!(r#"    <itemref idref="chapter_{}"/>"#, i + 1));
+                spine_items.push('\n');
+            }
+
+            let desc_tag = if let Some(ref desc) = options.description {
+                format!(
+                    "\n    <dc:description>{}</dc:description>",
+                    escape_xml(desc)
+                )
+            } else {
+                String::new()
+            };
+
+            let cover_meta = if has_cover {
+                "\n    <meta name=\"cover\" content=\"cover-image\"/>"
+            } else {
+                ""
+            };
+
+            let content_opf = format!(
+                r#"<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="pub-id" xml:lang="{}">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="pub-id">{}</dc:identifier>
+    <dc:title>{}</dc:title>
+    <dc:creator>{}</dc:creator>
+    <dc:language>{}</dc:language>
+    <meta property="dcterms:modified">2026-09-25T00:00:00Z</meta>{}{}
+  </metadata>
+  <manifest>
+{}  </manifest>
+  <spine toc="ncx">
+{}  </spine>
+</package>"#,
+                escape_xml(language),
+                escape_xml(&book_id),
+                escape_xml(&title),
+                escape_xml(&author),
+                escape_xml(language),
+                desc_tag,
+                cover_meta,
+                manifest_items,
+                spine_items
+            );
+            zip_writer
+                .write_all(content_opf.as_bytes())
+                .map_err(|e| format!("Failed to write content.opf: {}", e))?;
+
+            zip_writer
+                .finish()
+                .map_err(|e| format!("Failed to finalize new EPUB archive: {}", e))?;
+        }
+
+        let bytes = buffer.into_inner();
+
+        if let Some(ref path) = options.output_path {
+            std::fs::write(path, &bytes)
+                .map_err(|e| format!("Failed to write EPUB to '{}': {}", path, e))?;
+        }
+
+        Ok(bytes)
+    }
     pub fn repackage_file<P: AsRef<Path>, Q: AsRef<Path>>(
         input_path: P,
         output_path: Q,
@@ -573,5 +960,48 @@ mod tests {
         assert!(read_ch2
             .contains(r#"<link rel="stylesheet" type="text/css" href="nice-ebook-style.css" />"#));
         assert_eq!(read_ch2.matches(r#"<link rel="stylesheet""#).count(), 1);
+    }
+
+    #[test]
+    fn test_create_new_epub_roundtrip() {
+        use crate::epub::EpubParser;
+
+        let options = CreateEpubOptions {
+            title: "Tuyệt Kỹ Chuyển Đổi".to_string(),
+            author: "NiceEbook Author".to_string(),
+            language: Some("vi".to_string()),
+            description: Some("Ebook được convert từ PDF/TXT sang EPUB 3 chuẩn".to_string()),
+            cover_base64: None,
+            custom_css: Some("body { font-size: 16px; }".to_string()),
+            chapters: vec![
+                NewEpubChapter {
+                    title: "Chương 1: Khởi Đầu Mới".to_string(),
+                    content_html: "<p>Nội dung chương một đã được trích xuất hoàn hảo.</p><p>Đoạn thứ hai tiếp diễn.</p>".to_string(),
+                },
+                NewEpubChapter {
+                    title: "Chương 2: Thần Kiếm Xuất Thế".to_string(),
+                    content_html: "<p>Gió thổi mây bay trên đỉnh Tuyết Sơn.</p>".to_string(),
+                },
+            ],
+            output_path: None,
+        };
+
+        let epub_bytes = EpubWriter::create_epub(&options).expect("Failed to create EPUB");
+        assert!(!epub_bytes.is_empty());
+
+        // Parse back with EpubParser to verify validity and structure
+        let meta = EpubParser::parse_bytes(&epub_bytes).expect("Failed to parse created EPUB");
+        assert_eq!(meta.title, "Tuyệt Kỹ Chuyển Đổi");
+        assert_eq!(meta.author, "NiceEbook Author");
+        assert_eq!(meta.language, "vi");
+        assert_eq!(meta.chapter_count, 2);
+        assert_eq!(meta.chapters[0].title, "Chương 1: Khởi Đầu Mới");
+        assert_eq!(meta.chapters[1].title, "Chương 2: Thần Kiếm Xuất Thế");
+
+        // Verify chapter content
+        let ch1_content =
+            EpubParser::read_chapter_content_bytes(&epub_bytes, &meta.chapters[0].href).unwrap();
+        assert!(ch1_content.contains("Nội dung chương một đã được trích xuất hoàn hảo."));
+        assert!(ch1_content.contains("nice-ebook-style.css"));
     }
 }

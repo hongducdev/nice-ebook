@@ -8,13 +8,13 @@ import {
   Sun, 
   Moon, 
   Monitor,
-  BookOpen,
-  Wand2
+  Wand2,
+  RefreshCw
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 
 interface NavItem {
-  id: "books" | "reader" | "presets" | "editor" | "ai" | "settings" | "ai-editor";
+  id: "books" | "reader" | "presets" | "editor" | "ai" | "settings" | "ai-editor" | "converter";
   label: string;
   icon: any;
   badge?: string | null;
@@ -45,6 +45,13 @@ export function Sidebar() {
           label: "Quản lý sách", 
           icon: Layers, 
           badge: currentBook ? `${currentBook.chapter_count}` : null 
+        },
+        { 
+          id: "converter" as const, 
+          label: "Chuyển đổi Ebook", 
+          icon: RefreshCw,
+          badge: "PDF / OCR",
+          badgeTone: "success"
         },
         { 
           id: "reader" as const, 
@@ -209,8 +216,8 @@ export function Sidebar() {
 
         {/* LinguaGacha Profile / Brand Card */}
         <div className="sidebar-profile">
-          <div className="w-6 h-6 rounded flex items-center justify-center bg-[var(--primary)] text-[var(--primary-foreground)] flex-shrink-0">
-            <BookOpen size={14} />
+          <div className="w-6 h-6 rounded flex items-center justify-center bg-[color-mix(in_srgb,var(--primary)_15%,var(--card))] border border-[var(--primary)]/30 overflow-hidden flex-shrink-0">
+            <img src="/app-icon.png" alt="NiceEbook Studio" className="w-full h-full object-contain" />
           </div>
           {!isSidebarCollapsed && (
             <div className="flex flex-col min-w-0 flex-1">
