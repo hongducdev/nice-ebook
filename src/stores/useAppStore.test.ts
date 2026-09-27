@@ -539,5 +539,171 @@ describe("useAppStore - Book Loading & Drag-and-Drop", () => {
       expect(useAppStore.getState().modifiedChapters["c3.xhtml"]).toContain("Chương 3 Hoàn Thành");
     });
   });
+
+  describe("updateBookMetadata", () => {
+    it("updates currentBook and active project metadata properly", () => {
+      const initialBook = {
+        title: "Tựa Cũ",
+        author: "Tác Giả Cũ",
+        language: "en",
+        description: null,
+        cover_data_url: null,
+        chapter_count: 3,
+        file_size_bytes: 5000,
+        chapters: [],
+        sample_text: "",
+      };
+
+      useAppStore.setState({
+        currentBook: initialBook,
+        projects: [
+          {
+            id: "proj-1",
+            name: "Tựa Cũ",
+            filePath: "/test.epub",
+            coverDataUrl: null,
+            chapterCount: 3,
+            fileSizeBytes: 5000,
+            activePresetId: "classic-hardcover",
+            customCss: "",
+            fontFamily: "serif",
+            fontSize: 16,
+            textAlign: "justify",
+            dropCaps: true,
+            lineHeight: 1.75,
+            firstLineIndent: "2em",
+            sceneDivider: "♦ ♦ ♦",
+            modifiedChapters: {},
+            chapterEnhanceReports: {},
+            createdAt: 100,
+            lastOpenedAt: 100,
+          },
+        ],
+        activeProjectId: "proj-1",
+      });
+
+      useAppStore.getState().updateBookMetadata({
+        title: "Đắc Nhân Tâm",
+        author: "Dale Carnegie",
+        language: "vi",
+        description: "Học cách đối nhân xử thế",
+        publisher: "NXB Tổng Hợp",
+        published_year: "2020",
+        cover_data_url: "data:image/jpeg;base64,mock",
+      });
+
+      const state = useAppStore.getState();
+      expect(state.currentBook?.title).toBe("Đắc Nhân Tâm");
+      expect(state.currentBook?.author).toBe("Dale Carnegie");
+      expect(state.currentBook?.language).toBe("vi");
+      expect(state.currentBook?.description).toBe("Học cách đối nhân xử thế");
+      expect(state.currentBook?.publisher).toBe("NXB Tổng Hợp");
+      expect(state.currentBook?.cover_data_url).toBe("data:image/jpeg;base64,mock");
+      expect(state.isVietnameseBook).toBe(true);
+
+      const updatedProj = state.projects.find((p) => p.id === "proj-1");
+      expect(updatedProj?.name).toBe("Đắc Nhân Tâm");
+      expect(updatedProj?.author).toBe("Dale Carnegie");
+      expect(updatedProj?.coverDataUrl).toBe("data:image/jpeg;base64,mock");
+    });
+  });
+
+  describe("cleanWatermarksInBook & Auto-Save", () => {
+    it("cleans watermarks from HTML and titles, auto-saves to project and file, and hydrates on reopen", async () => {
+      const rawDirtyMeta = {
+        title: "Dac Nhan Tam",
+        author: "Dale Carnegie",
+        language: "vi",
+        description: null,
+        cover_data_url: null,
+        chapter_count: 1,
+        file_size_bytes: 1000,
+        chapters: [
+          {
+            id: "c1",
+            href: "c1.xhtml",
+            title: "Chương 1 [dtv-ebook.com]",
+            preview_text: "dtv-ebook.com chúc bạn đọc vui vẻ",
+          },
+        ],
+        sample_text: "",
+      };
+
+      const projectId = "proj-wm-test";
+      useAppStore.setState({
+        currentBook: rawDirtyMeta,
+        currentFilePath: "C:\\books\\dirty.epub",
+        activeProjectId: projectId,
+        projects: [
+          {
+            id: projectId,
+            name: "Dac Nhan Tam",
+            filePath: "C:\\books\\dirty.epub",
+            coverDataUrl: null,
+            chapterCount: 1,
+            fileSizeBytes: 1000,
+            activePresetId: "classic-hardcover",
+            customCss: "",
+            fontFamily: "serif",
+            fontSize: 16,
+            textAlign: "justify",
+            dropCaps: true,
+            lineHeight: 1.75,
+            firstLineIndent: "2em",
+            sceneDivider: "♦ ♦ ♦",
+            modifiedChapters: {},
+            chapterEnhanceReports: {},
+            createdAt: 100,
+            lastOpenedAt: 100,
+          },
+        ],
+        modifiedChapters: {},
+      });
+
+      (invoke as any).mockImplementation((cmd: string) => {
+        if (cmd === "read_chapter") {
+          return Promise.resolve(
+            "<div><h1>Chương 1</h1><p>dtv-ebook.com xin trân trọng giới thiệu</p><p>Nội dung tác phẩm chính thức.</p></div>"
+          );
+        }
+        if (cmd === "export_epub") {
+          return Promise.resolve(1500);
+        }
+        if (cmd === "read_epub") {
+          return Promise.resolve(rawDirtyMeta);
+        }
+        return Promise.resolve({});
+      });
+
+      // 1. Run cleanWatermarksInBook
+      const res = await useAppStore.getState().cleanWatermarksInBook();
+      expect(res.affectedChapters).toBe(1);
+      expect(res.removedCount).toBeGreaterThan(0);
+
+      // Verify in-memory state
+      const state = useAppStore.getState();
+      expect(state.currentBook?.chapters[0].title).toBe("Chương 1");
+      expect(state.currentBook?.chapters[0].preview_text).not.toContain("dtv-ebook.com");
+      expect(state.modifiedChapters["c1.xhtml"]).not.toContain("dtv-ebook.com");
+
+      // Verify in-place auto-save was called
+      expect(invoke).toHaveBeenCalledWith(
+        "export_epub",
+        expect.objectContaining({
+          inputPath: "C:\\books\\dirty.epub",
+          outputPath: "C:\\books\\dirty.epub",
+        })
+      );
+
+      // 2. Re-open project simulation to verify watermarks are not resurrected
+      const reopened = await useAppStore.getState().openProject(projectId);
+      expect(reopened).toBe(true);
+
+      const reopenedState = useAppStore.getState();
+      expect(reopenedState.currentBook?.chapters[0].title).toBe("Chương 1");
+      expect(reopenedState.currentBook?.chapters[0].preview_text).not.toContain("dtv-ebook.com");
+    });
+  });
 });
+
 

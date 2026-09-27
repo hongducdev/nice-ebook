@@ -2,7 +2,7 @@ pub mod epub;
 pub mod jev;
 pub mod scanner;
 
-use epub::{CreateEpubOptions, EpubMetadata, EpubParser, EpubWriter};
+use epub::{CreateEpubOptions, EpubMetadata, EpubParser, EpubWriter, MetadataOverrides};
 use jev::{JevClassifier, JevDecision, JevVerdictChapterPlan, JevVerdictEngine};
 use scanner::{DetectedGateway, GatewayScanner};
 
@@ -41,6 +41,7 @@ async fn export_epub(
     output_path: String,
     custom_css: String,
     chapter_overrides: Option<std::collections::HashMap<String, String>>,
+    metadata_overrides: Option<MetadataOverrides>,
 ) -> Result<u64, String> {
     tokio::task::spawn_blocking(move || {
         if let Some(path) = input_path {
@@ -49,6 +50,7 @@ async fn export_epub(
                 &output_path,
                 &custom_css,
                 chapter_overrides.as_ref(),
+                metadata_overrides.as_ref(),
             )?;
         } else if let Some(bytes) = input_bytes {
             EpubWriter::repackage_bytes(
@@ -56,6 +58,7 @@ async fn export_epub(
                 &output_path,
                 &custom_css,
                 chapter_overrides.as_ref(),
+                metadata_overrides.as_ref(),
             )?;
         } else {
             return Err("No input EPUB source provided".to_string());
@@ -68,6 +71,217 @@ async fn export_epub(
     })
     .await
     .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+fn is_private_or_local_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_broadcast()
+                || v4.is_unspecified()
+        }
+        std::net::IpAddr::V6(v6) => {
+            if v6.is_loopback() || v6.is_unspecified() {
+                return true;
+            }
+            // Check IPv4-mapped IPv6 (::ffff:x.x.x.x)
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_private_or_local_ip(std::net::IpAddr::V4(v4));
+            }
+            if let Some(v4) = v6.to_ipv4() {
+                return is_private_or_local_ip(std::net::IpAddr::V4(v4));
+            }
+            let segs = v6.segments();
+            // fc00::/7 (ULA) or fe80::/10 (link-local)
+            (segs[0] & 0xfe00) == 0xfc00 || (segs[0] & 0xffc0) == 0xfe80
+        }
+    }
+}
+
+pub fn validate_safe_image_url(url: &reqwest::Url) -> Result<(), String> {
+    let scheme = url.scheme();
+    if scheme != "http" && scheme != "https" {
+        return Err("Chỉ cho phép tải ảnh từ giao thức http hoặc https".to_string());
+    }
+
+    match url.host() {
+        Some(url::Host::Ipv4(v4)) => {
+            if is_private_or_local_ip(std::net::IpAddr::V4(v4)) {
+                return Err(
+                    "Không được phép truy cập địa chỉ IP nội bộ hoặc loopback (SSRF)".to_string(),
+                );
+            }
+        }
+        Some(url::Host::Ipv6(v6)) => {
+            if is_private_or_local_ip(std::net::IpAddr::V6(v6)) {
+                return Err(
+                    "Không được phép truy cập địa chỉ IPv6 nội bộ hoặc loopback (SSRF)".to_string(),
+                );
+            }
+        }
+        Some(url::Host::Domain(domain)) => {
+            let lower = domain.to_lowercase();
+            if lower == "localhost"
+                || lower.ends_with(".localhost")
+                || lower.ends_with(".local")
+                || lower.ends_with(".internal")
+            {
+                return Err("Không được phép truy cập địa chỉ máy chủ nội bộ (SSRF)".to_string());
+            }
+        }
+        None => return Err("URL không có địa chỉ máy chủ hợp lệ".to_string()),
+    }
+
+    Ok(())
+}
+
+pub async fn validate_safe_image_url_with_dns(
+    url: &reqwest::Url,
+) -> Result<std::net::SocketAddr, String> {
+    validate_safe_image_url(url)?;
+
+    let port = url.port_or_known_default().unwrap_or(80);
+
+    match url.host() {
+        Some(url::Host::Ipv4(v4)) => {
+            let addr = std::net::SocketAddr::new(std::net::IpAddr::V4(v4), port);
+            Ok(addr)
+        }
+        Some(url::Host::Ipv6(v6)) => {
+            let addr = std::net::SocketAddr::new(std::net::IpAddr::V6(v6), port);
+            Ok(addr)
+        }
+        Some(url::Host::Domain(domain)) => {
+            let addrs = tokio::net::lookup_host((domain, port))
+                .await
+                .map_err(|e| format!("Không thể phân giải tên miền máy chủ ảnh: {}", e))?;
+
+            let mut valid_addr = None;
+            for addr in addrs {
+                if is_private_or_local_ip(addr.ip()) {
+                    return Err(
+                        "Địa chỉ máy chủ phân giải thành IP nội bộ hoặc loopback (SSRF)"
+                            .to_string(),
+                    );
+                }
+                if valid_addr.is_none() {
+                    valid_addr = Some(addr);
+                }
+            }
+
+            valid_addr.ok_or_else(|| "Tên miền không phân giải được địa chỉ IP nào".to_string())
+        }
+        None => Err("URL không có địa chỉ máy chủ hợp lệ".to_string()),
+    }
+}
+
+#[tauri::command]
+async fn fetch_image_as_data_url(url: String) -> Result<String, String> {
+    let parsed_url = reqwest::Url::parse(&url).map_err(|e| format!("URL không hợp lệ: {}", e))?;
+
+    let mut current_url = parsed_url;
+    let mut redirect_count = 0;
+
+    let response = loop {
+        let pinned_addr = validate_safe_image_url_with_dns(&current_url).await?;
+
+        let mut client_builder = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .redirect(reqwest::redirect::Policy::none());
+
+        if let Some(url::Host::Domain(domain)) = current_url.host() {
+            client_builder = client_builder.resolve(domain, pinned_addr);
+        }
+
+        let client = client_builder
+            .build()
+            .map_err(|e| format!("Không thể khởi tạo HTTP client: {}", e))?;
+
+        let res = client
+            .get(current_url.clone())
+            .header(reqwest::header::USER_AGENT, "NiceEbookStudio/0.1.0")
+            .send()
+            .await
+            .map_err(|e| format!("Lỗi tải ảnh từ mạng: {}", e))?;
+
+        if res.status().is_redirection() {
+            if redirect_count >= 3 {
+                return Err("Quá giới hạn số lần chuyển hướng (tối đa 3 lần)".to_string());
+            }
+            redirect_count += 1;
+            let location_header = res
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .ok_or_else(|| "Chuyển hướng không có header Location".to_string())?
+                .to_str()
+                .map_err(|_| "Header Location không hợp lệ".to_string())?;
+
+            current_url = current_url
+                .join(location_header)
+                .map_err(|e| format!("URL chuyển hướng không hợp lệ: {}", e))?;
+            continue;
+        }
+
+        break res;
+    };
+
+    if !response.status().is_success() {
+        return Err(format!("Máy chủ ảnh trả về mã lỗi: {}", response.status()));
+    }
+
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/jpeg")
+        .to_string();
+
+    let mime = if content_type.starts_with("image/") {
+        content_type
+            .split(';')
+            .next()
+            .unwrap_or("image/jpeg")
+            .trim()
+            .to_string()
+    } else {
+        return Err(
+            "Tài nguyên không phải là hình ảnh hợp lệ (Content-Type không bắt đầu bằng image/)"
+                .to_string(),
+        );
+    };
+
+    let max_bytes: usize = 8 * 1024 * 1024;
+
+    // Upfront check Content-Length if present
+    if let Some(content_length) = response.content_length() {
+        if content_length > max_bytes as u64 {
+            return Err("Dung lượng ảnh vượt quá giới hạn cho phép (tối đa 8MB)".to_string());
+        }
+    }
+
+    // Stream with bounded accumulator to prevent OOM
+    let mut bytes = Vec::new();
+    let mut stream_res = response;
+    while let Some(chunk) = stream_res
+        .chunk()
+        .await
+        .map_err(|e| format!("Lỗi đọc dữ liệu ảnh: {}", e))?
+    {
+        if bytes.len() + chunk.len() > max_bytes {
+            return Err("Dung lượng ảnh vượt quá giới hạn cho phép (tối đa 8MB)".to_string());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+
+    if bytes.is_empty() {
+        return Err("Dữ liệu ảnh rỗng".to_string());
+    }
+
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{};base64,{}", mime, b64))
 }
 
 #[tauri::command]
@@ -177,6 +391,88 @@ async fn create_new_epub(options: CreateEpubOptions) -> Result<Vec<u8>, String> 
         .map_err(|e| format!("Task execution failed: {}", e))?
 }
 
+pub fn is_allowed_metadata_domain(host: &str) -> bool {
+    let h = host.to_lowercase();
+    h == "goodreads.com"
+        || h.ends_with(".goodreads.com")
+        || h == "fable.co"
+        || h.ends_with(".fable.co")
+        || h == "wattpad.com"
+        || h.ends_with(".wattpad.com")
+        || h == "openlibrary.org"
+        || h.ends_with(".openlibrary.org")
+        || h == "googleapis.com"
+        || h.ends_with(".googleapis.com")
+}
+
+#[tauri::command]
+async fn fetch_external_json(url: String) -> Result<String, String> {
+    let parsed_url = reqwest::Url::parse(&url).map_err(|e| format!("URL không hợp lệ: {}", e))?;
+
+    if parsed_url.scheme() != "https" {
+        return Err("Chỉ cho phép tra cứu qua giao thức bảo mật HTTPS".to_string());
+    }
+
+    let host = parsed_url
+        .host_str()
+        .ok_or_else(|| "URL không có địa chỉ máy chủ".to_string())?;
+
+    if !is_allowed_metadata_domain(host) {
+        return Err(
+            "Địa chỉ máy chủ không thuộc danh sách nhà cung cấp metadata được phép".to_string(),
+        );
+    }
+
+    let pinned_addr = validate_safe_image_url_with_dns(&parsed_url).await?;
+
+    let mut client_builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none());
+
+    if let Some(url::Host::Domain(domain)) = parsed_url.host() {
+        client_builder = client_builder.resolve(domain, pinned_addr);
+    }
+
+    let client = client_builder
+        .build()
+        .map_err(|e| format!("Không thể khởi tạo HTTP client: {}", e))?;
+
+    let mut response = client
+        .get(parsed_url)
+        .header(
+            reqwest::header::USER_AGENT,
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        )
+        .header(
+            reqwest::header::ACCEPT,
+            "application/json, text/plain, */*",
+        )
+        .send()
+        .await
+        .map_err(|e| format!("Lỗi kết nối mạng: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Máy chủ trả về mã lỗi: {}", response.status()));
+    }
+
+    let max_bytes: usize = 2 * 1024 * 1024;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| format!("Lỗi đọc dữ liệu: {}", e))?
+    {
+        if bytes.len() + chunk.len() > max_bytes {
+            return Err("Dữ liệu phản hồi vượt quá giới hạn cho phép (2MB)".to_string());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+
+    let text =
+        String::from_utf8(bytes).map_err(|e| format!("Dữ liệu không phải UTF-8 hợp lệ: {}", e))?;
+    Ok(text)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -194,8 +490,109 @@ pub fn run() {
             run_opencode_prompt,
             test_opencode_model,
             export_epub,
-            create_new_epub
+            create_new_epub,
+            fetch_image_as_data_url,
+            fetch_external_json
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_safe_image_url_rejects_ssrf() {
+        // IPv4 loopback & private
+        let loopback = reqwest::Url::parse("http://127.0.0.1/cover.jpg").unwrap();
+        assert!(validate_safe_image_url(&loopback).is_err());
+
+        let localhost = reqwest::Url::parse("http://localhost:8080/image.png").unwrap();
+        assert!(validate_safe_image_url(&localhost).is_err());
+
+        let internal_domain = reqwest::Url::parse("http://service.internal/cover.jpg").unwrap();
+        assert!(validate_safe_image_url(&internal_domain).is_err());
+
+        let private_v4 = reqwest::Url::parse("http://192.168.1.1/secret.jpg").unwrap();
+        assert!(validate_safe_image_url(&private_v4).is_err());
+
+        let ten_v4 = reqwest::Url::parse("http://10.0.0.5/secret.jpg").unwrap();
+        assert!(validate_safe_image_url(&ten_v4).is_err());
+
+        let link_local = reqwest::Url::parse("http://169.254.169.254/latest/meta-data").unwrap();
+        assert!(validate_safe_image_url(&link_local).is_err());
+
+        // IPv6 bracketed literals
+        let v6_loopback = reqwest::Url::parse("http://[::1]/cover.jpg").unwrap();
+        assert!(validate_safe_image_url(&v6_loopback).is_err());
+
+        let v6_link_local = reqwest::Url::parse("http://[fe80::1]/cover.jpg").unwrap();
+        assert!(validate_safe_image_url(&v6_link_local).is_err());
+
+        let v6_ula = reqwest::Url::parse("http://[fc00::1]/cover.jpg").unwrap();
+        assert!(validate_safe_image_url(&v6_ula).is_err());
+
+        let v4_mapped_v6 = reqwest::Url::parse("http://[::ffff:127.0.0.1]/cover.jpg").unwrap();
+        assert!(validate_safe_image_url(&v4_mapped_v6).is_err());
+
+        let v4_mapped_private =
+            reqwest::Url::parse("http://[::ffff:192.168.1.1]/cover.jpg").unwrap();
+        assert!(validate_safe_image_url(&v4_mapped_private).is_err());
+
+        // Invalid schemes
+        let file_scheme = reqwest::Url::parse("file:///etc/passwd").unwrap();
+        assert!(validate_safe_image_url(&file_scheme).is_err());
+
+        let ftp_scheme = reqwest::Url::parse("ftp://ftp.example.com/cover.jpg").unwrap();
+        assert!(validate_safe_image_url(&ftp_scheme).is_err());
+    }
+
+    #[test]
+    fn test_validate_safe_image_url_accepts_valid_public_urls() {
+        let google_books = reqwest::Url::parse(
+            "https://books.google.com/books/content?id=123&printsec=frontcover",
+        )
+        .unwrap();
+        assert!(validate_safe_image_url(&google_books).is_ok());
+
+        let open_library =
+            reqwest::Url::parse("https://covers.openlibrary.org/b/id/10524474-L.jpg").unwrap();
+        assert!(validate_safe_image_url(&open_library).is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_validate_safe_image_url_with_dns_integration() {
+        // Direct loopback IP via DNS helper
+        let loopback = reqwest::Url::parse("http://127.0.0.1/test.jpg").unwrap();
+        assert!(validate_safe_image_url_with_dns(&loopback).await.is_err());
+
+        // Localhost domain
+        let localhost = reqwest::Url::parse("http://localhost:8080/test.jpg").unwrap();
+        assert!(validate_safe_image_url_with_dns(&localhost).await.is_err());
+
+        // Non-existent domain should return Err on DNS lookup
+        let fake_domain =
+            reqwest::Url::parse("http://non-existent-domain-999888777.invalid/cover.jpg").unwrap();
+        assert!(validate_safe_image_url_with_dns(&fake_domain)
+            .await
+            .is_err());
+    }
+
+    #[test]
+    fn test_is_allowed_metadata_domain_allowlist() {
+        assert!(is_allowed_metadata_domain("www.goodreads.com"));
+        assert!(is_allowed_metadata_domain("goodreads.com"));
+        assert!(is_allowed_metadata_domain("api.fable.co"));
+        assert!(is_allowed_metadata_domain("fable.co"));
+        assert!(is_allowed_metadata_domain("www.wattpad.com"));
+        assert!(is_allowed_metadata_domain("openlibrary.org"));
+        assert!(is_allowed_metadata_domain("www.googleapis.com"));
+
+        // Reject untrusted hosts
+        assert!(!is_allowed_metadata_domain("evil.com"));
+        assert!(!is_allowed_metadata_domain("attacker-controlled.net"));
+        assert!(!is_allowed_metadata_domain("127.0.0.1"));
+        assert!(!is_allowed_metadata_domain("localhost"));
+    }
 }

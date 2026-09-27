@@ -201,7 +201,7 @@ impl EpubParser {
         Err("Could not find rootfile inside container.xml".to_string())
     }
 
-    fn parse_opf(
+    pub(crate) fn parse_opf(
         opf_content: &str,
     ) -> Result<
         (

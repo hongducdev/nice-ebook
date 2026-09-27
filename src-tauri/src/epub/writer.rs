@@ -1,3 +1,4 @@
+use super::parser::EpubParser;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, Write};
@@ -21,6 +22,15 @@ pub struct CreateEpubOptions {
     pub custom_css: Option<String>,
     pub chapters: Vec<NewEpubChapter>,
     pub output_path: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone, Default)]
+pub struct MetadataOverrides {
+    pub title: Option<String>,
+    pub author: Option<String>,
+    pub language: Option<String>,
+    pub description: Option<String>,
+    pub cover_data_url: Option<String>,
 }
 
 fn escape_xml(s: &str) -> String {
@@ -400,16 +410,60 @@ p {
         output_path: Q,
         custom_css: &str,
         chapter_overrides: Option<&HashMap<String, String>>,
+        metadata_overrides: Option<&MetadataOverrides>,
     ) -> Result<u64, String> {
-        let in_file = File::open(input_path.as_ref())
-            .map_err(|e| format!("Cannot open input file: {}", e))?;
+        let in_path = input_path.as_ref();
+        let out_path = output_path.as_ref();
+
+        let is_same_file = in_path == out_path;
+        let actual_out_path = if is_same_file {
+            let pid = std::process::id();
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            let ext = out_path
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("epub");
+            out_path.with_extension(format!("tmp_{}_{}.{}", pid, timestamp, ext))
+        } else {
+            out_path.to_path_buf()
+        };
+
+        let in_file = File::open(in_path).map_err(|e| format!("Cannot open input file: {}", e))?;
         let mut archive =
             ZipArchive::new(in_file).map_err(|e| format!("Invalid EPUB ZIP: {}", e))?;
 
-        let out_file = File::create(output_path.as_ref())
+        let out_file = File::create(&actual_out_path)
             .map_err(|e| format!("Cannot create output file: {}", e))?;
 
-        Self::repackage_archive(&mut archive, out_file, custom_css, chapter_overrides)
+        let result = Self::repackage_archive(
+            &mut archive,
+            out_file,
+            custom_css,
+            chapter_overrides,
+            metadata_overrides,
+        );
+
+        drop(archive);
+
+        match result {
+            Ok(size) => {
+                if is_same_file && std::fs::rename(&actual_out_path, out_path).is_err() {
+                    std::fs::copy(&actual_out_path, out_path)
+                        .map_err(|ce| format!("Failed to replace original file: {}", ce))?;
+                    let _ = std::fs::remove_file(&actual_out_path);
+                }
+                Ok(size)
+            }
+            Err(e) => {
+                if is_same_file {
+                    let _ = std::fs::remove_file(&actual_out_path);
+                }
+                Err(e)
+            }
+        }
     }
 
     pub fn repackage_bytes<Q: AsRef<Path>>(
@@ -417,6 +471,7 @@ p {
         output_path: Q,
         custom_css: &str,
         chapter_overrides: Option<&HashMap<String, String>>,
+        metadata_overrides: Option<&MetadataOverrides>,
     ) -> Result<u64, String> {
         let cursor = Cursor::new(input_bytes);
         let mut archive =
@@ -425,7 +480,13 @@ p {
         let out_file = File::create(output_path.as_ref())
             .map_err(|e| format!("Cannot create output file: {}", e))?;
 
-        Self::repackage_archive(&mut archive, out_file, custom_css, chapter_overrides)
+        Self::repackage_archive(
+            &mut archive,
+            out_file,
+            custom_css,
+            chapter_overrides,
+            metadata_overrides,
+        )
     }
 
     fn repackage_archive<R: Read + Seek, W: Write + Seek>(
@@ -433,6 +494,7 @@ p {
         out_stream: W,
         custom_css: &str,
         chapter_overrides: Option<&HashMap<String, String>>,
+        metadata_overrides: Option<&MetadataOverrides>,
     ) -> Result<u64, String> {
         let mut zip_writer = ZipWriter::new(out_stream);
 
@@ -458,6 +520,97 @@ p {
         let css_file_name = "nice-ebook-style.css";
         let full_css_path = format!("{}{}", opf_base_dir, css_file_name);
 
+        // Read and pre-parse OPF to discover existing cover
+        let orig_opf_content = {
+            let mut file = archive
+                .by_name(&opf_path)
+                .map_err(|e| format!("Missing OPF file at '{}': {}", opf_path, e))?;
+            let mut s = String::new();
+            file.read_to_string(&mut s)
+                .map_err(|e| format!("Failed to read OPF file: {}", e))?;
+            s
+        };
+
+        let (_parsed_meta, manifest, _spine_ids, cover_id) =
+            EpubParser::parse_opf(&orig_opf_content).unwrap_or_else(|_| {
+                (
+                    super::parser::EpubMetadata {
+                        title: String::new(),
+                        author: String::new(),
+                        language: "vi".to_string(),
+                        description: None,
+                        cover_data_url: None,
+                        chapter_count: 0,
+                        file_size_bytes: 0,
+                        chapters: Vec::new(),
+                        sample_text: String::new(),
+                    },
+                    HashMap::new(),
+                    Vec::new(),
+                    None,
+                )
+            });
+
+        // Determine if user provided a replacement cover
+        let decoded_cover: Option<(Vec<u8>, String, String)> = if let Some(meta) =
+            metadata_overrides
+        {
+            if let Some(ref data_url) = meta.cover_data_url {
+                let comma_idx = data_url.find(',');
+                let b64 = if let Some(idx) = comma_idx {
+                    &data_url[idx + 1..]
+                } else {
+                    data_url.as_str()
+                };
+                use base64::Engine;
+                if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64.trim()) {
+                    if !bytes.is_empty() {
+                        let (ext, mime) = if data_url.contains("image/png") {
+                            ("png", "image/png")
+                        } else if data_url.contains("image/webp") {
+                            ("webp", "image/webp")
+                        } else {
+                            ("jpg", "image/jpeg")
+                        };
+                        Some((bytes, ext.to_string(), mime.to_string()))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Check if existing cover file exists in archive
+        let existing_cover_path: Option<String> = cover_id
+            .as_ref()
+            .and_then(|cid| manifest.get(cid))
+            .map(|href| format!("{}{}", opf_base_dir, href));
+
+        // If new cover provided and no existing cover was in the book, create a new cover file path
+        let new_cover_file_path: Option<(String, String)> =
+            match (&decoded_cover, &existing_cover_path) {
+                (Some((_, ext, _)), None) => {
+                    let fname = format!("cover.{}", ext);
+                    let full_path = format!("{}{}", opf_base_dir, fname);
+                    Some((fname, full_path))
+                }
+                _ => None,
+            };
+
+        let new_cover_opf_info = new_cover_file_path.as_ref().map(|(fname, _)| {
+            let mime = decoded_cover
+                .as_ref()
+                .map(|(_, _, m)| m.as_str())
+                .unwrap_or("image/jpeg");
+            (fname.as_str(), mime)
+        });
+
         let default_opts =
             SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
@@ -469,17 +622,15 @@ p {
                 .map_err(|e| format!("Read zip error: {}", e))?;
             let name = file.name().to_string();
 
-            if name == "mimetype" {
-                continue; // Already written first
+            if name == "mimetype" || name == full_css_path {
+                continue; // Already written first, or will be replaced with custom CSS
             }
 
             if name == opf_path {
-                // Modify OPF to include custom CSS manifest item
-                let mut opf_content = String::new();
-                file.read_to_string(&mut opf_content)
-                    .map_err(|e| format!("Error reading OPF: {}", e))?;
-
-                let updated_opf = Self::inject_css_into_opf(&opf_content, css_file_name);
+                let mut updated_opf = Self::inject_css_into_opf(&orig_opf_content, css_file_name);
+                if let Some(meta) = metadata_overrides {
+                    updated_opf = Self::update_opf_metadata(&updated_opf, meta, new_cover_opf_info);
+                }
 
                 zip_writer
                     .start_file(&name, default_opts)
@@ -487,6 +638,36 @@ p {
                 zip_writer
                     .write_all(updated_opf.as_bytes())
                     .map_err(|e| format!("Zip write OPF error: {}", e))?;
+            } else if Some(&name) == existing_cover_path.as_ref() && decoded_cover.is_some() {
+                // Replace existing cover image with new cover bytes
+                let (cover_bytes, _, _) = decoded_cover.as_ref().unwrap();
+                zip_writer
+                    .start_file(&name, default_opts)
+                    .map_err(|e| format!("Zip start file error: {}", e))?;
+                zip_writer
+                    .write_all(cover_bytes)
+                    .map_err(|e| format!("Zip write cover error: {}", e))?;
+            } else if name.ends_with(".ncx") {
+                let mut ncx_content = String::new();
+                file.read_to_string(&mut ncx_content)
+                    .map_err(|e| format!("Error reading NCX: {}", e))?;
+
+                let updated_ncx = if let Some(meta) = metadata_overrides {
+                    Self::update_ncx_metadata(
+                        &ncx_content,
+                        meta.title.as_deref(),
+                        meta.author.as_deref(),
+                    )
+                } else {
+                    ncx_content
+                };
+
+                zip_writer
+                    .start_file(&name, default_opts)
+                    .map_err(|e| format!("Zip start file error: {}", e))?;
+                zip_writer
+                    .write_all(updated_ncx.as_bytes())
+                    .map_err(|e| format!("Zip write NCX error: {}", e))?;
             } else if name.ends_with(".xhtml") || name.ends_with(".html") || name.ends_with(".htm")
             {
                 // Check if chapter has an override content (e.g. from AI editing)
@@ -541,13 +722,24 @@ p {
             .write_all(custom_css.as_bytes())
             .map_err(|e| format!("Failed to write custom CSS: {}", e))?;
 
-        // 5. Finalize ZIP
+        // 5. If new cover was created (no previous cover in book), write the new cover file
+        if let (Some((cover_bytes, _, _)), Some((_, ref full_path))) =
+            (&decoded_cover, &new_cover_file_path)
+        {
+            zip_writer
+                .start_file(full_path, default_opts)
+                .map_err(|e| format!("Failed to create new cover entry: {}", e))?;
+            zip_writer
+                .write_all(cover_bytes)
+                .map_err(|e| format!("Failed to write new cover bytes: {}", e))?;
+        }
+
+        // 6. Finalize ZIP
         let finished = zip_writer
             .finish()
             .map_err(|e| format!("Failed to finalize EPUB ZIP: {}", e))?;
 
         let stream_ref = finished;
-        // In this case, we flush and return size
         drop(stream_ref);
 
         Ok(1)
@@ -672,6 +864,128 @@ p {
             }
             path
         }
+    }
+
+    pub fn update_opf_metadata(
+        opf_content: &str,
+        overrides: &MetadataOverrides,
+        new_cover_info: Option<(&str, &str)>,
+    ) -> String {
+        let mut result = opf_content.to_string();
+
+        if let Some(ref title) = overrides.title {
+            let esc = escape_xml(title.trim());
+            let re = regex::Regex::new(r"(?s)<dc:title[^>]*>.*?</dc:title>").unwrap();
+            if re.is_match(&result) {
+                result = re
+                    .replace(&result, format!("<dc:title>{}</dc:title>", esc).as_str())
+                    .to_string();
+            } else if let Some(pos) = result.find("</metadata>") {
+                result.insert_str(pos, &format!("  <dc:title>{}</dc:title>\n", esc));
+            }
+        }
+
+        if let Some(ref author) = overrides.author {
+            let esc = escape_xml(author.trim());
+            let re = regex::Regex::new(r"(?s)<dc:creator[^>]*>.*?</dc:creator>").unwrap();
+            if re.is_match(&result) {
+                result = re
+                    .replace(
+                        &result,
+                        format!("<dc:creator>{}</dc:creator>", esc).as_str(),
+                    )
+                    .to_string();
+            } else if let Some(pos) = result.find("</metadata>") {
+                result.insert_str(pos, &format!("  <dc:creator>{}</dc:creator>\n", esc));
+            }
+        }
+
+        if let Some(ref lang) = overrides.language {
+            let esc = escape_xml(lang.trim());
+            let re = regex::Regex::new(r"(?s)<dc:language[^>]*>.*?</dc:language>").unwrap();
+            if re.is_match(&result) {
+                result = re
+                    .replace(
+                        &result,
+                        format!("<dc:language>{}</dc:language>", esc).as_str(),
+                    )
+                    .to_string();
+            } else if let Some(pos) = result.find("</metadata>") {
+                result.insert_str(pos, &format!("  <dc:language>{}</dc:language>\n", esc));
+            }
+        }
+
+        if let Some(ref desc) = overrides.description {
+            let esc = escape_xml(desc.trim());
+            let re = regex::Regex::new(r"(?s)<dc:description[^>]*>.*?</dc:description>").unwrap();
+            if re.is_match(&result) {
+                result = re
+                    .replace(
+                        &result,
+                        format!("<dc:description>{}</dc:description>", esc).as_str(),
+                    )
+                    .to_string();
+            } else if let Some(pos) = result.find("</metadata>") {
+                result.insert_str(
+                    pos,
+                    &format!("  <dc:description>{}</dc:description>\n", esc),
+                );
+            }
+        }
+
+        if let Some((cover_filename, mime)) = new_cover_info {
+            if !result.contains(cover_filename) {
+                if let Some(pos) = result.find("</manifest>") {
+                    let item = format!(
+                        "    <item id=\"cover-image\" href=\"{}\" media-type=\"{}\" properties=\"cover-image\"/>\n",
+                        cover_filename, mime
+                    );
+                    result.insert_str(pos, &item);
+                }
+                if !result.contains("name=\"cover\"") {
+                    if let Some(pos) = result.find("</metadata>") {
+                        let meta_tag = "    <meta name=\"cover\" content=\"cover-image\"/>\n";
+                        result.insert_str(pos, meta_tag);
+                    }
+                }
+            }
+        }
+
+        result
+    }
+
+    pub fn update_ncx_metadata(
+        ncx_content: &str,
+        title: Option<&str>,
+        author: Option<&str>,
+    ) -> String {
+        let mut result = ncx_content.to_string();
+        if let Some(t) = title {
+            let esc = escape_xml(t.trim());
+            let re = regex::Regex::new(r"(?s)<docTitle>\s*<text>.*?</text>\s*</docTitle>").unwrap();
+            if re.is_match(&result) {
+                result = re
+                    .replace(
+                        &result,
+                        format!("<docTitle><text>{}</text></docTitle>", esc).as_str(),
+                    )
+                    .to_string();
+            }
+        }
+        if let Some(a) = author {
+            let esc = escape_xml(a.trim());
+            let re =
+                regex::Regex::new(r"(?s)<docAuthor>\s*<text>.*?</text>\s*</docAuthor>").unwrap();
+            if re.is_match(&result) {
+                result = re
+                    .replace(
+                        &result,
+                        format!("<docAuthor><text>{}</text></docAuthor>", esc).as_str(),
+                    )
+                    .to_string();
+            }
+        }
+        result
     }
 }
 
@@ -803,7 +1117,8 @@ mod tests {
         let mut out_buffer = Cursor::new(Vec::new());
         let custom_css = "body { background: #000; color: #fff; }";
 
-        EpubWriter::repackage_archive(&mut archive, &mut out_buffer, custom_css, None).unwrap();
+        EpubWriter::repackage_archive(&mut archive, &mut out_buffer, custom_css, None, None)
+            .unwrap();
 
         // Validate resulting ZIP container strictly
         out_buffer.set_position(0);
@@ -920,8 +1235,14 @@ mod tests {
         let modified_ch1 = "<html><head><title>C1</title></head><body><h1>H1 Chuan</h1><h2>H2 Bo Sung</h2><p>Da sua loi chinh ta</p></body></html>";
         overrides.insert("OEBPS/ch1.xhtml".to_string(), modified_ch1.to_string());
 
-        EpubWriter::repackage_archive(&mut archive, &mut out_buffer, custom_css, Some(&overrides))
-            .unwrap();
+        EpubWriter::repackage_archive(
+            &mut archive,
+            &mut out_buffer,
+            custom_css,
+            Some(&overrides),
+            None,
+        )
+        .unwrap();
 
         // Inspect output archive
         out_buffer.set_position(0);
@@ -1003,5 +1324,205 @@ mod tests {
             EpubParser::read_chapter_content_bytes(&epub_bytes, &meta.chapters[0].href).unwrap();
         assert!(ch1_content.contains("Nội dung chương một đã được trích xuất hoàn hảo."));
         assert!(ch1_content.contains("nice-ebook-style.css"));
+    }
+
+    #[test]
+    fn test_update_opf_metadata_and_new_cover() {
+        let opf = r#"<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="pub-id">urn:uuid:test</dc:identifier>
+    <dc:title>Old Title</dc:title>
+    <dc:creator>Old Author</dc:creator>
+    <dc:language>en</dc:language>
+  </metadata>
+  <manifest>
+    <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="ch1"/>
+  </spine>
+</package>"#;
+
+        let overrides = MetadataOverrides {
+            title: Some("Đắc Nhân Tâm".to_string()),
+            author: Some("Dale Carnegie".to_string()),
+            language: Some("vi".to_string()),
+            description: Some("Nghệ thuật thu phục lòng người.".to_string()),
+            cover_data_url: None,
+        };
+
+        let updated =
+            EpubWriter::update_opf_metadata(opf, &overrides, Some(("cover.jpg", "image/jpeg")));
+        assert!(updated.contains("<dc:title>Đắc Nhân Tâm</dc:title>"));
+        assert!(updated.contains("<dc:creator>Dale Carnegie</dc:creator>"));
+        assert!(updated.contains("<dc:language>vi</dc:language>"));
+        assert!(
+            updated.contains("<dc:description>Nghệ thuật thu phục lòng người.</dc:description>")
+        );
+        assert!(updated.contains(r#"<item id="cover-image" href="cover.jpg" media-type="image/jpeg" properties="cover-image"/>"#));
+        assert!(updated.contains(r#"<meta name="cover" content="cover-image"/>"#));
+        assert!(updated.contains("<dc:identifier id=\"pub-id\">urn:uuid:test</dc:identifier>"));
+    }
+
+    #[test]
+    fn test_repackage_archive_with_metadata_and_new_cover() {
+        use crate::epub::EpubParser;
+
+        let mut in_buffer = Cursor::new(Vec::new());
+        {
+            let mut writer = ZipWriter::new(&mut in_buffer);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            writer.start_file("mimetype", opts).unwrap();
+            writer.write_all(b"application/epub+zip").unwrap();
+
+            let def_opts =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            writer
+                .start_file("META-INF/container.xml", def_opts)
+                .unwrap();
+            writer
+                .write_all(
+                    br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#,
+                )
+                .unwrap();
+
+            writer.start_file("OEBPS/content.opf", def_opts).unwrap();
+            writer
+                .write_all(
+                    br#"<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="pub-id">urn:test-123</dc:identifier>
+    <dc:title>Tua Sach Cu</dc:title>
+    <dc:creator>Tac Gia Cu</dc:creator>
+    <dc:language>en</dc:language>
+  </metadata>
+  <manifest>
+    <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="ch1"/>
+  </spine>
+</package>"#,
+                )
+                .unwrap();
+
+            writer.start_file("OEBPS/ch1.xhtml", def_opts).unwrap();
+            writer
+                .write_all(
+                    b"<html><head><title>C1</title></head><body><p>Noi dung</p></body></html>",
+                )
+                .unwrap();
+
+            writer.finish().unwrap();
+        }
+
+        // Repackage with MetadataOverrides + mock cover image
+        in_buffer.set_position(0);
+        let mut archive = ZipArchive::new(in_buffer).unwrap();
+        let mut out_buffer = Cursor::new(Vec::new());
+
+        // 1x1 white pixel png base64
+        let dummy_cover_b64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+        let meta_overrides = MetadataOverrides {
+            title: Some("Số Đỏ (Bản Chuẩn)".to_string()),
+            author: Some("Vũ Trọng Phụng".to_string()),
+            language: Some("vi".to_string()),
+            description: Some("Kiệt tác trào phúng văn học Việt Nam.".to_string()),
+            cover_data_url: Some(dummy_cover_b64.to_string()),
+        };
+
+        EpubWriter::repackage_archive(
+            &mut archive,
+            &mut out_buffer,
+            "body { color: red; }",
+            None,
+            Some(&meta_overrides),
+        )
+        .unwrap();
+
+        // Read repackaged EPUB with EpubParser
+        out_buffer.set_position(0);
+        let out_bytes = out_buffer.into_inner();
+        let parsed = EpubParser::parse_bytes(&out_bytes).expect("Repackaged EPUB must be valid");
+
+        assert_eq!(parsed.title, "Số Đỏ (Bản Chuẩn)");
+        assert_eq!(parsed.author, "Vũ Trọng Phụng");
+        assert_eq!(parsed.language, "vi");
+        assert_eq!(
+            parsed.description,
+            Some("Kiệt tác trào phúng văn học Việt Nam.".to_string())
+        );
+        assert!(
+            parsed.cover_data_url.is_some(),
+            "Repackaged EPUB must contain cover image"
+        );
+    }
+
+    #[test]
+    fn test_repackage_file_in_place_overwrite() {
+        use crate::epub::EpubParser;
+
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join(format!("test_inplace_{}.epub", std::process::id()));
+
+        // Create initial EPUB
+        let initial_options = CreateEpubOptions {
+            title: "Tua Goc".to_string(),
+            author: "Tac Gia Goc".to_string(),
+            language: Some("vi".to_string()),
+            description: Some("Ban goc chua sua".to_string()),
+            cover_base64: None,
+            custom_css: None,
+            chapters: vec![NewEpubChapter {
+                title: "C1".to_string(),
+                content_html: "<p>Chuong 1 goc</p>".to_string(),
+            }],
+            output_path: Some(test_file.to_str().unwrap().to_string()),
+        };
+
+        EpubWriter::create_epub(&initial_options).expect("Initial file creation");
+
+        // Repackage in-place: input_path == output_path
+        let overrides = MetadataOverrides {
+            title: Some("Tua Da Sua Watermark".to_string()),
+            author: Some("Tac Gia Chuan".to_string()),
+            language: Some("vi".to_string()),
+            description: Some("Da duoc lam sach".to_string()),
+            cover_data_url: None,
+        };
+
+        let mut chapter_overrides = HashMap::new();
+        chapter_overrides.insert(
+            "OEBPS/chapter_1.xhtml".to_string(),
+            "<p>Chuong 1 da duoc lam sach watermark!</p>".to_string(),
+        );
+
+        let size = EpubWriter::repackage_file(
+            &test_file,
+            &test_file,
+            "body { font-size: 18px; }",
+            Some(&chapter_overrides),
+            Some(&overrides),
+        )
+        .expect("In-place repackage must succeed");
+
+        assert!(size > 0);
+
+        // Parse file to verify that content was updated without being truncated
+        let parsed = EpubParser::parse_file(&test_file).expect("Must parse overwritten EPUB");
+        assert_eq!(parsed.title, "Tua Da Sua Watermark");
+        assert_eq!(parsed.author, "Tac Gia Chuan");
+
+        let ch1 = EpubParser::read_chapter_content(&test_file, &parsed.chapters[0].href).unwrap();
+        assert!(ch1.contains("Chuong 1 da duoc lam sach watermark!"));
+
+        let _ = std::fs::remove_file(test_file);
     }
 }

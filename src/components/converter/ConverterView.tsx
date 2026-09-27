@@ -48,6 +48,7 @@ import { AiService, JevVerdictChapterPlan } from "../../services/aiService";
 import { ChapterTransformer, ChapterEnhancePlan } from "../../utils/chapterTransformer";
 import { createNewEpub } from "../../services/converter/epubBuilder";
 import { ProgressModal, ProgressStage, ProgressStepItem } from "./ProgressModal";
+import { MetadataModal } from "../metadata/MetadataModal";
 
 export function ConverterView() {
   const { 
@@ -80,6 +81,8 @@ export function ConverterView() {
   const [bookAuthor, setBookAuthor] = useState("");
   const [bookLanguage, setBookLanguage] = useState("vi");
   const [bookDescription, setBookDescription] = useState("");
+  const [bookCoverDataUrl, setBookCoverDataUrl] = useState<string | null>(null);
+  const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false);
   const [isEnhancingJev, setIsEnhancingJev] = useState(false);
 
   const activeJev = extractedPdfData?.jevDecision || pdfSummary?.jevDecision;
@@ -835,6 +838,7 @@ export function ConverterView() {
         author: bookAuthor || "Khuyết Danh",
         language: bookLanguage || "vi",
         description: bookDescription || undefined,
+        coverBase64: bookCoverDataUrl || undefined,
         chapters,
       });
 
@@ -904,6 +908,7 @@ export function ConverterView() {
             author: bookAuthor || "Khuyết Danh",
             language: bookLanguage || "vi",
             description: bookDescription || undefined,
+            coverBase64: bookCoverDataUrl || undefined,
             chapters,
             outputPath: savePath,
           });
@@ -933,6 +938,7 @@ export function ConverterView() {
         author: bookAuthor || "Khuyết Danh",
         language: bookLanguage || "vi",
         description: bookDescription || undefined,
+        coverBase64: bookCoverDataUrl || undefined,
         chapters,
       });
 
@@ -1203,8 +1209,25 @@ export function ConverterView() {
                   </div>
                 )}
 
+                {/* Metadata Header & Action */}
+                <div className="mt-5 flex items-center justify-between pb-2 border-b border-[var(--border)]">
+                  <div>
+                    <h3 className="text-xs font-bold text-[var(--foreground)]">Thông tin &amp; Bìa sách (Metadata)</h3>
+                    <p className="text-[11px] text-[var(--muted-foreground)]">Thiết lập tựa đề, tác giả, ngôn ngữ và ảnh bìa</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsMetadataModalOpen(true)}
+                    className="lg-button lg-button--secondary text-xs h-7 px-2.5 gap-1.5 text-[var(--primary)] font-medium"
+                    title="Tự động tra cứu Google Books &amp; Open Library, chọn ảnh bìa đẹp"
+                  >
+                    <Sparkles size={12} />
+                    <span>⚡ Bổ sung Metadata &amp; Tìm Bìa</span>
+                  </button>
+                </div>
+
                 {/* Metadata Fields */}
-                <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-semibold text-[var(--foreground)] block mb-1">
                       Tên sách (Title)
@@ -1808,6 +1831,28 @@ export function ConverterView() {
 
       {/* Global Realtime Progress Modal Popup */}
       <ProgressModal {...modalProgress} />
+
+      {/* Auto Metadata & Cover Enrichment Modal */}
+      <MetadataModal
+        isOpen={isMetadataModalOpen}
+        onClose={() => setIsMetadataModalOpen(false)}
+        converterValues={{
+          title: bookTitle,
+          author: bookAuthor,
+          language: bookLanguage,
+          description: bookDescription,
+          coverDataUrl: bookCoverDataUrl || undefined,
+        }}
+        onApplyConverterValues={(vals) => {
+          setBookTitle(vals.title);
+          setBookAuthor(vals.author);
+          setBookLanguage(vals.language);
+          setBookDescription(vals.description);
+          if (vals.coverDataUrl) {
+            setBookCoverDataUrl(vals.coverDataUrl);
+          }
+        }}
+      />
     </div>
   );
 }

@@ -4,6 +4,8 @@ import { STYLE_PRESETS, StylePreset } from "../presets/styles";
 import { AiService } from "../services/aiService";
 import { detectIsVietnameseBook } from "../utils/vietnameseHelper";
 import { cleanChapterHtmlWatermarks } from "../utils/watermarkCleaner";
+import { saveChaptersToDb, loadChaptersFromDb, deleteChaptersFromDb } from "../utils/chapterStorage";
+import { generateEpubCss } from "../utils/cssGenerator";
 
 export interface ChapterItem {
   id: string;
@@ -22,6 +24,10 @@ export interface EpubMetadata {
   file_size_bytes: number;
   chapters: ChapterItem[];
   sample_text: string;
+  publisher?: string;
+  published_year?: string;
+  isbn?: string;
+  genre?: string;
 }
 
 export interface PaletteInfo {
@@ -65,6 +71,12 @@ export interface DetectedGateway {
 export interface EbookProject {
   id: string;
   name: string;
+  author?: string;
+  publisher?: string;
+  publishedYear?: string;
+  isbn?: string;
+  genre?: string;
+  description?: string | null;
   filePath: string | null;
   coverDataUrl: string | null;
   chapterCount: number;
@@ -176,6 +188,17 @@ export interface AppState {
   // Actions
   loadBookFromPath: (filePath: string) => Promise<boolean>;
   loadBookFromBytes: (bytes: number[]) => Promise<boolean>;
+  updateBookMetadata: (updates: {
+    title?: string;
+    author?: string;
+    language?: string;
+    description?: string | null;
+    cover_data_url?: string | null;
+    publisher?: string;
+    published_year?: string;
+    isbn?: string;
+    genre?: string;
+  }) => void;
   runJevClassification: () => Promise<void>;
   scanGateways: () => Promise<void>;
   selectPreset: (presetId: string) => void;
@@ -205,7 +228,7 @@ export interface AppState {
   enhanceSingleChapter: (chapterIndex: number, features?: EnhanceFeaturesConfig, options?: EnhanceExecutionOptions) => Promise<boolean>;
   batchEnhanceChapters: (chapterIndices?: number[], features?: EnhanceFeaturesConfig, options?: EnhanceExecutionOptions) => Promise<boolean>;
   stopBatchEnhance: () => void;
-  cleanWatermarksInBook: (customKeywords?: string[]) => Promise<{ affectedChapters: number; removedCount: number }>;
+  cleanWatermarksInBook: (customKeywords?: string[]) => Promise<{ affectedChapters: number; removedCount: number; savedToFile?: boolean }>;
 
   // Projects Library State & Actions
   projects: EbookProject[];
@@ -894,7 +917,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   cleanWatermarksInBook: async (customKeywords?: string[]) => {
     const { currentBook, currentFilePath, currentFileBytes, modifiedChapters, activeProjectId } = get();
     if (!currentBook || currentBook.chapters.length === 0) {
-      return { affectedChapters: 0, removedCount: 0 };
+      return { affectedChapters: 0, removedCount: 0, savedToFile: false };
     }
 
     const updatedModified = { ...modifiedChapters };
@@ -933,32 +956,132 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const updatedChapters = currentBook.chapters.map((ch) => {
       const html = updatedModified[ch.href];
+      let cleanTitle = ch.title;
+      // Clean watermark tokens from title
+      cleanTitle = cleanTitle.replace(/\[\s*(?:dtv-ebook(?:\.com)?|sachvui(?:\.com)?|tve-4u(?:\.org)?|truyenfull(?:\.vn)?)\s*\]/gi, "");
+      cleanTitle = cleanTitle.replace(/dtv-ebook(?:\.com)?/gi, "").trim();
+
       if (html) {
         const plain = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
         return {
           ...ch,
+          title: cleanTitle || ch.title,
           preview_text: plain.slice(0, 200),
         };
       }
-      return ch;
+      return {
+        ...ch,
+        title: cleanTitle || ch.title,
+      };
     });
+
+    const updatedBook = {
+      ...currentBook,
+      chapters: updatedChapters,
+    };
 
     set({
       modifiedChapters: updatedModified,
-      currentBook: {
-        ...currentBook,
-        chapters: updatedChapters,
-      },
+      currentBook: updatedBook,
     });
+
+    let savedToFile = false;
+
+    // 1. Auto-save in-place to physical EPUB file if opened from disk
+    if (currentFilePath) {
+      try {
+        const fullCss = generateEpubCss({
+          preset: get().activePreset,
+          fontSize: get().fontSize,
+          lineHeight: get().lineHeight,
+          firstLineIndent: get().firstLineIndent,
+          dropCaps: get().dropCaps,
+          textAlign: get().textAlign,
+          sceneDivider: get().sceneDivider,
+          customOverrides: get().customCss,
+          isVietnamese: get().isVietnameseBook,
+          fontFamily: get().fontFamily,
+        });
+
+        await invoke<number>("export_epub", {
+          inputPath: currentFilePath,
+          inputBytes: null,
+          outputPath: currentFilePath,
+          customCss: fullCss,
+          chapterOverrides: updatedModified,
+          metadataOverrides: {
+            title: currentBook.title,
+            author: currentBook.author,
+            language: currentBook.language,
+            description: currentBook.description,
+            cover_data_url: currentBook.cover_data_url,
+          },
+        });
+        savedToFile = true;
+      } catch (err) {
+        console.warn("Could not auto-save directly to file on disk:", err);
+      }
+    }
+
+    // 2. Auto-save to project registry and IndexedDB
     if (activeProjectId) {
       get().saveActiveProject();
+      saveChaptersToDb(activeProjectId, updatedModified);
     }
-    return { affectedChapters, removedCount: totalRemoved };
+
+    return { affectedChapters, removedCount: totalRemoved, savedToFile };
   },
 
   // Projects Library Implementation
   projects: loadProjectsFromStorage(),
   activeProjectId: null,
+
+  updateBookMetadata: (updates) => {
+    const { currentBook, activeProjectId, projects } = get();
+    if (!currentBook) return;
+
+    const updatedBook: EpubMetadata = {
+      ...currentBook,
+      ...updates,
+      title: updates.title !== undefined ? updates.title : currentBook.title,
+      author: updates.author !== undefined ? updates.author : currentBook.author,
+      language: updates.language !== undefined ? updates.language : currentBook.language,
+      description: updates.description !== undefined ? updates.description : currentBook.description,
+      cover_data_url: updates.cover_data_url !== undefined ? updates.cover_data_url : currentBook.cover_data_url,
+      publisher: updates.publisher !== undefined ? updates.publisher : currentBook.publisher,
+      published_year: updates.published_year !== undefined ? updates.published_year : currentBook.published_year,
+      isbn: updates.isbn !== undefined ? updates.isbn : currentBook.isbn,
+      genre: updates.genre !== undefined ? updates.genre : currentBook.genre,
+    };
+
+    const isVi = detectIsVietnameseBook(updatedBook);
+
+    let updatedProjects = projects;
+    if (activeProjectId) {
+      updatedProjects = projects.map((p) => {
+        if (p.id !== activeProjectId) return p;
+        return {
+          ...p,
+          name: updates.title !== undefined && updates.title.trim() ? updates.title : p.name,
+          author: updates.author !== undefined ? updates.author : p.author,
+          publisher: updates.publisher !== undefined ? updates.publisher : p.publisher,
+          publishedYear: updates.published_year !== undefined ? updates.published_year : p.publishedYear,
+          isbn: updates.isbn !== undefined ? updates.isbn : p.isbn,
+          genre: updates.genre !== undefined ? updates.genre : p.genre,
+          description: updates.description !== undefined ? updates.description : p.description,
+          coverDataUrl: updates.cover_data_url !== undefined ? updates.cover_data_url : p.coverDataUrl,
+          lastOpenedAt: Date.now(),
+        };
+      });
+      saveProjectsToStorage(updatedProjects);
+    }
+
+    set({
+      currentBook: updatedBook,
+      isVietnameseBook: isVi,
+      projects: updatedProjects,
+    });
+  },
 
   createProject: (meta, source) => {
     const existing = get().projects.find((p) => p.filePath && p.filePath === source.filePath);
@@ -1024,6 +1147,33 @@ export const useAppStore = create<AppState>((set, get) => ({
       const isVi = detectIsVietnameseBook(meta);
       const chosenPreset = STYLE_PRESETS.find((p) => p.id === project.activePresetId) || STYLE_PRESETS[0];
 
+      // Load chapters from IndexedDB if available
+      const dbChapters = await loadChaptersFromDb(project.id);
+      const activeModified = dbChapters || project.modifiedChapters || {};
+
+      // Merge modified/cleaned chapters into meta.chapters so watermarks are not resurrected
+      if (Object.keys(activeModified).length > 0) {
+        meta.chapters = meta.chapters.map((ch) => {
+          const modHtml = activeModified[ch.href];
+          let cleanTitle = ch.title;
+          cleanTitle = cleanTitle.replace(/\[\s*(?:dtv-ebook(?:\.com)?|sachvui(?:\.com)?|tve-4u(?:\.org)?|truyenfull(?:\.vn)?)\s*\]/gi, "");
+          cleanTitle = cleanTitle.replace(/dtv-ebook(?:\.com)?/gi, "").trim();
+
+          if (modHtml) {
+            const plain = modHtml.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+            return {
+              ...ch,
+              title: cleanTitle || ch.title,
+              preview_text: plain.slice(0, 200),
+            };
+          }
+          return {
+            ...ch,
+            title: cleanTitle || ch.title,
+          };
+        });
+      }
+
       // Update lastOpenedAt
       const updatedProjects = get().projects.map((p) =>
         p.id === projectId ? { ...p, lastOpenedAt: Date.now() } : p
@@ -1046,7 +1196,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         lineHeight: project.lineHeight || 1.75,
         firstLineIndent: project.firstLineIndent || "2em",
         sceneDivider: project.sceneDivider || "♦ ♦ ♦",
-        modifiedChapters: project.modifiedChapters || {},
+        modifiedChapters: activeModified,
         chapterEnhanceReports: project.chapterEnhanceReports || {},
         isLoadingBook: false,
         activeChapterIndex: 0,
@@ -1066,6 +1216,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (get().activeProjectId === projectId) {
       get().closeActiveProject();
     }
+    deleteChaptersFromDb(projectId);
     const updated = get().projects.filter((p) => p.id !== projectId);
     set({ projects: updated });
     saveProjectsToStorage(updated);
@@ -1074,6 +1225,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   saveActiveProject: () => {
     const { activeProjectId, projects, modifiedChapters, chapterEnhanceReports, activePresetId, customCss, fontFamily, fontSize, textAlign, dropCaps, lineHeight, firstLineIndent, sceneDivider } = get();
     if (!activeProjectId) return;
+
+    saveChaptersToDb(activeProjectId, modifiedChapters);
 
     const updated = projects.map((p) => {
       if (p.id !== activeProjectId) return p;

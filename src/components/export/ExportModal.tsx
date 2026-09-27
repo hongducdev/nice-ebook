@@ -65,12 +65,23 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
 
       const overrides = Object.keys(modifiedChapters).length > 0 ? modifiedChapters : null;
 
+      const metadataOverrides = currentBook
+        ? {
+            title: currentBook.title,
+            author: currentBook.author,
+            language: currentBook.language,
+            description: currentBook.description,
+            cover_data_url: currentBook.cover_data_url,
+          }
+        : null;
+
       const size = await invoke<number>("export_epub", {
         inputPath: currentFilePath,
         inputBytes: currentFileBytes,
         outputPath,
         customCss: fullCss,
         chapterOverrides: overrides,
+        metadataOverrides,
       });
 
       setExportedSize(size);

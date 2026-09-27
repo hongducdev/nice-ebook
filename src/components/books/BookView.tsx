@@ -12,12 +12,14 @@ import {
   Clock,
   Play,
   Plus,
-  Upload
+  Upload,
+  Loader2
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { detectBookWatermarks } from "../../utils/watermarkCleaner";
 import { open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
+import { MetadataModal } from "../metadata/MetadataModal";
 
 function formatLastOpened(timestamp: number): string {
   const diffSec = Math.floor((Date.now() - timestamp) / 1000);
@@ -61,6 +63,7 @@ export function BookView() {
   } = useAppStore();
 
   const [isCleaningWatermarks, setIsCleaningWatermarks] = useState(false);
+  const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false);
 
   const watermarkReport = useMemo(() => {
     if (!currentBook || currentBook.chapters.length === 0) return null;
@@ -75,8 +78,11 @@ export function BookView() {
     try {
       const res = await cleanWatermarksInBook();
       if (res.affectedChapters > 0 || res.removedCount > 0) {
+        const saveMsg = res.savedToFile
+          ? " và đã tự động lưu trực tiếp vào file sách!"
+          : " và đã tự động lưu vào dự án!";
         toast.success(
-          `Đã xóa sạch ${res.removedCount} đoạn watermark (dtv-ebook) và sửa dấu tiếng Việt trong ${res.affectedChapters} chương!`,
+          `Đã xóa sạch ${res.removedCount} đoạn watermark trong ${res.affectedChapters} chương${saveMsg}`,
           { id: "clean-wm" }
         );
       } else {
@@ -382,6 +388,16 @@ export function BookView() {
                 ✨ {Object.keys(modifiedChapters).length} chương đã sửa AI
               </span>
             )}
+
+            <button
+              type="button"
+              onClick={() => setIsMetadataModalOpen(true)}
+              className="lg-button lg-button--secondary text-xs h-7 px-2.5 gap-1.5 text-[var(--primary)] font-medium ml-2 shadow-xs"
+              title="Chỉnh sửa thông tin tác phẩm, tác giả & tìm ảnh bìa đẹp"
+            >
+              <Sparkles size={13} />
+              <span>Metadata &amp; Bìa Sách</span>
+            </button>
           </div>
         </div>
       )}
@@ -605,7 +621,11 @@ export function BookView() {
                 disabled={isAnalyzingJev}
                 className="lg-button lg-button--toolbar text-[var(--primary)]"
               >
-                <Sparkles size={14} className={isAnalyzingJev ? "animate-spin" : ""} />
+                {isAnalyzingJev ? (
+                  <Loader2 size={14} className="animate-spin text-[var(--primary)]" />
+                ) : (
+                  <Sparkles size={14} />
+                )}
                 <span>Jev Heuristic</span>
               </button>
 
@@ -624,7 +644,11 @@ export function BookView() {
                 disabled={isAiGenerating}
                 className="lg-button lg-button--toolbar"
               >
-                <Wand2 size={14} className={isAiGenerating ? "animate-spin text-[var(--primary)]" : ""} />
+                {isAiGenerating ? (
+                  <Loader2 size={14} className="animate-spin text-[var(--primary)]" />
+                ) : (
+                  <Wand2 size={14} />
+                )}
                 <span>AI Tạo Kiểu Sâu</span>
               </button>
 
@@ -636,6 +660,16 @@ export function BookView() {
               >
                 <Wand2 size={14} />
                 <span>Biên Tập AI</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsMetadataModalOpen(true)}
+                className="lg-button lg-button--toolbar text-[var(--primary)] font-medium"
+                title="Tự động bổ sung metadata và tìm kiếm ảnh bìa đẹp"
+              >
+                <Sparkles size={14} />
+                <span>Metadata &amp; Bìa</span>
               </button>
 
               <button
@@ -672,6 +706,11 @@ export function BookView() {
           )}
         </div>
       </div>
+
+      <MetadataModal
+        isOpen={isMetadataModalOpen}
+        onClose={() => setIsMetadataModalOpen(false)}
+      />
     </div>
   );
 }

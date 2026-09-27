@@ -5,7 +5,8 @@ import {
   BookOpen, 
   FolderOpen, 
   Sparkles, 
-  Download 
+  Download,
+  Loader2
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -149,7 +150,11 @@ export function AppTitlebar({ onOpenExport }: AppTitlebarProps) {
               className="lg-button lg-button--outline h-7 text-xs px-2.5 text-[var(--primary)]"
               title="Phân tích cấu trúc sách và thể loại bằng Jev Core"
             >
-              <Sparkles size={13} className={isAnalyzingJev ? "animate-spin" : ""} />
+              {isAnalyzingJev ? (
+                <Loader2 size={13} className="animate-spin text-[var(--primary)]" />
+              ) : (
+                <Sparkles size={13} />
+              )}
               <span>{isAnalyzingJev ? "Đang phân tích..." : "Jev Scan"}</span>
             </button>
 
