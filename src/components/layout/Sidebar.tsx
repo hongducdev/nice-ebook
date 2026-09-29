@@ -9,12 +9,13 @@ import {
   Moon, 
   Monitor,
   Wand2,
-  RefreshCw
+  RefreshCw,
+  Sparkles
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 
 interface NavItem {
-  id: "books" | "reader" | "presets" | "editor" | "ai" | "settings" | "ai-editor" | "converter";
+  id: "books" | "reader" | "presets" | "editor" | "ai" | "settings" | "ai-editor" | "converter" | "kindle";
   label: string;
   icon: any;
   badge?: string | null;
@@ -57,6 +58,13 @@ export function Sidebar() {
           id: "reader" as const, 
           label: "Đọc thử & Soát lỗi", 
           icon: BookOpenCheck 
+        },
+        { 
+          id: "kindle" as const, 
+          label: "Kindle X-Ray & Word Wise", 
+          icon: Sparkles,
+          badge: "Kindle",
+          badgeTone: "success"
         },
       ],
     },

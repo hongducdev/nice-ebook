@@ -411,6 +411,7 @@ p {
         custom_css: &str,
         chapter_overrides: Option<&HashMap<String, String>>,
         metadata_overrides: Option<&MetadataOverrides>,
+        extra_chapters: Option<&HashMap<String, String>>,
     ) -> Result<u64, String> {
         let in_path = input_path.as_ref();
         let out_path = output_path.as_ref();
@@ -444,6 +445,7 @@ p {
             custom_css,
             chapter_overrides,
             metadata_overrides,
+            extra_chapters,
         );
 
         drop(archive);
@@ -472,6 +474,7 @@ p {
         custom_css: &str,
         chapter_overrides: Option<&HashMap<String, String>>,
         metadata_overrides: Option<&MetadataOverrides>,
+        extra_chapters: Option<&HashMap<String, String>>,
     ) -> Result<u64, String> {
         let cursor = Cursor::new(input_bytes);
         let mut archive =
@@ -486,6 +489,7 @@ p {
             custom_css,
             chapter_overrides,
             metadata_overrides,
+            extra_chapters,
         )
     }
 
@@ -495,6 +499,7 @@ p {
         custom_css: &str,
         chapter_overrides: Option<&HashMap<String, String>>,
         metadata_overrides: Option<&MetadataOverrides>,
+        extra_chapters: Option<&HashMap<String, String>>,
     ) -> Result<u64, String> {
         let mut zip_writer = ZipWriter::new(out_stream);
 
@@ -614,6 +619,71 @@ p {
         let default_opts =
             SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
+        // Snapshot the archive's entry names once, so existence checks do not repeatedly
+        // borrow the reader while we build the new-chapter list.
+        let archive_names: std::collections::HashSet<String> = {
+            let mut names = std::collections::HashSet::new();
+            for i in 0..archive.len() {
+                if let Ok(entry) = archive.by_index_raw(i) {
+                    names.insert(entry.name().to_string());
+                }
+            }
+            names
+        };
+
+        let href_exists = |href: &str| -> bool {
+            let clean = href.trim_start_matches('/');
+            archive_names.contains(clean)
+                || archive_names.contains(&format!("{}{}", opf_base_dir, clean))
+        };
+
+        // Build the list of NEW chapters. Each tuple is (item_id, href_relative_to_opf, title, html).
+        //
+        // Two sources feed this list: the explicit `extra_chapters` map, and any
+        // `chapter_overrides` entry whose href is absent from the archive. The latter matters
+        // because a generated chapter (e.g. the X-Ray appendix) is produced as an override —
+        // without this, it would be silently dropped instead of being written and registered.
+        let mut new_chapter_sources: Vec<(String, String)> = Vec::new();
+
+        if let Some(extras) = extra_chapters {
+            let mut entries: Vec<(&String, &String)> = extras.iter().collect();
+            // Deterministic ordering keeps exported EPUBs byte-stable between runs.
+            entries.sort_by(|a, b| a.0.cmp(b.0));
+            for (href, html) in entries {
+                new_chapter_sources.push((href.clone(), html.clone()));
+            }
+        }
+
+        if let Some(overrides) = chapter_overrides {
+            let mut entries: Vec<(&String, &String)> = overrides.iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(b.0));
+            for (href, html) in entries {
+                if href_exists(href) {
+                    continue;
+                }
+                // Avoid duplicating a href already queued from `extra_chapters`.
+                if new_chapter_sources
+                    .iter()
+                    .any(|(existing, _)| existing == href)
+                {
+                    continue;
+                }
+                new_chapter_sources.push((href.clone(), html.clone()));
+            }
+        }
+
+        let mut extra_items: Vec<(String, String, String, String)> = Vec::new();
+        for (href, html) in &new_chapter_sources {
+            let clean_href = href.trim_start_matches('/');
+            if clean_href.is_empty() || href_exists(clean_href) {
+                continue;
+            }
+            let id = format!("nice-extra-{}", extra_items.len() + 1);
+            let title = Self::extract_document_title(html)
+                .unwrap_or_else(|| format!("Phụ lục {}", extra_items.len() + 1));
+            extra_items.push((id, clean_href.to_string(), title, html.clone()));
+        }
+
         // 3. Write all entries from original archive (except mimetype, and modify OPF + XHTML)
         let num_files = archive.len();
         for i in 0..num_files {
@@ -630,6 +700,9 @@ p {
                 let mut updated_opf = Self::inject_css_into_opf(&orig_opf_content, css_file_name);
                 if let Some(meta) = metadata_overrides {
                     updated_opf = Self::update_opf_metadata(&updated_opf, meta, new_cover_opf_info);
+                }
+                if !extra_items.is_empty() {
+                    updated_opf = Self::inject_extra_chapters_into_opf(&updated_opf, &extra_items);
                 }
 
                 zip_writer
@@ -662,6 +735,12 @@ p {
                     ncx_content
                 };
 
+                let updated_ncx = if extra_items.is_empty() {
+                    updated_ncx
+                } else {
+                    Self::inject_extra_chapters_into_ncx(&updated_ncx, &extra_items)
+                };
+
                 zip_writer
                     .start_file(&name, default_opts)
                     .map_err(|e| format!("Zip start file error: {}", e))?;
@@ -692,7 +771,13 @@ p {
 
                 // Determine relative path from chapter file to CSS file
                 let rel_css_path = Self::compute_relative_css_path(&name, &full_css_path);
-                let updated_html = Self::inject_link_tag(&html_content, &rel_css_path);
+                let mut updated_html = Self::inject_link_tag(&html_content, &rel_css_path);
+
+                // EPUB 3 navigation document: append the new chapters to the TOC list.
+                if !extra_items.is_empty() {
+                    updated_html =
+                        Self::inject_extra_chapters_into_nav(&updated_html, &extra_items);
+                }
 
                 zip_writer
                     .start_file(&name, default_opts)
@@ -721,6 +806,22 @@ p {
         zip_writer
             .write_all(custom_css.as_bytes())
             .map_err(|e| format!("Failed to write custom CSS: {}", e))?;
+
+        // 4b. Write newly generated chapter files (e.g. the X-Ray appendix)
+        for (_, href, _, html) in &extra_items {
+            let full_path = format!("{}{}", opf_base_dir, href);
+            zip_writer
+                .start_file(&full_path, default_opts)
+                .map_err(|e| format!("Failed to create extra chapter entry: {}", e))?;
+
+            // The new file must also point at the custom stylesheet.
+            let rel_css_path = Self::compute_relative_css_path(&full_path, &full_css_path);
+            let styled_html = Self::inject_link_tag(html, &rel_css_path);
+
+            zip_writer
+                .write_all(styled_html.as_bytes())
+                .map_err(|e| format!("Failed to write extra chapter: {}", e))?;
+        }
 
         // 5. If new cover was created (no previous cover in book), write the new cover file
         if let (Some((cover_bytes, _, _)), Some((_, ref full_path))) =
@@ -776,6 +877,149 @@ p {
         }
 
         Err("Could not find rootfile inside container.xml".to_string())
+    }
+
+    /// Extracts a human-readable title from a generated chapter document.
+    /// Prefers `<title>`, then the first `<h1>`/`<h2>` heading.
+    pub(crate) fn extract_document_title(html: &str) -> Option<String> {
+        fn clean(raw: &str) -> Option<String> {
+            let without_tags = regex::Regex::new(r"<[^>]*>")
+                .ok()?
+                .replace_all(raw, " ")
+                .to_string();
+            let collapsed = without_tags
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            let trimmed = collapsed.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+
+        for pattern in [
+            r"(?is)<title[^>]*>(.*?)</title>",
+            r"(?is)<h1[^>]*>(.*?)</h1>",
+        ] {
+            if let Ok(re) = regex::Regex::new(pattern) {
+                if let Some(caps) = re.captures(html) {
+                    if let Some(found) = caps.get(1).and_then(|m| clean(m.as_str())) {
+                        return Some(found);
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Registers new chapter files in the OPF: one manifest `<item>` and one spine `<itemref>` each.
+    fn inject_extra_chapters_into_opf(
+        opf_content: &str,
+        items: &[(String, String, String, String)],
+    ) -> String {
+        if items.is_empty() || opf_content.contains("nice-extra-") {
+            return opf_content.to_string();
+        }
+
+        let mut manifest_additions = String::new();
+        let mut spine_additions = String::new();
+
+        for (id, href, _, _) in items {
+            manifest_additions.push_str(&format!(
+                "    <item id=\"{}\" href=\"{}\" media-type=\"application/xhtml+xml\"/>\n",
+                id,
+                escape_xml(href)
+            ));
+            spine_additions.push_str(&format!("    <itemref idref=\"{}\"/>\n", id));
+        }
+
+        let mut result = opf_content.to_string();
+
+        if let Some(pos) = result.find("</manifest>") {
+            result.insert_str(pos, &manifest_additions);
+        }
+        if let Some(pos) = result.find("</spine>") {
+            result.insert_str(pos, &spine_additions);
+        }
+
+        result
+    }
+
+    /// Adds `<navPoint>` entries to the NCX table of contents.
+    fn inject_extra_chapters_into_ncx(
+        ncx_content: &str,
+        items: &[(String, String, String, String)],
+    ) -> String {
+        if items.is_empty() {
+            return ncx_content.to_string();
+        }
+
+        let Some(pos) = ncx_content.find("</navMap>") else {
+            return ncx_content.to_string();
+        };
+
+        // Continue playOrder numbering after the highest existing value.
+        let mut next_play_order: u32 = 1;
+        if let Ok(re) = regex::Regex::new(r#"playOrder="(\d+)""#) {
+            for caps in re.captures_iter(ncx_content) {
+                if let Some(n) = caps.get(1).and_then(|m| m.as_str().parse::<u32>().ok()) {
+                    next_play_order = next_play_order.max(n + 1);
+                }
+            }
+        }
+
+        let mut additions = String::new();
+        for (idx, (_, href, title, _)) in items.iter().enumerate() {
+            additions.push_str(&format!(
+                "    <navPoint id=\"nice-extra-np-{}\" playOrder=\"{}\">\n      <navLabel><text>{}</text></navLabel>\n      <content src=\"{}\"/>\n    </navPoint>\n",
+                idx + 1,
+                next_play_order + idx as u32,
+                escape_xml(title),
+                escape_xml(href)
+            ));
+        }
+
+        let mut result = ncx_content[..pos].to_string();
+        result.push_str(&additions);
+        result.push_str(&ncx_content[pos..]);
+        result
+    }
+
+    /// Adds `<li>` entries to the EPUB 3 navigation document's TOC list, when present.
+    fn inject_extra_chapters_into_nav(
+        nav_content: &str,
+        items: &[(String, String, String, String)],
+    ) -> String {
+        if items.is_empty() {
+            return nav_content.to_string();
+        }
+
+        // Only the TOC nav is extended; other nav landmarks are left untouched.
+        let Some(toc_start) = nav_content.find("epub:type=\"toc\"") else {
+            return nav_content.to_string();
+        };
+
+        let Some(relative_ol_end) = nav_content[toc_start..].find("</ol>") else {
+            return nav_content.to_string();
+        };
+        let insert_at = toc_start + relative_ol_end;
+
+        let mut additions = String::new();
+        for (_, href, title, _) in items {
+            additions.push_str(&format!(
+                "      <li><a href=\"{}\">{}</a></li>\n",
+                escape_xml(href),
+                escape_xml(title)
+            ));
+        }
+
+        let mut result = nav_content[..insert_at].to_string();
+        result.push_str(&additions);
+        result.push_str(&nav_content[insert_at..]);
+        result
     }
 
     fn inject_css_into_opf(opf_content: &str, css_file_name: &str) -> String {
@@ -1117,7 +1361,7 @@ mod tests {
         let mut out_buffer = Cursor::new(Vec::new());
         let custom_css = "body { background: #000; color: #fff; }";
 
-        EpubWriter::repackage_archive(&mut archive, &mut out_buffer, custom_css, None, None)
+        EpubWriter::repackage_archive(&mut archive, &mut out_buffer, custom_css, None, None, None)
             .unwrap();
 
         // Validate resulting ZIP container strictly
@@ -1241,6 +1485,7 @@ mod tests {
             custom_css,
             Some(&overrides),
             None,
+            None,
         )
         .unwrap();
 
@@ -1281,6 +1526,316 @@ mod tests {
         assert!(read_ch2
             .contains(r#"<link rel="stylesheet" type="text/css" href="nice-ebook-style.css" />"#));
         assert_eq!(read_ch2.matches(r#"<link rel="stylesheet""#).count(), 1);
+    }
+
+    #[test]
+    fn test_extra_chapters_injected_into_manifest_spine_ncx_and_nav() {
+        // Build a minimal EPUB 3 with a NCX and a navigation document.
+        let mut in_buffer = Cursor::new(Vec::new());
+        {
+            let mut writer = ZipWriter::new(&mut in_buffer);
+            let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            writer.start_file("mimetype", stored).unwrap();
+            writer.write_all(b"application/epub+zip").unwrap();
+
+            let deflated =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+
+            writer
+                .start_file("META-INF/container.xml", deflated)
+                .unwrap();
+            writer
+                .write_all(
+                    br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#,
+                )
+                .unwrap();
+
+            writer.start_file("OEBPS/content.opf", deflated).unwrap();
+            writer
+                .write_all(
+                    br#"<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Book</dc:title>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+  </manifest>
+  <spine toc="ncx">
+    <itemref idref="ch1"/>
+  </spine>
+</package>"#,
+                )
+                .unwrap();
+
+            writer.start_file("OEBPS/ch1.xhtml", deflated).unwrap();
+            writer
+                .write_all(b"<html><head><title>C1</title></head><body><p>Goc</p></body></html>")
+                .unwrap();
+
+            writer.start_file("OEBPS/toc.ncx", deflated).unwrap();
+            writer
+                .write_all(
+                    br#"<?xml version="1.0" encoding="utf-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <navMap>
+    <navPoint id="np1" playOrder="1"><navLabel><text>C1</text></navLabel><content src="ch1.xhtml"/></navPoint>
+  </navMap>
+</ncx>"#,
+                )
+                .unwrap();
+
+            writer.start_file("OEBPS/nav.xhtml", deflated).unwrap();
+            writer
+                .write_all(
+                    br#"<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Nav</title></head><body><nav epub:type="toc"><ol><li><a href="ch1.xhtml">C1</a></li></ol></nav></body></html>"#,
+                )
+                .unwrap();
+
+            writer.finish().unwrap();
+        }
+
+        in_buffer.set_position(0);
+        let mut archive = ZipArchive::new(in_buffer).unwrap();
+        let mut out_buffer = Cursor::new(Vec::new());
+
+        let appendix_html = "<html><head><title>Dramatis Personae</title></head><body><h1>Nhan vat</h1></body></html>";
+        let mut extras = HashMap::new();
+        extras.insert("xray_appendix.xhtml".to_string(), appendix_html.to_string());
+
+        EpubWriter::repackage_archive(
+            &mut archive,
+            &mut out_buffer,
+            "body { margin: 0; }",
+            None,
+            None,
+            Some(&extras),
+        )
+        .unwrap();
+
+        out_buffer.set_position(0);
+        let mut result = ZipArchive::new(out_buffer).unwrap();
+
+        // 1. The new chapter file MUST exist next to the OPF and link the generated CSS.
+        let mut appendix_entry = result
+            .by_name("OEBPS/xray_appendix.xhtml")
+            .expect("appendix file must be written into the archive");
+        let mut appendix_read = String::new();
+        appendix_entry.read_to_string(&mut appendix_read).unwrap();
+        assert!(appendix_read.contains("Nhan vat"));
+        assert!(appendix_read.contains("nice-ebook-style.css"));
+        drop(appendix_entry);
+
+        // 2. OPF MUST register it in the manifest and the spine.
+        let mut opf_entry = result.by_name("OEBPS/content.opf").unwrap();
+        let mut opf_read = String::new();
+        opf_entry.read_to_string(&mut opf_read).unwrap();
+        assert!(
+            opf_read.contains(r#"<item id="nice-extra-1" href="xray_appendix.xhtml" media-type="application/xhtml+xml"/>"#),
+            "manifest must declare the new chapter: {}",
+            opf_read
+        );
+        assert!(
+            opf_read.contains(r#"<itemref idref="nice-extra-1"/>"#),
+            "spine must reference the new chapter: {}",
+            opf_read
+        );
+        drop(opf_entry);
+
+        // 3. NCX MUST gain a navPoint with a continued playOrder.
+        let mut ncx_entry = result.by_name("OEBPS/toc.ncx").unwrap();
+        let mut ncx_read = String::new();
+        ncx_entry.read_to_string(&mut ncx_read).unwrap();
+        assert!(ncx_read.contains(r#"playOrder="2""#), "NCX: {}", ncx_read);
+        assert!(ncx_read.contains("Dramatis Personae"), "NCX: {}", ncx_read);
+        assert!(
+            ncx_read.contains(r#"<content src="xray_appendix.xhtml"/>"#),
+            "NCX: {}",
+            ncx_read
+        );
+        drop(ncx_entry);
+
+        // 4. The EPUB 3 nav document MUST gain a matching list entry.
+        let mut nav_entry = result.by_name("OEBPS/nav.xhtml").unwrap();
+        let mut nav_read = String::new();
+        nav_entry.read_to_string(&mut nav_read).unwrap();
+        assert!(
+            nav_read.contains(r#"<li><a href="xray_appendix.xhtml">Dramatis Personae</a></li>"#),
+            "nav doc: {}",
+            nav_read
+        );
+    }
+
+    #[test]
+    fn test_extra_chapter_skips_hrefs_that_already_exist() {
+        let mut in_buffer = Cursor::new(Vec::new());
+        {
+            let mut writer = ZipWriter::new(&mut in_buffer);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            writer.start_file("mimetype", opts).unwrap();
+            writer.write_all(b"application/epub+zip").unwrap();
+
+            let deflated =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            writer
+                .start_file("META-INF/container.xml", deflated)
+                .unwrap();
+            writer
+                .write_all(
+                    br#"<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>"#,
+                )
+                .unwrap();
+            writer.start_file("OEBPS/content.opf", deflated).unwrap();
+            writer
+                .write_all(
+                    br#"<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><manifest><item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="ch1"/></spine></package>"#,
+                )
+                .unwrap();
+            writer.start_file("OEBPS/ch1.xhtml", deflated).unwrap();
+            writer
+                .write_all(b"<html><head><title>C1</title></head><body><p>Goc</p></body></html>")
+                .unwrap();
+            writer.finish().unwrap();
+        }
+
+        in_buffer.set_position(0);
+        let mut archive = ZipArchive::new(in_buffer).unwrap();
+        let mut out_buffer = Cursor::new(Vec::new());
+
+        // Passing an href that already exists must NOT duplicate it in the manifest/spine.
+        let mut extras = HashMap::new();
+        extras.insert(
+            "ch1.xhtml".to_string(),
+            "<html><head><title>C1</title></head><body><p>Moi</p></body></html>".to_string(),
+        );
+
+        EpubWriter::repackage_archive(
+            &mut archive,
+            &mut out_buffer,
+            "body { margin: 0; }",
+            None,
+            None,
+            Some(&extras),
+        )
+        .unwrap();
+
+        out_buffer.set_position(0);
+        let mut result = ZipArchive::new(out_buffer).unwrap();
+        let mut opf_entry = result.by_name("OEBPS/content.opf").unwrap();
+        let mut opf_read = String::new();
+        opf_entry.read_to_string(&mut opf_read).unwrap();
+
+        assert!(
+            !opf_read.contains("nice-extra-"),
+            "existing hrefs must not be re-registered: {}",
+            opf_read
+        );
+        assert_eq!(opf_read.matches(r#"<itemref "#).count(), 1);
+    }
+
+    #[test]
+    fn test_chapter_override_for_missing_href_becomes_a_new_chapter() {
+        // Regression guard: a generated chapter (e.g. the X-Ray appendix) is produced as a chapter
+        // override. Because its href does not exist in the source archive, it must still be written
+        // and registered in the manifest/spine rather than silently dropped.
+        let mut in_buffer = Cursor::new(Vec::new());
+        {
+            let mut writer = ZipWriter::new(&mut in_buffer);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            writer.start_file("mimetype", opts).unwrap();
+            writer.write_all(b"application/epub+zip").unwrap();
+
+            let deflated =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            writer
+                .start_file("META-INF/container.xml", deflated)
+                .unwrap();
+            writer
+                .write_all(
+                    br#"<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>"#,
+                )
+                .unwrap();
+            writer.start_file("OEBPS/content.opf", deflated).unwrap();
+            writer
+                .write_all(
+                    br#"<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><manifest><item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="ch1"/></spine></package>"#,
+                )
+                .unwrap();
+            writer.start_file("OEBPS/ch1.xhtml", deflated).unwrap();
+            writer
+                .write_all(b"<html><head><title>C1</title></head><body><p>Goc</p></body></html>")
+                .unwrap();
+            writer.finish().unwrap();
+        }
+
+        in_buffer.set_position(0);
+        let mut archive = ZipArchive::new(in_buffer).unwrap();
+        let mut out_buffer = Cursor::new(Vec::new());
+
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            "xray_appendix.xhtml".to_string(),
+            "<html><head><title>Dramatis Personae</title></head><body><h1>Nhan vat</h1></body></html>"
+                .to_string(),
+        );
+
+        EpubWriter::repackage_archive(
+            &mut archive,
+            &mut out_buffer,
+            "body { margin: 0; }",
+            Some(&overrides),
+            None,
+            None, // no explicit extra_chapters: the override must be promoted on its own
+        )
+        .unwrap();
+
+        out_buffer.set_position(0);
+        let mut result = ZipArchive::new(out_buffer).unwrap();
+
+        assert!(
+            result.by_name("OEBPS/xray_appendix.xhtml").is_ok(),
+            "an override for a missing href must be written as a new chapter file"
+        );
+
+        let mut opf_entry = result.by_name("OEBPS/content.opf").unwrap();
+        let mut opf_read = String::new();
+        opf_entry.read_to_string(&mut opf_read).unwrap();
+        assert!(
+            opf_read.contains(r#"href="xray_appendix.xhtml"#),
+            "{}",
+            opf_read
+        );
+        assert!(
+            opf_read.contains(r#"<itemref idref="nice-extra-1"/>"#),
+            "{}",
+            opf_read
+        );
+    }
+
+    #[test]
+    fn test_extract_document_title_prefers_title_then_h1() {
+        assert_eq!(
+            EpubWriter::extract_document_title(
+                "<html><head><title>Dramatis Personae</title></head><body><h1>Other</h1></body></html>"
+            ),
+            Some("Dramatis Personae".to_string())
+        );
+        assert_eq!(
+            EpubWriter::extract_document_title(
+                "<html><body><h1>Nhan Vat &amp; Boi Canh</h1></body></html>"
+            ),
+            Some("Nhan Vat &amp; Boi Canh".to_string())
+        );
+        assert_eq!(
+            EpubWriter::extract_document_title("<html><body><p>none</p></body></html>"),
+            None
+        );
     }
 
     #[test]
@@ -1444,6 +1999,7 @@ mod tests {
             "body { color: red; }",
             None,
             Some(&meta_overrides),
+            None,
         )
         .unwrap();
 
@@ -1510,6 +2066,7 @@ mod tests {
             "body { font-size: 18px; }",
             Some(&chapter_overrides),
             Some(&overrides),
+            None,
         )
         .expect("In-place repackage must succeed");
 

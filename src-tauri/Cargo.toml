@@ -31,6 +31,10 @@ tokio = { version = "1", features = ["full"] }
 regex = "1.10"
 base64 = "0.22"
 url = "2.5"
+rusqlite = { version = "0.32", features = ["bundled"] }
+# Self-contained EPUB -> Kindle (KF8/AZW3, Dual MOBI) writer.
+# `default-features = false` drops its bundled CLI so we only link the library.
+epub3-kindle = { version = "0.4", default-features = false }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

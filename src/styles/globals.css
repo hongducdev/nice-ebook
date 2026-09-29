@@ -1194,3 +1194,19 @@ body {
 .model-page__item-chip-test-btn:active {
   transform: scale(0.92);
 }
+
+/* Kindle Word Wise (HTML5 Ruby) */
+ruby.kindle-wordwise {
+  ruby-position: over;
+  text-emphasis: none;
+}
+ruby.kindle-wordwise rt {
+  font-size: 0.6em;
+  line-height: 1;
+  color: var(--primary);
+  opacity: 0.9;
+  user-select: none;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+

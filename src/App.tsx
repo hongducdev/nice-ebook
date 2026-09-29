@@ -10,6 +10,7 @@ import { TypographyControls } from "./components/styles/TypographyControls";
 import { EpubReaderViewer } from "./components/preview/EpubReaderViewer";
 import { GatewayView } from "./components/ai/GatewayView";
 import { ChapterEnhancerView } from "./components/ai/ChapterEnhancerView";
+import { KindleCompanionView } from "./components/kindle/KindleCompanionView";
 import { ExportModal } from "./components/export/ExportModal";
 import { ConverterView } from "./components/converter/ConverterView";
 import { 
@@ -152,6 +153,7 @@ export default function App() {
           {activeTab === "editor" && <TypographyControls />}
           {activeTab === "ai" && <GatewayView />}
           {activeTab === "ai-editor" && <ChapterEnhancerView />}
+          {activeTab === "kindle" && <KindleCompanionView />}
           {activeTab === "settings" && (
             <div className="flex-1 flex flex-col p-4 overflow-y-auto max-w-4xl mx-auto w-full gap-4">
               <div className="flex items-center gap-2.5 pb-2 border-b border-[var(--border)]">

@@ -11,7 +11,10 @@ import {
   Sparkles,
   List,
   Check,
-  Search
+  Search,
+  UserCheck,
+  X,
+  Loader2
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../stores/useAppStore";
@@ -39,6 +42,10 @@ export function EpubReaderViewer() {
     sceneDivider,
     customCss,
     modifiedChapters,
+    xrayData,
+    runXRayExtraction,
+    isAnalyzingXRay,
+    setActiveTab,
   } = useAppStore();
 
   const [mode, setMode] = useState<"reader" | "css">("reader");
@@ -47,10 +54,20 @@ export function EpubReaderViewer() {
   const [isLoadingChapter, setIsLoadingChapter] = useState(false);
   const [showToc, setShowToc] = useState(false);
   const [tocSearch, setTocSearch] = useState("");
+  const [showXRayDrawer, setShowXRayDrawer] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const tocDropdownRef = useRef<HTMLDivElement>(null);
 
   const activeChapter = currentBook?.chapters[activeChapterIndex];
+
+  // Filter X-Ray entities for active chapter
+  const currentChapterEntities = useMemo(() => {
+    if (!xrayData || !activeChapter) return [];
+    const all = [...xrayData.people, ...xrayData.terms];
+    return all.filter((e) =>
+      e.excerpts.some((ex) => ex.chapterHref === activeChapter.href)
+    );
+  }, [xrayData, activeChapter]);
 
   // Close TOC when clicking outside
   useEffect(() => {
@@ -390,6 +407,26 @@ export function EpubReaderViewer() {
             </div>
           )}
 
+          {/* Quick X-Ray Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setShowXRayDrawer(!showXRayDrawer)}
+            className={`h-7 px-2 rounded-[var(--ui-radius-button)] flex items-center gap-1 border text-xs cursor-pointer transition-all ${
+              showXRayDrawer
+                ? "border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_12%,var(--card))] text-[var(--primary)] font-semibold shadow-xs"
+                : "border-[var(--border)] bg-[var(--secondary)] hover:bg-[var(--accent)] text-[var(--foreground)]"
+            }`}
+            title="Bật/Tắt Ngăn Kéo X-Ray (Nhân vật trong chương)"
+          >
+            <UserCheck size={12} />
+            <span>X-Ray</span>
+            {currentChapterEntities.length > 0 && (
+              <span className="app-badge app-badge--brand text-[9px] h-3.5 px-1 ml-0.5">
+                {currentChapterEntities.length}
+              </span>
+            )}
+          </button>
+
           <span className="app-badge app-badge--brand text-[10px] h-[18px] flex items-center gap-1">
             <Sparkles size={10} className="text-[var(--primary)]" />
             <span>CSS Hot-Reload</span>
@@ -435,6 +472,95 @@ export function EpubReaderViewer() {
             >
               <CodeMirrorCss />
             </Suspense>
+          </div>
+        )}
+
+        {/* X-Ray Quick Drawer Panel */}
+        {showXRayDrawer && (
+          <div className="w-80 border-l border-[var(--border)] bg-[var(--card)] flex flex-col h-full z-20 shadow-lg animate-in slide-in-from-right duration-200">
+            <div className="p-3 border-b border-[var(--border)] flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <UserCheck size={15} className="text-[var(--primary)]" />
+                <h3 className="text-xs font-bold text-[var(--foreground)]">X-Ray Trong Chương Này</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowXRayDrawer(false)}
+                className="w-6 h-6 rounded flex items-center justify-center text-[var(--muted-foreground)] hover:bg-[var(--secondary)]"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2.5">
+              {!xrayData ? (
+                <div className="p-4 text-center text-xs text-[var(--muted-foreground)] flex flex-col gap-3">
+                  <p>Chưa có dữ liệu phân tích X-Ray cho cuốn sách này.</p>
+                  <button
+                    type="button"
+                    onClick={() => runXRayExtraction()}
+                    disabled={isAnalyzingXRay}
+                    className="app-btn app-btn--primary px-3 py-1.5 text-xs flex items-center justify-center gap-1.5 w-full"
+                  >
+                    {isAnalyzingXRay ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                    {isAnalyzingXRay ? "Đang quét..." : "Quét X-Ray Ngay"}
+                  </button>
+                </div>
+              ) : currentChapterEntities.length === 0 ? (
+                <div className="p-4 text-center text-xs text-[var(--muted-foreground)] flex flex-col gap-3">
+                  <p>Không ghi nhận nhân vật chính nào xuất hiện trong chương này.</p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("kindle")}
+                    className="text-xs text-[var(--primary)] hover:underline"
+                  >
+                    Mở Kindle Companion Studio
+                  </button>
+                </div>
+              ) : (
+                currentChapterEntities.map((entity) => {
+                  const initials = entity.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+                  const excerptInThisChapter = entity.excerpts.find((ex) => ex.chapterHref === activeChapter?.href);
+
+                  return (
+                    <div
+                      key={entity.id}
+                      className="p-3 rounded-[var(--ui-radius-card)] bg-[var(--background)] border border-[var(--border)] flex flex-col gap-1.5"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+                          {initials}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h4 className="text-xs font-bold text-[var(--foreground)] truncate">{entity.name}</h4>
+                          {entity.role && (
+                            <span className="text-[10px] text-[var(--muted-foreground)] block truncate">{entity.role}</span>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-[var(--foreground)] line-clamp-2 leading-relaxed">
+                        {entity.description}
+                      </p>
+                      {excerptInThisChapter && (
+                        <div className="p-1.5 rounded bg-[var(--card)] border border-[var(--border)] text-[10px] text-[var(--muted-foreground)] italic line-clamp-2">
+                          "{excerptInThisChapter.snippet}"
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="p-2.5 border-t border-[var(--border)] bg-[var(--card)]">
+              <button
+                type="button"
+                onClick={() => setActiveTab("kindle")}
+                className="w-full text-center text-[11px] text-[var(--primary)] hover:underline"
+              >
+                Quản lý &amp; Biên tập X-Ray Toàn Cuốn Sách →
+              </button>
+            </div>
           </div>
         )}
       </div>

@@ -151,6 +151,26 @@ img {
   border-radius: 4px;
 }
 
+/* Kindle Word Wise Styling
+   Verified against a real EPUB -> AZW3 -> EPUB conversion: a Kindle conversion normalises the
+   class attribute away from <ruby> and drops font-size declared on <rt>, but keeps
+   data-kindle-wordwise. So the data attribute is the durable styling hook, and the ruby text
+   size is left to the reader's built-in ruby rendering. */
+ruby.kindle-wordwise,
+ruby[data-kindle-wordwise] {
+  ruby-position: over;
+  text-emphasis: none;
+}
+ruby.kindle-wordwise rt,
+ruby[data-kindle-wordwise] rt {
+  line-height: 1;
+  color: ${preset.colors.accent || "#ad5a17"};
+  opacity: 0.85;
+  user-select: none;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
 ${customOverrides || ""}
 `;
 }

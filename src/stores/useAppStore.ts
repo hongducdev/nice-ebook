@@ -6,6 +6,8 @@ import { detectIsVietnameseBook } from "../utils/vietnameseHelper";
 import { cleanChapterHtmlWatermarks } from "../utils/watermarkCleaner";
 import { saveChaptersToDb, loadChaptersFromDb, deleteChaptersFromDb } from "../utils/chapterStorage";
 import { generateEpubCss } from "../utils/cssGenerator";
+import { injectWordWiseRuby, stripWordWiseRuby } from "../services/kindle/wordWiseService";
+import { extractXRayHeuristic, generateXRayAppendixHtml, XRayBookData, ChapterTextSource } from "../services/kindle/xrayService";
 
 export interface ChapterItem {
   id: string;
@@ -127,8 +129,8 @@ export interface EnhanceExecutionOptions {
 
 export interface AppState {
   // Navigation
-  activeTab: "books" | "presets" | "editor" | "reader" | "ai" | "settings" | "ai-editor" | "converter";
-  setActiveTab: (tab: "books" | "presets" | "editor" | "reader" | "ai" | "settings" | "ai-editor" | "converter") => void;
+  activeTab: "books" | "presets" | "editor" | "reader" | "ai" | "settings" | "ai-editor" | "converter" | "kindle";
+  setActiveTab: (tab: "books" | "presets" | "editor" | "reader" | "ai" | "settings" | "ai-editor" | "converter" | "kindle") => void;
 
   // Pending file for Ebook Converter
   pendingConverterFile: { name: string; bytes: Uint8Array; type: "pdf" | "txt" | "md" } | null;
@@ -238,6 +240,21 @@ export interface AppState {
   deleteProject: (projectId: string) => void;
   saveActiveProject: () => void;
   closeActiveProject: () => void;
+
+  // Kindle Companion State & Actions
+  wordWiseSettings: {
+    maxDifficulty: 1 | 2 | 3 | 4 | 5;
+    language: "vi" | "en";
+    maxOccurrencesPerWord: number;
+  };
+  setWordWiseSettings: (settings: Partial<AppState["wordWiseSettings"]>) => void;
+  xrayData: XRayBookData | null;
+  setXRayData: (data: XRayBookData | null) => void;
+  isAnalyzingXRay: boolean;
+  runXRayExtraction: () => Promise<XRayBookData | null>;
+  applyWordWiseToBook: () => Promise<number>;
+  removeWordWiseFromBook: () => Promise<number>;
+  embedXRayAppendixToBook: () => Promise<boolean>;
 }
 
 const initialTheme = (typeof window !== "undefined" && (window.localStorage.getItem("lg-theme-mode") as "dark" | "light" | "system")) || "dark";
@@ -362,6 +379,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   sceneDivider: "♦ ♦ ♦",
   fontFamily: (STYLE_PRESETS.find((p) => p.id === "classic-hardcover") || STYLE_PRESETS[0]).vietnameseFontFamily || (STYLE_PRESETS.find((p) => p.id === "classic-hardcover") || STYLE_PRESETS[0]).fontFamily,
   setFontFamily: (font) => set({ fontFamily: font }),
+
+  // Kindle Companion Initial State
+  wordWiseSettings: {
+    maxDifficulty: 3,
+    language: "vi",
+    maxOccurrencesPerWord: 3,
+  },
+  setWordWiseSettings: (settings) =>
+    set((state) => ({
+      wordWiseSettings: { ...state.wordWiseSettings, ...settings },
+    })),
+  xrayData: null,
+  setXRayData: (data) => set({ xrayData: data }),
+  isAnalyzingXRay: false,
 
   loadBookFromPath: async (filePath: string) => {
     get().stopBatchEnhance();
@@ -1081,6 +1112,170 @@ export const useAppStore = create<AppState>((set, get) => ({
       isVietnameseBook: isVi,
       projects: updatedProjects,
     });
+  },
+
+  // Kindle Companion Actions Implementation
+  runXRayExtraction: async () => {
+    const { currentBook, currentFilePath, currentFileBytes, modifiedChapters } = get();
+    if (!currentBook || currentBook.chapters.length === 0) return null;
+
+    set({ isAnalyzingXRay: true });
+    try {
+      const chapterSources: ChapterTextSource[] = [];
+      // Read chapters
+      for (const ch of currentBook.chapters) {
+        let html = modifiedChapters[ch.href];
+        if (!html) {
+          try {
+            if (currentFilePath) {
+              html = await invoke<string>("read_chapter", { path: currentFilePath, href: ch.href });
+            } else if (currentFileBytes) {
+              html = await invoke<string>("read_chapter_bytes", { bytes: currentFileBytes, href: ch.href });
+            }
+          } catch (e) {
+            console.warn(`Could not read ${ch.href}:`, e);
+          }
+        }
+        if (html) {
+          chapterSources.push({ href: ch.href, title: ch.title, html });
+        }
+      }
+
+      const { people, terms } = extractXRayHeuristic(chapterSources);
+      const totalOccurrences = people.reduce((acc, p) => acc + p.occurrencesCount, 0) +
+        terms.reduce((acc, t) => acc + t.occurrencesCount, 0);
+
+      const generatedAsin = currentBook.isbn?.replace(/[^A-Za-z0-9]/g, "") ||
+        `B0${Math.abs(currentBook.title.split("").reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)).toString(36).toUpperCase().padStart(8, "0")}`.slice(0, 10);
+
+      const bookData: XRayBookData = {
+        bookTitle: currentBook.title,
+        asin: generatedAsin,
+        people,
+        terms,
+        totalOccurrences,
+      };
+
+      set({ xrayData: bookData, isAnalyzingXRay: false });
+      return bookData;
+    } catch (err) {
+      console.error("X-Ray extraction failed:", err);
+      set({ isAnalyzingXRay: false });
+      return null;
+    }
+  },
+
+  applyWordWiseToBook: async () => {
+    const { currentBook, currentFilePath, currentFileBytes, modifiedChapters, wordWiseSettings, activeProjectId } = get();
+    if (!currentBook || currentBook.chapters.length === 0) return 0;
+
+    const updatedModified = { ...modifiedChapters };
+    let totalAnnotated = 0;
+
+    for (const ch of currentBook.chapters) {
+      let html = updatedModified[ch.href];
+      if (!html) {
+        try {
+          if (currentFilePath) {
+            html = await invoke<string>("read_chapter", { path: currentFilePath, href: ch.href });
+          } else if (currentFileBytes) {
+            html = await invoke<string>("read_chapter_bytes", { bytes: currentFileBytes, href: ch.href });
+          }
+        } catch (e) {
+          console.warn(`Could not read ${ch.href}:`, e);
+        }
+      }
+
+      if (html) {
+        const result = injectWordWiseRuby(html, wordWiseSettings);
+        if (result.annotatedCount > 0) {
+          updatedModified[ch.href] = result.html;
+          totalAnnotated += result.annotatedCount;
+        }
+      }
+    }
+
+    set({ modifiedChapters: updatedModified });
+    if (activeProjectId) {
+      saveChaptersToDb(activeProjectId, updatedModified);
+      get().saveActiveProject();
+    }
+    return totalAnnotated;
+  },
+
+  removeWordWiseFromBook: async () => {
+    const { currentBook, modifiedChapters, activeProjectId } = get();
+    if (!currentBook) return 0;
+
+    const updatedModified = { ...modifiedChapters };
+    let strippedCount = 0;
+
+    for (const ch of currentBook.chapters) {
+      const html = updatedModified[ch.href];
+      if (html && html.includes("kindle-wordwise")) {
+        updatedModified[ch.href] = stripWordWiseRuby(html);
+        strippedCount++;
+      }
+    }
+
+    set({ modifiedChapters: updatedModified });
+    if (activeProjectId) {
+      saveChaptersToDb(activeProjectId, updatedModified);
+      get().saveActiveProject();
+    }
+    return strippedCount;
+  },
+
+  embedXRayAppendixToBook: async () => {
+    const { currentBook, modifiedChapters, xrayData, activeProjectId } = get();
+    if (!currentBook) return false;
+
+    let activeXRay = xrayData;
+    if (!activeXRay) {
+      activeXRay = await get().runXRayExtraction();
+    }
+    if (!activeXRay) return false;
+
+    const appendixHref = "xray_appendix.xhtml";
+    const appendixHtml = generateXRayAppendixHtml(activeXRay);
+
+    const updatedModified = {
+      ...modifiedChapters,
+      [appendixHref]: appendixHtml,
+    };
+
+    // If not already in chapters list, add to chapters
+    let updatedChapters = [...currentBook.chapters];
+    const existingIdx = updatedChapters.findIndex((c) => c.href === appendixHref);
+    const appendixItem: ChapterItem = {
+      id: "xray-appendix",
+      href: appendixHref,
+      title: "Dramatis Personae & World Guide (X-Ray)",
+      preview_text: `Bách khoa toàn thư nhân vật và thuật ngữ cho cuốn sách ${currentBook.title}.`,
+    };
+
+    if (existingIdx >= 0) {
+      updatedChapters[existingIdx] = appendixItem;
+    } else {
+      updatedChapters.push(appendixItem);
+    }
+
+    const updatedBook = {
+      ...currentBook,
+      chapters: updatedChapters,
+      chapter_count: updatedChapters.length,
+    };
+
+    set({
+      currentBook: updatedBook,
+      modifiedChapters: updatedModified,
+    });
+
+    if (activeProjectId) {
+      saveChaptersToDb(activeProjectId, updatedModified);
+      get().saveActiveProject();
+    }
+    return true;
   },
 
   createProject: (meta, source) => {
