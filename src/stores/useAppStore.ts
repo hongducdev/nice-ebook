@@ -10,6 +10,9 @@ import { injectWordWiseRuby, stripWordWiseRuby } from "../services/kindle/wordWi
 import { extractXRayHeuristic, generateXRayAppendixHtml, XRayBookData, ChapterTextSource } from "../services/kindle/xrayService";
 import { TranslationService } from "../services/translation/translationService";
 import { TranslationTone } from "../services/prompts/bookTranslator";
+import { LanguageDetector, LanguageDetectionResult } from "../utils/languageDetector";
+import { EntityExtractor, ExtractedEntityCandidate } from "../services/translation/entityExtractor";
+import { BookResearchService } from "../services/translation/bookResearchService";
 
 export interface ChapterItem {
   id: string;
@@ -136,6 +139,8 @@ export interface TranslationConfig {
   tone: TranslationTone;
   glossary: Record<string, string>;
   maxBlocksPerChunk: number;
+  researchBrief?: string;
+  useResearchBrief?: boolean;
 }
 
 export interface TranslationProgress {
@@ -286,6 +291,13 @@ export interface AppState {
   batchTranslateChapters: (chapterIndices?: number[], skipAlreadyTranslated?: boolean) => Promise<boolean>;
   stopTranslation: () => void;
   resetChapterTranslation: (chapterHref: string) => void;
+  autoDetectSourceLanguage: () => LanguageDetectionResult | null;
+  isExtractingEntities: boolean;
+  extractedCandidates: ExtractedEntityCandidate[];
+  extractBookEntities: () => Promise<ExtractedEntityCandidate[]>;
+  applyApprovedEntitiesToGlossary: (approved: Array<{ name: string; translation: string }>) => void;
+  isGeneratingResearchBrief: boolean;
+  generateBookResearchBrief: () => Promise<string>;
 }
 
 const initialTheme = (typeof window !== "undefined" && (window.localStorage.getItem("lg-theme-mode") as "dark" | "light" | "system")) || "dark";
@@ -351,6 +363,8 @@ const defaultTranslationConfig: TranslationConfig = {
   tone: "literary",
   glossary: {},
   maxBlocksPerChunk: 12,
+  researchBrief: "",
+  useResearchBrief: true,
 };
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -1578,6 +1592,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         tone: translationConfig.tone,
         mode: translationConfig.mode,
         glossary: translationConfig.glossary,
+        researchBrief: translationConfig.useResearchBrief ? translationConfig.researchBrief : undefined,
         baseUrl,
         model,
         fallbackModels,
@@ -1724,5 +1739,186 @@ export const useAppStore = create<AppState>((set, get) => ({
       type: "info",
       text: `Đã khôi phục chương ${chapterHref} về bản gốc.`,
     });
+  },
+
+  autoDetectSourceLanguage: () => {
+    const { currentBook } = get();
+    if (!currentBook) return null;
+
+    let sample = currentBook.sample_text || "";
+    if (sample.length < 50 && currentBook.chapters.length > 0) {
+      sample = currentBook.chapters
+        .slice(0, 3)
+        .map((c) => `${c.title} ${c.preview_text}`)
+        .join(" ");
+    }
+
+    const detected = LanguageDetector.detectLanguage(sample, currentBook.language);
+    get().setTranslationConfig({ sourceLang: detected.languageName });
+    get().addTerminalLog({
+      type: "info",
+      text: `🔍 [Nhận diện ngôn ngữ] ${detected.languageName} (Độ tin cậy: ${(detected.confidence * 100).toFixed(0)}%, nguồn: ${detected.source}) - ${detected.details || ""}`,
+    });
+    return detected;
+  },
+
+  isExtractingEntities: false,
+  extractedCandidates: [],
+
+  extractBookEntities: async () => {
+    const { currentBook, currentFilePath, currentFileBytes, activeGateway, selectedModel, translationConfig } = get();
+    if (!currentBook) return [];
+
+    set({ isExtractingEntities: true });
+    get().addTerminalLog({
+      type: "info",
+      text: `🔎 Bắt đầu quét tự động thực thể, tên riêng & thuật ngữ trong các chương mở đầu...`,
+    });
+
+    try {
+      // Gather chapter sources from first 5 chapters
+      const chapterSources: ChapterTextSource[] = [];
+      const sampleChapters = currentBook.chapters.slice(0, 5);
+
+      for (const ch of sampleChapters) {
+        let html = "";
+        try {
+          if (currentFilePath) {
+            html = await invoke<string>("read_chapter", { path: currentFilePath, href: ch.href });
+          } else if (currentFileBytes) {
+            html = await invoke<string>("read_chapter_bytes", { bytes: currentFileBytes, href: ch.href });
+          }
+        } catch (readErr) {
+          console.warn("Could not read chapter for entity extraction:", readErr);
+        }
+        if (html) {
+          chapterSources.push({ href: ch.href, title: ch.title, html });
+        }
+      }
+
+      // Step 1: Heuristic extraction
+      const rawCandidates = EntityExtractor.extractCandidates(
+        chapterSources,
+        translationConfig.glossary,
+        25
+      );
+
+      get().addTerminalLog({
+        type: "detail",
+        text: `Đã tìm thấy ${rawCandidates.length} thực thể và thuật ngữ tiềm năng. Đang gửi AI đề xuất bản dịch...`,
+      });
+
+      // Step 2: AI Proposal
+      const baseUrl = activeGateway ? activeGateway.base_url : "http://localhost:11434";
+      const model = selectedModel || activeGateway?.models?.[0] || "gpt-4o";
+
+      const enriched = await EntityExtractor.proposeTranslationsWithAi(rawCandidates, {
+        bookTitle: currentBook.title,
+        author: currentBook.author,
+        sourceLang: translationConfig.sourceLang,
+        targetLang: translationConfig.targetLang,
+        baseUrl,
+        model,
+      });
+
+      set({
+        extractedCandidates: enriched,
+        isExtractingEntities: false,
+      });
+
+      get().addTerminalLog({
+        type: "success",
+        text: `✅ Hoàn tất trích xuất ${enriched.length} thuật ngữ & tên riêng cho sách!`,
+      });
+
+      return enriched;
+    } catch (err: unknown) {
+      set({ isExtractingEntities: false });
+      const msg = err instanceof Error ? err.message : String(err);
+      get().addTerminalLog({
+        type: "warning",
+        text: `⚠️ Lỗi khi trích xuất thuật ngữ: ${msg}`,
+      });
+      return [];
+    }
+  },
+
+  applyApprovedEntitiesToGlossary: (approved) => {
+    const { translationConfig, activeProjectId } = get();
+    const updatedGlossary = EntityExtractor.mergeApprovedEntitiesIntoGlossary(
+      translationConfig.glossary,
+      approved
+    );
+    set({
+      translationConfig: {
+        ...translationConfig,
+        glossary: updatedGlossary,
+      },
+    });
+    if (activeProjectId) {
+      get().saveActiveProject();
+    }
+    get().addTerminalLog({
+      type: "success",
+      text: `🎉 Đã cập nhật ${approved.length} thuật ngữ vào bộ từ điển Glossary của sách!`,
+    });
+  },
+
+  isGeneratingResearchBrief: false,
+
+  generateBookResearchBrief: async () => {
+    const { currentBook, activeGateway, selectedModel, translationConfig, activeProjectId } = get();
+    if (!currentBook) return "";
+
+    set({ isGeneratingResearchBrief: true });
+    get().addTerminalLog({
+      type: "info",
+      text: `🧠 Bắt đầu nghiên cứu bối cảnh & lập quy tắc xưng hô cho "${currentBook.title}"...`,
+    });
+
+    try {
+      const baseUrl = activeGateway ? activeGateway.base_url : "http://localhost:11434";
+      const model = selectedModel || activeGateway?.models?.[0] || "gpt-4o";
+
+      const brief = await BookResearchService.generateResearchBrief({
+        bookTitle: currentBook.title,
+        author: currentBook.author,
+        genre: currentBook.genre,
+        sourceLang: translationConfig.sourceLang,
+        targetLang: translationConfig.targetLang,
+        tone: translationConfig.tone,
+        sampleText: currentBook.sample_text,
+        baseUrl,
+        model,
+      });
+
+      set({
+        translationConfig: {
+          ...translationConfig,
+          researchBrief: brief,
+          useResearchBrief: true,
+        },
+        isGeneratingResearchBrief: false,
+      });
+
+      if (activeProjectId) {
+        get().saveActiveProject();
+      }
+
+      get().addTerminalLog({
+        type: "success",
+        text: `📖 Đã hoàn tất lập Hồ sơ nghiên cứu bối cảnh tác phẩm (${brief.length} ký tự)!`,
+      });
+
+      return brief;
+    } catch (err: unknown) {
+      set({ isGeneratingResearchBrief: false });
+      const msg = err instanceof Error ? err.message : String(err);
+      get().addTerminalLog({
+        type: "warning",
+        text: `⚠️ Không thể lập hồ sơ nghiên cứu: ${msg}`,
+      });
+      return "";
+    }
   },
 }));

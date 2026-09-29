@@ -733,6 +733,45 @@ describe("useAppStore - Book Loading & Drag-and-Drop", () => {
       expect(mod["ch1.xhtml"]).toBeUndefined();
       expect(mod["ch2.xhtml"]).toBe("<html><body>Keep this</body></html>");
     });
+
+    it("auto-detects source language from current book sample text", () => {
+      useAppStore.setState({
+        currentBook: {
+          title: "Le Petit Prince",
+          author: "Antoine de Saint-Exupéry",
+          language: "fr",
+          description: "Un livre pour les enfants et les grands",
+          cover_data_url: null,
+          chapter_count: 1,
+          file_size_bytes: 100,
+          chapters: [],
+          sample_text: "C'est ainsi que j'ai abandonné, à l'âge de six ans, une magnifique carrière de peintre.",
+        },
+      });
+
+      const res = useAppStore.getState().autoDetectSourceLanguage();
+      expect(res).toBeDefined();
+      expect(res?.languageCode).toBe("fr");
+      expect(useAppStore.getState().translationConfig.sourceLang).toBe("Tiếng Pháp (French)");
+    });
+
+    it("applies approved entities to glossary without overwriting unapproved terms", () => {
+      useAppStore.getState().setTranslationConfig({
+        glossary: {
+          "Original Term": "Bản dịch gốc",
+        },
+      });
+
+      useAppStore.getState().applyApprovedEntitiesToGlossary([
+        { name: "Harry", translation: "Harry" },
+        { name: "Dumbledore", translation: "Cụ Dumbledore" },
+      ]);
+
+      const updated = useAppStore.getState().translationConfig.glossary;
+      expect(updated["Original Term"]).toBe("Bản dịch gốc");
+      expect(updated["Harry"]).toBe("Harry");
+      expect(updated["Dumbledore"]).toBe("Cụ Dumbledore");
+    });
   });
 });
 

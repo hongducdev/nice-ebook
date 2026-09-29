@@ -15,11 +15,19 @@ import {
   Layers,
   Plus,
   Terminal,
-  Eye
+  Eye,
+  Wand2,
+  FileText,
+  AlertTriangle,
+  Loader2,
+  X,
+  Search,
+  CheckSquare
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { TONE_DESCRIPTIONS, TranslationTone } from "../../services/prompts/bookTranslator";
 import { generateEpubCss, injectCssIntoHtml } from "../../utils/cssGenerator";
+import { LanguageDetectionResult } from "../../utils/languageDetector";
 import { toast } from "sonner";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -65,6 +73,13 @@ export function BookTranslatorView() {
     activePreset,
     customCss,
     fontFamily,
+    autoDetectSourceLanguage,
+    isExtractingEntities,
+    extractedCandidates,
+    extractBookEntities,
+    applyApprovedEntitiesToGlossary,
+    isGeneratingResearchBrief,
+    generateBookResearchBrief,
   } = useAppStore();
 
   const [scope, setScope] = useState<"single" | "unprocessed" | "all">("single");
@@ -72,6 +87,13 @@ export function BookTranslatorView() {
   const [copiedLogs, setCopiedLogs] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string>("");
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+
+  // Auto-detect & Research state
+  const [detectedLangInfo, setDetectedLangInfo] = useState<LanguageDetectionResult | null>(null);
+  const [showEntityModal, setShowEntityModal] = useState(false);
+  const [selectedEntityNames, setSelectedEntityNames] = useState<Record<string, boolean>>({});
+  const [editedTranslations, setEditedTranslations] = useState<Record<string, string>>({});
+  const [showResearchBrief, setShowResearchBrief] = useState(false);
 
   // Glossary input state
   const [newTermKey, setNewTermKey] = useState("");
@@ -273,6 +295,71 @@ export function BookTranslatorView() {
     });
   }
 
+  // Handle auto-detect source language
+  function handleAutoDetect() {
+    const res = autoDetectSourceLanguage();
+    if (res) {
+      setDetectedLangInfo(res);
+      toast.success(`Đã nhận diện: ${res.languageName} (${Math.round(res.confidence * 100)}%)`);
+    } else {
+      toast.warning("Không thể nhận diện ngôn ngữ của sách này.");
+    }
+  }
+
+  // Handle auto-extract entities and terminology
+  async function handleScanEntities() {
+    toast.loading("Đang quét tự động thực thể và đề xuất bản dịch...", { id: "scan-ent" });
+    const candidates = await extractBookEntities();
+    if (candidates.length > 0) {
+      toast.success(`Đã tìm thấy ${candidates.length} thuật ngữ & tên riêng!`, { id: "scan-ent" });
+      const initialSelected: Record<string, boolean> = {};
+      const initialEdits: Record<string, string> = {};
+      for (const c of candidates) {
+        initialSelected[c.name] = !c.isExistingInGlossary;
+        initialEdits[c.name] = c.suggestedTranslation;
+      }
+      setSelectedEntityNames(initialSelected);
+      setEditedTranslations(initialEdits);
+      setShowEntityModal(true);
+    } else {
+      toast.info("Không tìm thấy thuật ngữ mới nào.", { id: "scan-ent" });
+    }
+  }
+
+  // Handle apply approved entities into glossary
+  function handleApplyApprovedEntities() {
+    const approved: Array<{ name: string; translation: string }> = [];
+    for (const [name, isSelected] of Object.entries(selectedEntityNames)) {
+      if (isSelected) {
+        const trans = editedTranslations[name] || name;
+        approved.push({ name, translation: trans });
+      }
+    }
+    if (approved.length === 0) {
+      toast.warning("Chưa có thuật ngữ nào được chọn!");
+      return;
+    }
+    applyApprovedEntitiesToGlossary(approved);
+    setShowEntityModal(false);
+  }
+
+  // Handle generate research brief
+  async function handleGenerateBrief() {
+    toast.loading("Đang nghiên cứu bối cảnh tác phẩm bằng AI...", { id: "gen-brief" });
+    const brief = await generateBookResearchBrief();
+    if (brief) {
+      toast.success("Đã hoàn tất nghiên cứu bối cảnh tác phẩm!", { id: "gen-brief" });
+    } else {
+      toast.error("Không thể lập hồ sơ nghiên cứu.", { id: "gen-brief" });
+    }
+  }
+
+  const isSameLangWarning = Boolean(
+    detectedLangInfo &&
+      detectedLangInfo.languageName.toLowerCase().includes("việt") &&
+      translationConfig.targetLang.toLowerCase().includes("việt")
+  );
+
   if (!currentBook) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center select-none animate-in fade-in duration-200">
@@ -349,9 +436,38 @@ export function BookTranslatorView() {
         <div className="w-[360px] flex-shrink-0 border-r border-[var(--border)] bg-[var(--card)]/30 flex flex-col overflow-y-auto p-4 gap-4">
           {/* Section 1: Language Pairs */}
           <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-              1. Cặp ngôn ngữ
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                1. Cặp ngôn ngữ
+              </span>
+              <button
+                type="button"
+                onClick={handleAutoDetect}
+                className="lg-button lg-button--secondary text-[10px] h-6 px-2 gap-1 text-[var(--primary)] font-medium shadow-xs"
+                title="Tự động phân tích bảng mã và tần suất từ vựng để nhận diện ngôn ngữ gốc"
+              >
+                <Wand2 size={11} />
+                <span>Nhận diện tự động</span>
+              </button>
+            </div>
+
+            {detectedLangInfo && (
+              <div className="flex items-center gap-1.5 text-[10px] bg-[var(--secondary)]/60 px-2 py-1 rounded border border-[var(--border)]">
+                <span className="text-[var(--primary)] font-semibold">● Nhận diện:</span>
+                <span className="text-[var(--foreground)]">{detectedLangInfo.languageName}</span>
+                <span className="text-[var(--muted-foreground)] ml-auto font-mono">
+                  {Math.round(detectedLangInfo.confidence * 100)}% ({detectedLangInfo.source})
+                </span>
+              </div>
+            )}
+
+            {isSameLangWarning && (
+              <div className="p-2 rounded bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-500 flex items-start gap-1.5 animate-in fade-in duration-200">
+                <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+                <span>Sách gốc đã là Tiếng Việt. Bạn có muốn đổi ngôn ngữ đích sang tiếng khác hoặc dịch sang Tiếng Anh?</span>
+              </div>
+            )}
+
             <div className="flex items-center gap-2">
               <div className="flex-1 flex flex-col gap-1">
                 <label className="text-[10px] text-[var(--muted-foreground)] font-medium">Ngôn ngữ nguồn</label>
@@ -450,7 +566,76 @@ export function BookTranslatorView() {
             </div>
           </div>
 
-          {/* Section 4: Glossary / Terminology Accordion */}
+          {/* Section 4: Contextual Research Brief */}
+          <div className="flex flex-col gap-2 border border-[var(--border)] rounded-lg p-2.5 bg-[var(--secondary)]/20">
+            <div
+              className="flex items-center justify-between cursor-pointer select-none"
+              onClick={() => setShowResearchBrief(!showResearchBrief)}
+            >
+              <div className="flex items-center gap-1.5">
+                <FileText size={13} className="text-[var(--primary)]" />
+                <span className="text-xs font-semibold text-[var(--foreground)]">
+                  Nghiên cứu bối cảnh (Research Brief)
+                </span>
+              </div>
+              <span className={`app-badge text-[10px] px-1.5 h-4 ${
+                translationConfig.useResearchBrief ? "app-badge--brand" : "app-badge--neutral"
+              }`}>
+                {translationConfig.useResearchBrief ? "Đang bật" : "Tắt"}
+              </span>
+            </div>
+
+            {showResearchBrief && (
+              <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-[var(--border)] animate-in fade-in duration-150">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-1.5 text-[11px] text-[var(--foreground)] cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(translationConfig.useResearchBrief)}
+                      onChange={(e) => setTranslationConfig({ useResearchBrief: e.target.checked })}
+                      className="accent-[var(--primary)] rounded"
+                    />
+                    <span>Áp dụng vào bản dịch</span>
+                  </label>
+
+                  <button
+                    type="button"
+                    disabled={isGeneratingResearchBrief}
+                    onClick={handleGenerateBrief}
+                    className="lg-button lg-button--secondary text-[10px] h-6 px-2 gap-1 text-[var(--primary)] font-medium shadow-xs"
+                    title="Nghiên cứu thời đại, văn hóa và quy tắc xưng hô nhân vật bằng AI"
+                  >
+                    {isGeneratingResearchBrief ? (
+                      <Loader2 size={11} className="animate-spin" />
+                    ) : (
+                      <Sparkles size={11} />
+                    )}
+                    <span>{isGeneratingResearchBrief ? "Đang nghiên cứu..." : "AI Nghiên Cứu"}</span>
+                  </button>
+                </div>
+
+                <textarea
+                  rows={4}
+                  value={translationConfig.researchBrief || ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val.length <= 1500) {
+                      setTranslationConfig({ researchBrief: val });
+                    }
+                  }}
+                  placeholder="Bấm 'AI Nghiên Cứu' hoặc tự viết quy tắc xưng hô, bối cảnh thời đại, danh xưng nhân vật tại đây..."
+                  className="w-full text-[11px] bg-[var(--card)] border border-[var(--border)] rounded p-2 text-[var(--foreground)] font-mono resize-none outline-none focus:border-[var(--primary)] leading-relaxed"
+                />
+
+                <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)]">
+                  <span>Tự động đưa vào prompt để định hình văn phong chuẩn.</span>
+                  <span className="font-mono">{(translationConfig.researchBrief || "").length}/1200 ký tự</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section 5: Glossary / Terminology Accordion */}
           <div className="flex flex-col gap-2 border border-[var(--border)] rounded-lg p-2.5 bg-[var(--secondary)]/20">
             <div
               className="flex items-center justify-between cursor-pointer select-none"
@@ -462,9 +647,29 @@ export function BookTranslatorView() {
                   Bộ thuật ngữ &amp; Tên riêng (Glossary)
                 </span>
               </div>
-              <span className="app-badge app-badge--neutral text-[10px] px-1.5 h-4">
-                {Object.keys(translationConfig.glossary || {}).length} từ
-              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={isExtractingEntities}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleScanEntities();
+                  }}
+                  className="lg-button lg-button--secondary text-[10px] h-5 px-1.5 gap-1 text-[var(--primary)] font-medium shadow-xs"
+                  title="Tự động trích xuất các nhân vật, địa danh và thuật ngữ quan trọng"
+                >
+                  {isExtractingEntities ? (
+                    <Loader2 size={10} className="animate-spin" />
+                  ) : (
+                    <Search size={10} />
+                  )}
+                  <span>{isExtractingEntities ? "Đang quét..." : "Quét AI"}</span>
+                </button>
+
+                <span className="app-badge app-badge--neutral text-[10px] px-1.5 h-4">
+                  {Object.keys(translationConfig.glossary || {}).length} từ
+                </span>
+              </div>
             </div>
 
             {showGlossary && (
@@ -533,10 +738,10 @@ export function BookTranslatorView() {
             )}
           </div>
 
-          {/* Section 5: Scope & Chapter Selector */}
+          {/* Section 6: Scope & Chapter Selector */}
           <div className="flex flex-col gap-2">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-              4. Phạm vi dịch
+              5. Phạm vi dịch
             </span>
             <div className="segmented-toggle w-full">
               <button
@@ -789,6 +994,126 @@ export function BookTranslatorView() {
           </div>
         </div>
       </div>
+
+      {/* Entity & Terminology Review Modal */}
+      {showEntityModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] bg-[var(--secondary)]/40">
+              <div className="flex items-center gap-2">
+                <Search size={16} className="text-[var(--primary)]" />
+                <h3 className="text-xs font-semibold text-[var(--foreground)]">
+                  Kết Quả Trích Xuất Thuật Ngữ &amp; Tên Riêng
+                </h3>
+                <span className="app-badge app-badge--brand text-[10px] px-1.5 h-4">
+                  {extractedCandidates.length} thực thể
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowEntityModal(false)}
+                className="p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 flex-1 overflow-y-auto flex flex-col gap-3">
+              <p className="text-[11px] text-[var(--muted-foreground)] leading-relaxed">
+                Các tên nhân vật, địa danh và thuật ngữ quan trọng được phát hiện từ các chương sách. Bạn có thể chỉnh sửa bản dịch đề xuất trước khi thêm vào bộ từ điển Glossary:
+              </p>
+
+              <div className="border border-[var(--border)] rounded-lg overflow-hidden">
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead className="bg-[var(--secondary)]/60 text-[10px] uppercase font-semibold text-[var(--muted-foreground)] border-b border-[var(--border)]">
+                    <tr>
+                      <th className="p-2 w-10 text-center">Chọn</th>
+                      <th className="p-2">Tên / Thuật ngữ gốc</th>
+                      <th className="p-2 w-20">Loại</th>
+                      <th className="p-2 w-16 text-center">Tần suất</th>
+                      <th className="p-2">Bản dịch đề xuất (Có thể sửa)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border)]/60">
+                    {extractedCandidates.map((c) => {
+                      const isChecked = Boolean(selectedEntityNames[c.name]);
+                      const currentVal = editedTranslations[c.name] ?? c.suggestedTranslation;
+
+                      return (
+                        <tr key={c.id} className="hover:bg-[var(--secondary)]/30 transition-colors">
+                          <td className="p-2 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) =>
+                                setSelectedEntityNames({
+                                  ...selectedEntityNames,
+                                  [c.name]: e.target.checked,
+                                })
+                              }
+                              className="accent-[var(--primary)] rounded cursor-pointer"
+                            />
+                          </td>
+                          <td className="p-2 font-mono text-[11px] text-[var(--foreground)] font-medium">
+                            {c.name}
+                          </td>
+                          <td className="p-2">
+                            <span className="app-badge app-badge--neutral text-[9px] px-1 h-3.5">
+                              {c.category === "person" ? "Nhân vật" : c.category === "place" ? "Địa danh" : "Thuật ngữ"}
+                            </span>
+                          </td>
+                          <td className="p-2 text-center text-[10px] font-mono text-[var(--muted-foreground)]">
+                            {c.count}x
+                          </td>
+                          <td className="p-2">
+                            <input
+                              type="text"
+                              value={currentVal}
+                              onChange={(e) =>
+                                setEditedTranslations({
+                                  ...editedTranslations,
+                                  [c.name]: e.target.value,
+                                })
+                              }
+                              className="w-full text-xs bg-[var(--background)] border border-[var(--border)] rounded px-2 py-1 text-[var(--foreground)] outline-none focus:border-[var(--primary)]"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border)] bg-[var(--secondary)]/40">
+              <span className="text-[11px] text-[var(--muted-foreground)]">
+                Đã chọn: <strong className="text-[var(--foreground)]">{Object.values(selectedEntityNames).filter(Boolean).length}</strong> mục
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEntityModal(false)}
+                  className="lg-button lg-button--secondary text-xs h-8 px-3"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyApprovedEntities}
+                  className="lg-button lg-button--primary text-xs h-8 px-3 gap-1.5 font-medium shadow-xs"
+                >
+                  <CheckSquare size={13} />
+                  <span>Áp Dụng Vào Glossary</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

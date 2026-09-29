@@ -16,6 +16,7 @@ export interface TranslateChapterOptions {
   tone: TranslationTone;
   mode: "replace" | "bilingual";
   glossary?: Record<string, string>;
+  researchBrief?: string;
   baseUrl: string;
   apiKey?: string;
   model: string;
@@ -63,6 +64,7 @@ export class TranslationService {
       tone,
       mode,
       glossary,
+      researchBrief,
       baseUrl,
       apiKey,
       model,
@@ -130,6 +132,7 @@ export class TranslationService {
         glossary,
         bookTitle,
         chapterTitle,
+        researchBrief,
       });
 
       let chunkSuccess = false;

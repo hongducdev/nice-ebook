@@ -12,6 +12,7 @@ export interface BuildTranslationPromptOptions {
   glossary?: Record<string, string>;
   bookTitle?: string;
   chapterTitle?: string;
+  researchBrief?: string;
 }
 
 export const TONE_DESCRIPTIONS: Record<TranslationTone, { name: string; description: string; instructions: string }> = {
@@ -55,7 +56,7 @@ QUY TẮC CỐT LÕI BẮT BUỘC:
 }
 
 export function buildUserPrompt(options: BuildTranslationPromptOptions): string {
-  const { sourceLangName, targetLangName, tone, blocks, glossary, bookTitle, chapterTitle } = options;
+  const { sourceLangName, targetLangName, tone, blocks, glossary, bookTitle, chapterTitle, researchBrief } = options;
   const toneInfo = TONE_DESCRIPTIONS[tone] || TONE_DESCRIPTIONS.literary;
 
   let prompt = `Hãy dịch ${blocks.length} đoạn văn bản sau từ ${sourceLangName} sang ${targetLangName} theo văn phong ${toneInfo.name}.\n`;
@@ -74,6 +75,10 @@ export function buildUserPrompt(options: BuildTranslationPromptOptions): string 
         prompt += `- "${k}" => "${v}"\n`;
       }
     }
+  }
+
+  if (researchBrief && researchBrief.trim().length > 0) {
+    prompt += `\n[TÀI LIỆU THAM KHẢO NGỮ CẢNH TÁC PHẨM & QUY TẮC XƯNG HÔ]:\n<<<CONTEXT_BRIEF_START>>>\n${researchBrief.trim()}\n<<<CONTEXT_BRIEF_END>>>\n*Lưu ý: Chỉ áp dụng thông tin trên để thống nhất xưng hô và thuật ngữ, không dịch đoạn tài liệu này.*\n`;
   }
 
   prompt += `\n[DANH SÁCH ĐOẠN VĂN CẦN DỊCH]:\n`;
