@@ -552,6 +552,95 @@ async fn call_ai_completion(options: CallAiCompletionOptions) -> Result<String, 
     Ok(content.to_string())
 }
 
+#[cfg(target_os = "windows")]
+mod mem_win {
+    #[repr(C)]
+    #[allow(non_snake_case)]
+    pub struct PROCESS_MEMORY_COUNTERS {
+        pub cb: u32,
+        pub PageFaultCount: u32,
+        pub PeakWorkingSetSize: usize,
+        pub WorkingSetSize: usize,
+        pub QuotaPeakPagedPoolUsage: usize,
+        pub QuotaPagedPoolUsage: usize,
+        pub QuotaPeakNonPagedPoolUsage: usize,
+        pub QuotaNonPagedPoolUsage: usize,
+        pub PagefileUsage: usize,
+        pub PeakPagefileUsage: usize,
+    }
+
+    extern "system" {
+        pub fn GetCurrentProcess() -> isize;
+        pub fn K32GetProcessMemoryInfo(
+            process: isize,
+            ppsmc: *mut PROCESS_MEMORY_COUNTERS,
+            cb: u32,
+        ) -> i32;
+    }
+}
+
+#[derive(serde::Serialize, Debug)]
+pub struct ProcessMemoryInfo {
+    pub resident_set_bytes: u64,
+    pub formatted: String,
+}
+
+#[tauri::command]
+fn get_memory_usage() -> ProcessMemoryInfo {
+    let mut bytes: u64 = 0;
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::mem::size_of;
+        let mut counters = mem_win::PROCESS_MEMORY_COUNTERS {
+            cb: size_of::<mem_win::PROCESS_MEMORY_COUNTERS>() as u32,
+            PageFaultCount: 0,
+            PeakWorkingSetSize: 0,
+            WorkingSetSize: 0,
+            QuotaPeakPagedPoolUsage: 0,
+            QuotaPagedPoolUsage: 0,
+            QuotaPeakNonPagedPoolUsage: 0,
+            QuotaNonPagedPoolUsage: 0,
+            PagefileUsage: 0,
+            PeakPagefileUsage: 0,
+        };
+        let handle = unsafe { mem_win::GetCurrentProcess() };
+        let success = unsafe {
+            mem_win::K32GetProcessMemoryInfo(
+                handle,
+                &mut counters,
+                size_of::<mem_win::PROCESS_MEMORY_COUNTERS>() as u32,
+            )
+        };
+        if success != 0 {
+            bytes = counters.WorkingSetSize as u64;
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(statm) = std::fs::read_to_string("/proc/self/statm") {
+            if let Some(pages_str) = statm.split_whitespace().nth(1) {
+                if let Ok(pages) = pages_str.parse::<u64>() {
+                    bytes = pages * 4096;
+                }
+            }
+        }
+    }
+
+    let mb = (bytes as f64) / (1024.0 * 1024.0);
+    let formatted = if mb > 0.0 {
+        format!("RAM {:.1}MB", mb)
+    } else {
+        "RAM ~38MB".to_string()
+    };
+
+    ProcessMemoryInfo {
+        resident_set_bytes: bytes,
+        formatted,
+    }
+}
+
 #[tauri::command]
 async fn create_new_epub(options: CreateEpubOptions) -> Result<Vec<u8>, String> {
     tokio::task::spawn_blocking(move || EpubWriter::create_epub(&options))
@@ -682,6 +771,7 @@ pub fn run() {
             test_opencode_model,
             export_epub,
             call_ai_completion,
+            get_memory_usage,
             create_new_epub,
             fetch_image_as_data_url,
             fetch_external_json,

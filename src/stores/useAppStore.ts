@@ -143,6 +143,7 @@ export interface TranslationConfig {
   maxBlocksPerChunk: number;
   researchBrief?: string;
   useResearchBrief?: boolean;
+  translateTitles?: boolean;
 }
 
 export interface TranslationProgress {
@@ -377,6 +378,7 @@ const defaultTranslationConfig: TranslationConfig = {
   maxBlocksPerChunk: 12,
   researchBrief: "",
   useResearchBrief: true,
+  translateTitles: true,
 };
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -1634,7 +1636,51 @@ export const useAppStore = create<AppState>((set, get) => ({
         [chapter.href]: res.translatedHtml,
       };
 
+      // Translate chapter title & book title if enabled
+      let updatedBook = { ...currentBook };
+      if (translationConfig.translateTitles !== false) {
+        const newChapterTitle = res.translatedChapterTitle || chapter.title;
+        if (newChapterTitle && newChapterTitle !== chapter.title) {
+          const updatedChapters = [...currentBook.chapters];
+          updatedChapters[chapterIndex] = {
+            ...chapter,
+            title: newChapterTitle,
+          };
+          updatedBook.chapters = updatedChapters;
+          get().addTerminalLog({
+            type: "info",
+            text: `📑 [Tiêu đề chương] Đã dịch: "${chapter.title}" ➔ "${newChapterTitle}"`,
+          });
+        }
+
+        // Translate book title if not already in target language
+        if (currentBook.title && !get().isVietnameseBook) {
+          try {
+            const translatedBookTitle = await TranslationService.translateTitle({
+              title: currentBook.title,
+              sourceLang: translationConfig.sourceLang,
+              targetLang: translationConfig.targetLang,
+              tone: translationConfig.tone,
+              baseUrl,
+              apiKey: undefined,
+              model,
+            });
+            if (translatedBookTitle && translatedBookTitle !== currentBook.title) {
+              updatedBook.title = translatedBookTitle;
+              updatedBook.language = "vi";
+              get().addTerminalLog({
+                type: "success",
+                text: `📖 [Tên truyện] Đã dịch tên tác phẩm: "${currentBook.title}" ➔ "${translatedBookTitle}"`,
+              });
+            }
+          } catch (titleErr) {
+            console.warn("Could not translate book title:", titleErr);
+          }
+        }
+      }
+
       set({
+        currentBook: updatedBook,
         modifiedChapters: updatedModified,
         isTranslating: false,
         translationProgress: null,
@@ -1671,7 +1717,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   batchTranslateChapters: async (chapterIndices?: number[], skipAlreadyTranslated = false) => {
-    const { currentBook, modifiedChapters } = get();
+    const { currentBook, modifiedChapters, translationConfig, activeGateway, selectedModel } = get();
     if (!currentBook || currentBook.chapters.length === 0) return false;
 
     const targets = chapterIndices && chapterIndices.length > 0
@@ -1697,6 +1743,38 @@ export const useAppStore = create<AppState>((set, get) => ({
       type: "info",
       text: `🚀 Bắt đầu dịch hàng loạt ${pending.length} chương...`,
     });
+
+    // Translate book title first if enabled and not already translated
+    if (translationConfig.translateTitles !== false && currentBook.title && !get().isVietnameseBook) {
+      const baseUrl = activeGateway ? activeGateway.base_url : "http://localhost:11434";
+      const model = selectedModel || activeGateway?.models?.[0] || "gpt-4o";
+      try {
+        const translatedBookTitle = await TranslationService.translateTitle({
+          title: currentBook.title,
+          sourceLang: translationConfig.sourceLang,
+          targetLang: translationConfig.targetLang,
+          tone: translationConfig.tone,
+          baseUrl,
+          apiKey: undefined,
+          model,
+        });
+        if (translatedBookTitle && translatedBookTitle !== currentBook.title) {
+          set({
+            currentBook: {
+              ...get().currentBook!,
+              title: translatedBookTitle,
+              language: "vi",
+            },
+          });
+          get().addTerminalLog({
+            type: "success",
+            text: `📖 [Tên truyện] Đã dịch tên tác phẩm: "${currentBook.title}" ➔ "${translatedBookTitle}"`,
+          });
+        }
+      } catch (titleErr) {
+        console.warn("Could not translate book title in batch:", titleErr);
+      }
+    }
 
     for (let pIdx = 0; pIdx < pending.length; pIdx++) {
       if (translationAbortController?.signal.aborted) {

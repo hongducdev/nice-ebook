@@ -534,6 +534,16 @@ export function BookTranslatorView() {
                 ? "Thay thế chữ gốc bằng bản dịch tiếng Việt mượt mà để đọc trọn vẹn tác phẩm."
                 : "Chèn bản dịch ngay dưới mỗi đoạn gốc với định dạng song ngữ, lý tưởng để học ngoại ngữ."}
             </p>
+
+            <label className="flex items-center gap-1.5 text-[11px] text-[var(--foreground)] cursor-pointer select-none mt-1">
+              <input
+                type="checkbox"
+                checked={translationConfig.translateTitles !== false}
+                onChange={(e) => setTranslationConfig({ translateTitles: e.target.checked })}
+                className="accent-[var(--primary)] rounded cursor-pointer"
+              />
+              <span>Dịch cả tên truyện &amp; tiêu đề các chương</span>
+            </label>
           </div>
 
           {/* Section 3: Tone Presets */}

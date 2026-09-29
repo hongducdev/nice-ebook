@@ -17,6 +17,7 @@ export interface TranslateChapterOptions {
   mode: "replace" | "bilingual";
   glossary?: Record<string, string>;
   researchBrief?: string;
+  translateChapterTitle?: boolean;
   baseUrl: string;
   apiKey?: string;
   model: string;
@@ -40,6 +41,7 @@ export interface TranslateChapterOptions {
 
 export interface TranslateChapterResult {
   translatedHtml: string;
+  translatedChapterTitle?: string;
   totalBlocks: number;
   translatedBlocksCount: number;
   elapsedMs: number;
@@ -47,6 +49,53 @@ export interface TranslateChapterResult {
 }
 
 export class TranslationService {
+  /**
+   * Translates a single title (book title or chapter title) into the target language.
+   */
+  public static async translateTitle(options: {
+    title: string;
+    sourceLang: string;
+    targetLang: string;
+    tone: TranslationTone;
+    baseUrl: string;
+    apiKey?: string;
+    model: string;
+  }): Promise<string> {
+    const { title, sourceLang, targetLang, tone, baseUrl, apiKey, model } = options;
+    const cleanTitle = title.trim();
+    if (!cleanTitle) return cleanTitle;
+
+    const systemPrompt = `Bạn là một dịch giả sách chuyên nghiệp từ ${sourceLang} sang ${targetLang}.
+Nhiệm vụ: Dịch tiêu đề tác phẩm hoặc tiêu đề chương sách sang ${targetLang} theo văn phong ${tone}.
+Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuyển ngữ, không thêm lời chào, không thêm ngoặc kép, không giải thích.`;
+
+    try {
+      const res = await invoke<string>("call_ai_completion", {
+        options: {
+          base_url: baseUrl,
+          api_key: apiKey,
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: `Tiêu đề: "${cleanTitle}"` },
+          ],
+          temperature: 0.2,
+          timeout_secs: 20,
+        },
+      });
+
+      if (!res || typeof res !== "string") {
+        return cleanTitle;
+      }
+
+      const trimmed = res.replace(/^["'«“]|["'»”]$/g, "").trim();
+      return trimmed || cleanTitle;
+    } catch (err) {
+      console.warn("Could not translate title:", err);
+      return cleanTitle;
+    }
+  }
+
   /**
    * Translates an entire XHTML chapter chunk-by-chunk with prompt isolation,
    * model fallback handling, surgical replacement, and abort support.
@@ -225,18 +274,42 @@ export class TranslationService {
       glossary,
     });
 
+    // Determine translated chapter title:
+    // 1. If heading block (h1 or h2) was translated, use that directly
+    // 2. Otherwise translate the chapterTitle if requested
+    let translatedChapterTitle: string | undefined;
+    const headingBlock = blocks.find((b) => b.tag === "h1" || b.tag === "h2");
+    if (headingBlock && allTranslations[headingBlock.id]) {
+      translatedChapterTitle = allTranslations[headingBlock.id];
+    } else if (options.translateChapterTitle && chapterTitle && chapterTitle.trim()) {
+      try {
+        translatedChapterTitle = await TranslationService.translateTitle({
+          title: chapterTitle,
+          sourceLang,
+          targetLang,
+          tone,
+          baseUrl,
+          apiKey,
+          model: successfulModel,
+        });
+      } catch {
+        translatedChapterTitle = chapterTitle;
+      }
+    }
+
     const elapsedMs = Math.round(performance.now() - start);
     const translatedCount = Object.keys(allTranslations).length;
 
     onLog?.({
       type: "success",
-      text: `🎉 Hoàn tất dịch chương "${chapterTitle}" (${translatedCount}/${blocks.length} đoạn, thời gian: ${(
+      text: `🎉 Hoàn tất dịch chương "${chapterTitle}" ➔ "${translatedChapterTitle || chapterTitle}" (${translatedCount}/${blocks.length} đoạn, thời gian: ${(
         elapsedMs / 1000
       ).toFixed(1)}s, chế độ: ${mode === "bilingual" ? "Song ngữ" : "Thay thế"}).`,
     });
 
     return {
       translatedHtml: finalHtml,
+      translatedChapterTitle,
       totalBlocks: blocks.length,
       translatedBlocksCount: translatedCount,
       elapsedMs,

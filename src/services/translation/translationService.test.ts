@@ -186,4 +186,46 @@ describe("TranslationService", () => {
       })
     ).rejects.toThrow("không trả về mảng JSON bản dịch hợp lệ");
   });
+
+  it("translates a book or chapter title cleanly", async () => {
+    const mockInvoke = vi.mocked(invoke);
+    mockInvoke.mockResolvedValueOnce('"Harry Potter và Hòn đá Phù thủy"');
+
+    const title = await TranslationService.translateTitle({
+      title: "Harry Potter and the Sorcerer's Stone",
+      sourceLang: "English",
+      targetLang: "Vietnamese",
+      tone: "literary",
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-4o",
+    });
+
+    expect(title).toBe("Harry Potter và Hòn đá Phù thủy");
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns translatedChapterTitle from translated h1 block", async () => {
+    const mockInvoke = vi.mocked(invoke);
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify([
+        { id: "p_0", text: "Chương 1: Cậu bé sống sót" },
+        { id: "p_1", text: "Nội dung mở đầu..." },
+      ])
+    );
+
+    const chapterHtml = `<html><body><h1>Chapter 1: The Boy Who Lived</h1><p>Opening...</p></body></html>`;
+
+    const result = await TranslationService.translateChapter({
+      chapterHtml,
+      chapterTitle: "Chapter 1: The Boy Who Lived",
+      sourceLang: "English",
+      targetLang: "Vietnamese",
+      tone: "literary",
+      mode: "replace",
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-4o",
+    });
+
+    expect(result.translatedChapterTitle).toBe("Chương 1: Cậu bé sống sót");
+  });
 });
