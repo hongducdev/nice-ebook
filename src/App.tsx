@@ -118,7 +118,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <Toaster 
-        position="top-right" 
+        position="bottom-right" 
         theme={theme === "light" ? "light" : "dark"} 
         richColors 
       />
