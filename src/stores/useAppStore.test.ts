@@ -860,6 +860,50 @@ describe("useAppStore - Book Loading & Drag-and-Drop", () => {
       expect(targetMsg?.actionStatus).toBe("rejected");
     });
   });
+
+  describe("Auto-Configure All Translation Settings", () => {
+    it("auto-configures language, tone, titles, and preserves pre-existing user glossary", async () => {
+      useAppStore.setState({
+        currentBook: {
+          title: "Phàm Nhân Tu Tiên",
+          author: "Vong Ngữ",
+          language: "zh",
+          description: "Truyện tu tiên kinh điển",
+          cover_data_url: null,
+          chapter_count: 1,
+          file_size_bytes: 100,
+          chapters: [],
+          sample_text: "韩立拿着神秘小瓶，开始了他的修仙宗门之旅。", // Chinese CJK cultivation keywords
+        },
+        translationConfig: {
+          sourceLang: "Tiếng Anh (English)",
+          targetLang: "Tiếng Việt (Vietnamese)",
+          mode: "replace",
+          tone: "literary",
+          glossary: {
+            "Custom Term": "Bản dịch của người dùng",
+          },
+          maxBlocksPerChunk: 12,
+          useResearchBrief: false,
+          translateTitles: false,
+        },
+      });
+
+      const res = await useAppStore.getState().autoConfigureAllTranslationSettings();
+
+      expect(res).toBeDefined();
+      expect(res?.recommendedTone).toBe("wuxia"); // Recognized wuxia cultivation!
+      expect(res?.detectedLanguage?.languageCode).toBe("zh"); // Recognized Chinese!
+
+      const updated = useAppStore.getState().translationConfig;
+      expect(updated.tone).toBe("wuxia");
+      expect(updated.sourceLang).toBe("Tiếng Trung (Chinese)");
+      expect(updated.targetLang).toBe("Tiếng Việt (Vietnamese)");
+      expect(updated.translateTitles).toBe(true);
+      // Pre-existing user term must be strictly preserved!
+      expect(updated.glossary["Custom Term"]).toBe("Bản dịch của người dùng");
+    });
+  });
 });
 
 

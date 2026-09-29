@@ -24,7 +24,7 @@ import {
   Search,
   CheckSquare
 } from "lucide-react";
-import { useAppStore } from "../../stores/useAppStore";
+import { useAppStore, AutoTranslationConfigResult } from "../../stores/useAppStore";
 import { TONE_DESCRIPTIONS, TranslationTone } from "../../services/prompts/bookTranslator";
 import { generateEpubCss, injectCssIntoHtml } from "../../utils/cssGenerator";
 import { LanguageDetectionResult } from "../../utils/languageDetector";
@@ -80,6 +80,8 @@ export function BookTranslatorView() {
     applyApprovedEntitiesToGlossary,
     isGeneratingResearchBrief,
     generateBookResearchBrief,
+    isAutoConfiguringAll,
+    autoConfigureAllTranslationSettings,
   } = useAppStore();
 
   const [scope, setScope] = useState<"single" | "unprocessed" | "all">("single");
@@ -89,6 +91,7 @@ export function BookTranslatorView() {
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
   // Auto-detect & Research state
+  const [autoConfigResult, setAutoConfigResult] = useState<AutoTranslationConfigResult | null>(null);
   const [detectedLangInfo, setDetectedLangInfo] = useState<LanguageDetectionResult | null>(null);
   const [showEntityModal, setShowEntityModal] = useState(false);
   const [selectedEntityNames, setSelectedEntityNames] = useState<Record<string, boolean>>({});
@@ -295,6 +298,26 @@ export function BookTranslatorView() {
     });
   }
 
+  // Handle auto-configure all settings at once
+  async function handleAutoConfigureAll() {
+    toast.loading("Đang tự động phân tích ngôn ngữ, thể loại, bối cảnh và thuật ngữ sách...", {
+      id: "auto-config",
+    });
+    const res = await autoConfigureAllTranslationSettings();
+    if (res) {
+      setAutoConfigResult(res);
+      if (res.detectedLanguage) {
+        setDetectedLangInfo(res.detectedLanguage);
+      }
+      toast.success(
+        `Đã tự động cấu hình toàn bộ: ${res.detectedLanguage?.languageName || "Ngôn ngữ"} ➔ ${res.toneLabel}!`,
+        { id: "auto-config" }
+      );
+    } else {
+      toast.error("Không thể tự động cấu hình cài đặt cho sách này.", { id: "auto-config" });
+    }
+  }
+
   // Handle auto-detect source language
   function handleAutoDetect() {
     const res = autoDetectSourceLanguage();
@@ -434,6 +457,53 @@ export function BookTranslatorView() {
       <div className="flex-1 flex overflow-hidden">
         {/* Left Control Panel */}
         <div className="w-[360px] flex-shrink-0 border-r border-[var(--border)] bg-[var(--card)]/30 flex flex-col overflow-y-auto p-4 gap-4">
+          {/* One-Click Auto-Configure All Settings Button & Banner */}
+          <div className="p-3 rounded-xl border border-[var(--primary)]/40 bg-[color-mix(in_srgb,var(--primary)_8%,var(--card))] flex flex-col gap-2 shadow-xs">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--foreground)]">
+                <Sparkles size={14} className="text-[var(--primary)]" />
+                <span>Tự Động Cấu Hình Toàn Diện</span>
+              </div>
+              <span className="app-badge app-badge--brand text-[9px] px-1.5 h-3.5">
+                AI + Jev 1-Click
+              </span>
+            </div>
+
+            <p className="text-[10px] text-[var(--muted-foreground)] leading-relaxed">
+              Tự động nhận diện ngôn ngữ, phân tích thể loại đề xuất văn phong, trích xuất thuật ngữ &amp; nghiên cứu bối cảnh sách trong 1 lượt.
+            </p>
+
+            <button
+              type="button"
+              disabled={isAutoConfiguringAll}
+              onClick={handleAutoConfigureAll}
+              className="lg-button lg-button--primary text-xs h-8 px-3 gap-1.5 font-medium shadow-xs w-full"
+              title="Phân tích và tự động cấu hình toàn bộ cài đặt dịch thuật"
+            >
+              {isAutoConfiguringAll ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Sparkles size={13} />
+              )}
+              <span>{isAutoConfiguringAll ? "Đang tự động thiết lập toàn bộ..." : "Tự Động Thiết Lập Toàn Bộ"}</span>
+            </button>
+
+            {autoConfigResult && (
+              <div className="mt-1 p-2 rounded bg-[var(--card)]/90 border border-[var(--border)] text-[10px] flex flex-col gap-1 text-[var(--foreground)] animate-in fade-in duration-200">
+                <div className="flex items-center justify-between font-semibold text-[var(--primary)]">
+                  <span>✓ Đã cấu hình xong</span>
+                  <span className="text-[var(--muted-foreground)] font-mono">{autoConfigResult.toneLabel}</span>
+                </div>
+                <div className="text-[var(--muted-foreground)] leading-tight">
+                  Ngôn ngữ: <strong>{autoConfigResult.detectedLanguage?.languageName || "Tự động"}</strong> ➔ <strong>{translationConfig.targetLang}</strong>
+                </div>
+                <div className="text-[var(--muted-foreground)] leading-tight">
+                  Thuật ngữ: <strong>{autoConfigResult.entitiesExtractedCount} mục</strong> • Bối cảnh: <strong>{autoConfigResult.researchBriefGenerated ? "Đã lập" : "Bỏ qua"}</strong>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Section 1: Language Pairs */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">

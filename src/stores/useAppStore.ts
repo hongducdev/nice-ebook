@@ -9,7 +9,7 @@ import { generateEpubCss } from "../utils/cssGenerator";
 import { injectWordWiseRuby, stripWordWiseRuby } from "../services/kindle/wordWiseService";
 import { extractXRayHeuristic, generateXRayAppendixHtml, XRayBookData, ChapterTextSource } from "../services/kindle/xrayService";
 import { TranslationService } from "../services/translation/translationService";
-import { TranslationTone } from "../services/prompts/bookTranslator";
+import { TranslationTone, TONE_DESCRIPTIONS } from "../services/prompts/bookTranslator";
 import { LanguageDetector, LanguageDetectionResult } from "../utils/languageDetector";
 import { EntityExtractor, ExtractedEntityCandidate } from "../services/translation/entityExtractor";
 import { BookResearchService } from "../services/translation/bookResearchService";
@@ -154,6 +154,21 @@ export interface TranslationProgress {
   currentBlock: number;
   totalBlocks: number;
   percent: number;
+}
+
+export interface AutoTranslationConfigResult {
+  detectedLanguage: LanguageDetectionResult | null;
+  recommendedTone: TranslationTone;
+  toneLabel: string;
+  entitiesExtractedCount: number;
+  researchBriefGenerated: boolean;
+  researchBriefSnippet?: string;
+  stepStatuses: {
+    language: "success" | "fallback" | "failed";
+    tone: "success" | "fallback";
+    entities: "success" | "skipped" | "failed";
+    research: "success" | "skipped" | "failed";
+  };
 }
 
 export interface AppState {
@@ -301,6 +316,8 @@ export interface AppState {
   applyApprovedEntitiesToGlossary: (approved: Array<{ name: string; translation: string }>) => void;
   isGeneratingResearchBrief: boolean;
   generateBookResearchBrief: () => Promise<string>;
+  isAutoConfiguringAll: boolean;
+  autoConfigureAllTranslationSettings: () => Promise<AutoTranslationConfigResult | null>;
 
   // AI Chat Agent State & Actions
   agentMessages: AgentChatMessage[];
@@ -2013,6 +2030,154 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       return "";
     }
+  },
+
+  isAutoConfiguringAll: false,
+
+  autoConfigureAllTranslationSettings: async () => {
+    const { currentBook, activeProjectId } = get();
+    if (!currentBook) return null;
+
+    set({ isAutoConfiguringAll: true });
+    get().addTerminalLog({
+      type: "info",
+      text: "⚡ [Tự động thiết lập] Bắt đầu tự động cấu hình toàn bộ cài đặt dịch thuật cho sách...",
+    });
+
+    const stepStatuses: AutoTranslationConfigResult["stepStatuses"] = {
+      language: "failed",
+      tone: "fallback",
+      entities: "skipped",
+      research: "skipped",
+    };
+
+    // 1. Language detection
+    let detectedLang: LanguageDetectionResult | null = null;
+    try {
+      detectedLang = get().autoDetectSourceLanguage();
+      if (detectedLang) {
+        stepStatuses.language = detectedLang.source === "metadata" ? "fallback" : "success";
+        const isVi =
+          detectedLang.languageCode === "vi" ||
+          detectedLang.languageName.toLowerCase().includes("việt");
+        get().setTranslationConfig({
+          sourceLang: detectedLang.languageName,
+          targetLang: isVi ? "Tiếng Anh (English)" : "Tiếng Việt (Vietnamese)",
+        });
+      }
+    } catch (langErr) {
+      console.warn("Language detection failed in auto-configure:", langErr);
+    }
+
+    // 2. Genre & Tone recommendation via Jev Core / keywords
+    let recommendedTone: TranslationTone = "literary";
+    try {
+      let genre = get().jevDecision?.genre || "";
+      if (!genre && currentBook.sample_text) {
+        try {
+          const decision = await invoke<JevDecision>("classify_text_jev", {
+            text: currentBook.sample_text,
+          });
+          set({ jevDecision: decision });
+          genre = decision.genre;
+        } catch {
+          // ignore
+        }
+      }
+
+      const sample = (currentBook.sample_text || "").toLowerCase();
+      if (
+        genre === "wuxia" ||
+        /tu tiên|kiếm hiệp|huyền huyễn|tông môn|đan dược|phi kiếm|修仙|宗门|武侠/i.test(sample)
+      ) {
+        recommendedTone = "wuxia";
+        stepStatuses.tone = "success";
+      } else if (
+        genre === "light_novel" ||
+        /light novel|anime|học đường|chuyển sinh|isekai/i.test(sample)
+      ) {
+        recommendedTone = "light_novel";
+        stepStatuses.tone = "success";
+      } else if (
+        genre === "scifi" ||
+        /khoa học|công nghệ|lập trình|algorithm|software|architecture|kinh tế/i.test(sample)
+      ) {
+        recommendedTone = "academic";
+        stepStatuses.tone = "success";
+      } else {
+        recommendedTone = "literary";
+        stepStatuses.tone = "success";
+      }
+
+      get().setTranslationConfig({ tone: recommendedTone });
+    } catch (toneErr) {
+      console.warn("Tone recommendation failed, falling back to literary:", toneErr);
+    }
+
+    // 3. Contextual Research Brief
+    let researchBrief = "";
+    try {
+      researchBrief = await get().generateBookResearchBrief();
+      if (researchBrief) {
+        stepStatuses.research = "success";
+      } else {
+        stepStatuses.research = "failed";
+      }
+    } catch (briefErr) {
+      console.warn("Research brief generation failed:", briefErr);
+      stepStatuses.research = "failed";
+    }
+
+    // 4. Auto Entity & Terminology extraction
+    let entitiesCount = 0;
+    try {
+      const candidates = await get().extractBookEntities();
+      entitiesCount = candidates.length;
+      if (candidates.length > 0) {
+        // Automatically seed high-frequency candidates (count >= 3) without overwriting existing terms
+        const highConfidence = candidates
+          .filter(
+            (c) =>
+              c.count >= 3 &&
+              !c.isExistingInGlossary &&
+              c.suggestedTranslation !== c.name
+          )
+          .map((c) => ({ name: c.name, translation: c.suggestedTranslation }));
+
+        if (highConfidence.length > 0) {
+          get().applyApprovedEntitiesToGlossary(highConfidence);
+        }
+        stepStatuses.entities = "success";
+      }
+    } catch (entErr) {
+      console.warn("Entity extraction failed:", entErr);
+      stepStatuses.entities = "failed";
+    }
+
+    // 5. Automatically enable translating titles
+    get().setTranslationConfig({ translateTitles: true });
+
+    if (activeProjectId) {
+      get().saveActiveProject();
+    }
+
+    set({ isAutoConfiguringAll: false });
+
+    const toneLabel = TONE_DESCRIPTIONS[recommendedTone]?.name || "Văn học & Tiểu thuyết";
+    get().addTerminalLog({
+      type: "success",
+      text: `🎉 [Hoàn tất tự động thiết lập] Ngôn ngữ: ${detectedLang?.languageName || "Tiếng Anh"} ➔ ${get().translationConfig.targetLang} | Văn phong: ${toneLabel} | Thuật ngữ: ${entitiesCount} mục | Bối cảnh: ${researchBrief ? "Đã lập" : "Bỏ qua"}`,
+    });
+
+    return {
+      detectedLanguage: detectedLang,
+      recommendedTone,
+      toneLabel,
+      entitiesExtractedCount: entitiesCount,
+      researchBriefGenerated: Boolean(researchBrief),
+      researchBriefSnippet: researchBrief ? researchBrief.slice(0, 150) + "..." : undefined,
+      stepStatuses,
+    };
   },
 
   // AI Chat Agent Implementation
