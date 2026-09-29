@@ -171,6 +171,18 @@ ruby[data-kindle-wordwise] rt {
   letter-spacing: -0.01em;
 }
 
+/* Bilingual Translation Layout */
+.bilingual-original {
+  opacity: 0.8 !important;
+  font-size: 0.95em !important;
+  margin-bottom: 0.25em !important;
+}
+.bilingual-translated, p[data-bilingual-for] {
+  margin-top: 0 !important;
+  margin-bottom: 1.2em !important;
+  font-weight: 500 !important;
+}
+
 ${customOverrides || ""}
 `;
 }

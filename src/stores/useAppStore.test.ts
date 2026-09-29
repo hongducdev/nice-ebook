@@ -704,6 +704,36 @@ describe("useAppStore - Book Loading & Drag-and-Drop", () => {
       expect(reopenedState.currentBook?.chapters[0].preview_text).not.toContain("dtv-ebook.com");
     });
   });
+
+  describe("Book Translation Actions", () => {
+    it("updates translationConfig correctly", () => {
+      useAppStore.getState().setTranslationConfig({
+        sourceLang: "Tiếng Trung (Chinese)",
+        tone: "wuxia",
+        mode: "bilingual",
+      });
+
+      const config = useAppStore.getState().translationConfig;
+      expect(config.sourceLang).toBe("Tiếng Trung (Chinese)");
+      expect(config.tone).toBe("wuxia");
+      expect(config.mode).toBe("bilingual");
+    });
+
+    it("resets a translated chapter back to original", () => {
+      useAppStore.setState({
+        modifiedChapters: {
+          "ch1.xhtml": "<html><body>Translated</body></html>",
+          "ch2.xhtml": "<html><body>Keep this</body></html>",
+        },
+      });
+
+      useAppStore.getState().resetChapterTranslation("ch1.xhtml");
+
+      const mod = useAppStore.getState().modifiedChapters;
+      expect(mod["ch1.xhtml"]).toBeUndefined();
+      expect(mod["ch2.xhtml"]).toBe("<html><body>Keep this</body></html>");
+    });
+  });
 });
 
 

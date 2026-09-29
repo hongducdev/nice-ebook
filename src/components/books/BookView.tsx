@@ -13,7 +13,8 @@ import {
   Play,
   Plus,
   Upload,
-  Loader2
+  Loader2,
+  Languages
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { detectBookWatermarks } from "../../utils/watermarkCleaner";
@@ -660,6 +661,16 @@ export function BookView() {
               >
                 <Wand2 size={14} />
                 <span>Biên Tập AI</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("translator")}
+                className="lg-button lg-button--toolbar text-[var(--primary)] font-medium"
+                title="Dịch sách tự động bằng AI, bảo tồn 100% định dạng và hỗ trợ song ngữ đối chiếu"
+              >
+                <Languages size={14} />
+                <span>Dịch Sách AI</span>
               </button>
 
               <button

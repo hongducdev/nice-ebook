@@ -1210,3 +1210,23 @@ ruby.kindle-wordwise rt {
   letter-spacing: -0.01em;
 }
 
+/* AI Book Translator - Bilingual Interlinear Layout */
+.bilingual-original {
+  color: var(--muted-foreground);
+  font-size: 0.95em;
+  margin-bottom: 0.25em;
+  opacity: 0.85;
+  transition: opacity 150ms ease;
+}
+.bilingual-original:hover {
+  opacity: 1;
+}
+.bilingual-translated,
+p[data-bilingual-for] {
+  color: var(--foreground);
+  font-weight: 450;
+  margin-top: 0;
+  margin-bottom: 1.3em;
+}
+
+

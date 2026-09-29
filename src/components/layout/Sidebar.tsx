@@ -10,12 +10,13 @@ import {
   Monitor,
   Wand2,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  Languages
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 
 interface NavItem {
-  id: "books" | "reader" | "presets" | "editor" | "ai" | "settings" | "ai-editor" | "converter" | "kindle";
+  id: "books" | "reader" | "presets" | "editor" | "ai" | "settings" | "ai-editor" | "converter" | "kindle" | "translator";
   label: string;
   icon: any;
   badge?: string | null;
@@ -94,6 +95,13 @@ export function Sidebar() {
           icon: Boxes, 
           badge: activeGateway ? "Online" : null,
           badgeTone: activeGateway ? "success" : "neutral"
+        },
+        { 
+          id: "translator" as const, 
+          label: "Dịch thuật AI", 
+          icon: Languages, 
+          badge: "Mới",
+          badgeTone: "success"
         },
         { 
           id: "ai-editor" as const, 

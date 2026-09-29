@@ -418,6 +418,140 @@ async fn test_opencode_model(model: String) -> Result<u64, String> {
     Ok(start.elapsed().as_millis() as u64)
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(serde::Deserialize, Debug)]
+pub struct CallAiCompletionOptions {
+    pub base_url: String,
+    pub api_key: Option<String>,
+    pub model: String,
+    pub messages: Vec<ChatMessage>,
+    pub temperature: Option<f32>,
+    pub max_tokens: Option<u32>,
+    pub timeout_secs: Option<u64>,
+}
+
+#[tauri::command]
+async fn call_ai_completion(options: CallAiCompletionOptions) -> Result<String, String> {
+    if options.model.starts_with("opencode/") || options.base_url.starts_with("opencode:") {
+        let full_prompt = options
+            .messages
+            .iter()
+            .map(|m| format!("[{}]: {}", m.role, m.content))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        return run_opencode_prompt(options.model, full_prompt).await;
+    }
+
+    let raw_url = options.base_url.trim();
+    let mut parsed_url =
+        reqwest::Url::parse(raw_url).map_err(|e| format!("URL không hợp lệ: {}", e))?;
+
+    // Policy: HTTP is allowed ONLY for localhost/loopback (local AI models like Ollama, LM Studio, etc.)
+    // Remote servers MUST use HTTPS.
+    if parsed_url.scheme() == "http" {
+        let host = parsed_url.host_str().unwrap_or("");
+        let is_loopback = host == "localhost"
+            || host == "127.0.0.1"
+            || host == "::1"
+            || host == "0.0.0.0"
+            || host.starts_with("127.");
+        if !is_loopback {
+            return Err("Kết nối HTTP không mã hóa chỉ được phép cho máy chủ cục bộ (localhost/127.0.0.1). Với máy chủ từ xa, vui lòng dùng HTTPS.".to_string());
+        }
+    } else if parsed_url.scheme() != "https" {
+        return Err(
+            "Giao thức không được hỗ trợ (chỉ chấp nhận http://localhost hoặc https://)"
+                .to_string(),
+        );
+    }
+
+    let mut path = parsed_url.path().trim_end_matches('/').to_string();
+    if !path.ends_with("/chat/completions") {
+        if path.is_empty() {
+            path = "/chat/completions".to_string();
+        } else {
+            path = format!("{}/chat/completions", path);
+        }
+        parsed_url.set_path(&path);
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(
+            options.timeout_secs.unwrap_or(90),
+        ))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| format!("Không thể khởi tạo HTTP client: {}", e))?;
+
+    let mut req = client
+        .post(parsed_url)
+        .header(reqwest::header::CONTENT_TYPE, "application/json");
+
+    if let Some(key) = options.api_key.as_ref() {
+        let trimmed = key.trim();
+        if !trimmed.is_empty() {
+            req = req.header(
+                reqwest::header::AUTHORIZATION,
+                format!("Bearer {}", trimmed),
+            );
+        }
+    }
+
+    #[derive(serde::Serialize)]
+    struct CompletionPayload<'a> {
+        model: &'a str,
+        messages: &'a [ChatMessage],
+        #[serde(skip_serializing_if = "Option::is_none")]
+        temperature: Option<f32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_tokens: Option<u32>,
+        stream: bool,
+    }
+
+    let payload = CompletionPayload {
+        model: &options.model,
+        messages: &options.messages,
+        temperature: options.temperature,
+        max_tokens: options.max_tokens,
+        stream: false,
+    };
+
+    let response = req
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Lỗi kết nối tới AI Gateway: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let err_body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "AI Gateway trả về lỗi HTTP {}: {}",
+            status,
+            err_body.chars().take(200).collect::<String>()
+        ));
+    }
+
+    let json_resp: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Không thể phân tích phản hồi JSON từ AI Gateway: {}", e))?;
+
+    let content = json_resp
+        .pointer("/choices/0/message/content")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            "Phản hồi từ AI Gateway không chứa nội dung choices[0].message.content".to_string()
+        })?;
+
+    Ok(content.to_string())
+}
+
 #[tauri::command]
 async fn create_new_epub(options: CreateEpubOptions) -> Result<Vec<u8>, String> {
     tokio::task::spawn_blocking(move || EpubWriter::create_epub(&options))
@@ -547,6 +681,7 @@ pub fn run() {
             run_opencode_prompt,
             test_opencode_model,
             export_epub,
+            call_ai_completion,
             create_new_epub,
             fetch_image_as_data_url,
             fetch_external_json,
@@ -655,5 +790,66 @@ mod tests {
         assert!(!is_allowed_metadata_domain("attacker-controlled.net"));
         assert!(!is_allowed_metadata_domain("127.0.0.1"));
         assert!(!is_allowed_metadata_domain("localhost"));
+    }
+
+    #[tokio::test]
+    async fn test_call_ai_completion_rejects_non_loopback_http() {
+        let opts = CallAiCompletionOptions {
+            base_url: "http://example.com/v1".to_string(),
+            api_key: None,
+            model: "test-model".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: "hello".to_string(),
+            }],
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: Some(1),
+        };
+
+        let res = call_ai_completion(opts).await;
+        assert!(res.is_err());
+        assert!(res
+            .unwrap_err()
+            .contains("Kết nối HTTP không mã hóa chỉ được phép cho máy chủ cục bộ"));
+    }
+
+    #[tokio::test]
+    async fn test_call_ai_completion_rejects_invalid_url() {
+        let opts = CallAiCompletionOptions {
+            base_url: "not-a-valid-url".to_string(),
+            api_key: None,
+            model: "test-model".to_string(),
+            messages: vec![],
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: Some(1),
+        };
+
+        let res = call_ai_completion(opts).await;
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("URL không hợp lệ"));
+    }
+
+    #[tokio::test]
+    async fn test_call_ai_completion_validates_https_policy() {
+        // Legitimate remote HTTPS URL is accepted by URL and security policy checks
+        // (will fail with connection/DNS error rather than a security policy rejection error)
+        let opts = CallAiCompletionOptions {
+            base_url: "https://api.openai.com/v1".to_string(),
+            api_key: Some("fake-key".to_string()),
+            model: "test-model".to_string(),
+            messages: vec![],
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: Some(1),
+        };
+
+        let res = call_ai_completion(opts).await;
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        // Crucial: The error must NOT be a policy rejection (not "Kết nối HTTP không mã hóa" or "Giao thức không được hỗ trợ")
+        assert!(!err.contains("Kết nối HTTP không mã hóa"));
+        assert!(!err.contains("Giao thức không được hỗ trợ"));
     }
 }

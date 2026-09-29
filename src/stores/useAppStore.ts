@@ -8,6 +8,8 @@ import { saveChaptersToDb, loadChaptersFromDb, deleteChaptersFromDb } from "../u
 import { generateEpubCss } from "../utils/cssGenerator";
 import { injectWordWiseRuby, stripWordWiseRuby } from "../services/kindle/wordWiseService";
 import { extractXRayHeuristic, generateXRayAppendixHtml, XRayBookData, ChapterTextSource } from "../services/kindle/xrayService";
+import { TranslationService } from "../services/translation/translationService";
+import { TranslationTone } from "../services/prompts/bookTranslator";
 
 export interface ChapterItem {
   id: string;
@@ -127,10 +129,29 @@ export interface EnhanceExecutionOptions {
   forceReprocess?: boolean;
 }
 
+export interface TranslationConfig {
+  sourceLang: string;
+  targetLang: string;
+  mode: "replace" | "bilingual";
+  tone: TranslationTone;
+  glossary: Record<string, string>;
+  maxBlocksPerChunk: number;
+}
+
+export interface TranslationProgress {
+  currentChapterIndex: number;
+  totalChapters: number;
+  currentChapterHref: string;
+  currentChapterTitle: string;
+  currentBlock: number;
+  totalBlocks: number;
+  percent: number;
+}
+
 export interface AppState {
   // Navigation
-  activeTab: "books" | "presets" | "editor" | "reader" | "ai" | "settings" | "ai-editor" | "converter" | "kindle";
-  setActiveTab: (tab: "books" | "presets" | "editor" | "reader" | "ai" | "settings" | "ai-editor" | "converter" | "kindle") => void;
+  activeTab: "books" | "presets" | "editor" | "reader" | "ai" | "settings" | "ai-editor" | "converter" | "kindle" | "translator";
+  setActiveTab: (tab: "books" | "presets" | "editor" | "reader" | "ai" | "settings" | "ai-editor" | "converter" | "kindle" | "translator") => void;
 
   // Pending file for Ebook Converter
   pendingConverterFile: { name: string; bytes: Uint8Array; type: "pdf" | "txt" | "md" } | null;
@@ -255,6 +276,16 @@ export interface AppState {
   applyWordWiseToBook: () => Promise<number>;
   removeWordWiseFromBook: () => Promise<number>;
   embedXRayAppendixToBook: () => Promise<boolean>;
+
+  // Book Translation State & Actions
+  translationConfig: TranslationConfig;
+  setTranslationConfig: (config: Partial<TranslationConfig>) => void;
+  translationProgress: TranslationProgress | null;
+  isTranslating: boolean;
+  translateSingleChapter: (chapterIndex: number) => Promise<boolean>;
+  batchTranslateChapters: (chapterIndices?: number[], skipAlreadyTranslated?: boolean) => Promise<boolean>;
+  stopTranslation: () => void;
+  resetChapterTranslation: (chapterHref: string) => void;
 }
 
 const initialTheme = (typeof window !== "undefined" && (window.localStorage.getItem("lg-theme-mode") as "dark" | "light" | "system")) || "dark";
@@ -310,6 +341,17 @@ function applyThemeMode(theme: "dark" | "light" | "system") {
 
 // Initial theme execution
 applyThemeMode(initialTheme);
+
+let translationAbortController: AbortController | null = null;
+
+const defaultTranslationConfig: TranslationConfig = {
+  sourceLang: "Tiếng Anh (English)",
+  targetLang: "Tiếng Việt (Vietnamese)",
+  mode: "replace",
+  tone: "literary",
+  glossary: {},
+  maxBlocksPerChunk: 12,
+};
 
 export const useAppStore = create<AppState>((set, get) => ({
   activeTab: "books",
@@ -1449,6 +1491,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   closeActiveProject: () => {
     get().saveActiveProject();
     get().stopBatchEnhance();
+    get().stopTranslation();
     set({
       activeProjectId: null,
       currentBook: null,
@@ -1458,7 +1501,228 @@ export const useAppStore = create<AppState>((set, get) => ({
       chapterEnhanceReports: {},
       enhanceProgress: null,
       isBatchEnhancing: false,
+      translationProgress: null,
+      isTranslating: false,
       activeChapterIndex: 0,
+    });
+  },
+
+  // Book Translation Implementation
+  translationConfig: defaultTranslationConfig,
+  setTranslationConfig: (config) =>
+    set({ translationConfig: { ...get().translationConfig, ...config } }),
+  translationProgress: null,
+  isTranslating: false,
+
+  translateSingleChapter: async (chapterIndex: number) => {
+    const {
+      currentBook,
+      currentFilePath,
+      currentFileBytes,
+      activeGateway,
+      selectedModel,
+      fallbackModels,
+      translationConfig,
+      activeProjectId,
+      modifiedChapters,
+    } = get();
+
+    if (!currentBook) return false;
+    const chapter = currentBook.chapters[chapterIndex];
+    if (!chapter) return false;
+
+    const baseUrl = activeGateway ? activeGateway.base_url : "http://localhost:11434";
+    const model = selectedModel || activeGateway?.models?.[0] || "gpt-4o";
+
+    let rawHtml = "";
+    try {
+      if (modifiedChapters[chapter.href]) {
+        rawHtml = modifiedChapters[chapter.href];
+      } else if (currentFilePath) {
+        rawHtml = await invoke<string>("read_chapter", {
+          path: currentFilePath,
+          href: chapter.href,
+        });
+      } else if (currentFileBytes) {
+        rawHtml = await invoke<string>("read_chapter_bytes", {
+          bytes: currentFileBytes,
+          href: chapter.href,
+        });
+      }
+    } catch (err) {
+      console.error("Could not read chapter:", err);
+      get().addTerminalLog({
+        type: "warning",
+        text: `❌ Không thể đọc chương "${chapter.title}" (${chapter.href}): ${err}`,
+      });
+      return false;
+    }
+
+    if (!rawHtml) return false;
+
+    translationAbortController = new AbortController();
+    set({ isTranslating: true });
+
+    get().addTerminalLog({
+      type: "info",
+      text: `🌐 [Dịch AI] Bắt đầu dịch chương ${chapterIndex + 1}: "${chapter.title}" (${translationConfig.sourceLang} ➔ ${translationConfig.targetLang})...`,
+    });
+
+    try {
+      const res = await TranslationService.translateChapter({
+        chapterHtml: rawHtml,
+        chapterTitle: chapter.title,
+        bookTitle: currentBook.title,
+        sourceLang: translationConfig.sourceLang,
+        targetLang: translationConfig.targetLang,
+        tone: translationConfig.tone,
+        mode: translationConfig.mode,
+        glossary: translationConfig.glossary,
+        baseUrl,
+        model,
+        fallbackModels,
+        maxBlocksPerChunk: translationConfig.maxBlocksPerChunk,
+        abortSignal: translationAbortController.signal,
+        onProgress: (p) => {
+          set({
+            translationProgress: {
+              currentChapterIndex: chapterIndex + 1,
+              totalChapters: 1,
+              currentChapterHref: chapter.href,
+              currentChapterTitle: chapter.title,
+              currentBlock: p.currentBlock,
+              totalBlocks: p.totalBlocks,
+              percent: p.percent,
+            },
+          });
+        },
+        onLog: (log) => get().addTerminalLog(log),
+      });
+
+      const updatedModified = {
+        ...get().modifiedChapters,
+        [chapter.href]: res.translatedHtml,
+      };
+
+      set({
+        modifiedChapters: updatedModified,
+        isTranslating: false,
+        translationProgress: null,
+      });
+
+      if (activeProjectId) {
+        saveChaptersToDb(activeProjectId, updatedModified);
+        get().saveActiveProject();
+      }
+
+      get().addTerminalLog({
+        type: "success",
+        text: `✨ Đã lưu bản dịch chương "${chapter.title}" (${res.translatedBlocksCount} đoạn) vào dự án!`,
+      });
+      return true;
+    } catch (err: unknown) {
+      set({ isTranslating: false, translationProgress: null });
+      if (err instanceof DOMException && err.name === "AbortError") {
+        get().addTerminalLog({
+          type: "warning",
+          text: `⏹️ Đã dừng dịch chương "${chapter.title}".`,
+        });
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        get().addTerminalLog({
+          type: "warning",
+          text: `❌ Lỗi khi dịch chương "${chapter.title}": ${msg}`,
+        });
+      }
+      return false;
+    } finally {
+      translationAbortController = null;
+    }
+  },
+
+  batchTranslateChapters: async (chapterIndices?: number[], skipAlreadyTranslated = false) => {
+    const { currentBook, modifiedChapters } = get();
+    if (!currentBook || currentBook.chapters.length === 0) return false;
+
+    const targets = chapterIndices && chapterIndices.length > 0
+      ? chapterIndices
+      : currentBook.chapters.map((_, i) => i);
+
+    const pending = skipAlreadyTranslated
+      ? targets.filter((i) => !modifiedChapters[currentBook.chapters[i]?.href])
+      : targets;
+
+    if (pending.length === 0) {
+      get().addTerminalLog({
+        type: "info",
+        text: "✅ Tất cả các chương đã chọn đều đã có bản dịch trong dự án!",
+      });
+      return true;
+    }
+
+    set({ isTranslating: true });
+    translationAbortController = new AbortController();
+
+    get().addTerminalLog({
+      type: "info",
+      text: `🚀 Bắt đầu dịch hàng loạt ${pending.length} chương...`,
+    });
+
+    for (let pIdx = 0; pIdx < pending.length; pIdx++) {
+      if (translationAbortController?.signal.aborted) {
+        break;
+      }
+      const chIdx = pending[pIdx];
+      const ch = currentBook.chapters[chIdx];
+      if (!ch) continue;
+
+      set({
+        translationProgress: {
+          currentChapterIndex: pIdx + 1,
+          totalChapters: pending.length,
+          currentChapterHref: ch.href,
+          currentChapterTitle: ch.title,
+          currentBlock: 0,
+          totalBlocks: 0,
+          percent: Math.round((pIdx / pending.length) * 100),
+        },
+      });
+
+      const ok = await get().translateSingleChapter(chIdx);
+      if (!ok && translationAbortController?.signal.aborted) {
+        break;
+      }
+    }
+
+    set({ isTranslating: false, translationProgress: null });
+    translationAbortController = null;
+    return true;
+  },
+
+  stopTranslation: () => {
+    if (translationAbortController) {
+      translationAbortController.abort();
+      translationAbortController = null;
+    }
+    set({ isTranslating: false, translationProgress: null });
+    get().addTerminalLog({
+      type: "warning",
+      text: "⏹️ Tiến trình dịch sách đã được tạm dừng/hủy bỏ.",
+    });
+  },
+
+  resetChapterTranslation: (chapterHref: string) => {
+    const { modifiedChapters, activeProjectId } = get();
+    const updated = { ...modifiedChapters };
+    delete updated[chapterHref];
+    set({ modifiedChapters: updated });
+    if (activeProjectId) {
+      saveChaptersToDb(activeProjectId, updated);
+      get().saveActiveProject();
+    }
+    get().addTerminalLog({
+      type: "info",
+      text: `Đã khôi phục chương ${chapterHref} về bản gốc.`,
     });
   },
 }));
