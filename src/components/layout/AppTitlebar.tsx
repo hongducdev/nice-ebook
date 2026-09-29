@@ -6,7 +6,8 @@ import {
   FolderOpen, 
   Sparkles, 
   Download,
-  Loader2
+  Loader2,
+  Bot
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -25,7 +26,10 @@ export function AppTitlebar({ onOpenExport }: AppTitlebarProps) {
     loadBookFromPath, 
     loadBookFromBytes, 
     runJevClassification, 
-    isAnalyzingJev 
+    isAnalyzingJev,
+    isAgentDrawerOpen,
+    toggleAgentDrawer,
+    agentMessages,
   } = useAppStore();
 
   const SidebarToggleIcon = isSidebarCollapsed ? PanelLeftOpen : PanelLeftClose;
@@ -171,6 +175,23 @@ export function AppTitlebar({ onOpenExport }: AppTitlebarProps) {
             )}
           </>
         )}
+
+        <button
+          type="button"
+          onClick={toggleAgentDrawer}
+          className={`lg-button h-7 text-xs px-2.5 gap-1.5 font-medium transition-all cursor-pointer ${
+            isAgentDrawerOpen
+              ? "bg-[var(--primary)] text-[var(--primary-foreground)] shadow-xs"
+              : "lg-button--secondary text-[var(--foreground)] hover:text-[var(--primary)]"
+          }`}
+          title="Mở Trợ lý Chat AI tương tác và tự động hóa tác vụ trên dự án sách"
+        >
+          <Bot size={14} className={isAgentDrawerOpen ? "text-[var(--primary-foreground)]" : "text-amber-400"} />
+          <span>Trợ Lý AI</span>
+          {agentMessages.length > 0 && (
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          )}
+        </button>
       </div>
     </header>
   );

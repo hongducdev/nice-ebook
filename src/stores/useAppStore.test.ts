@@ -773,6 +773,93 @@ describe("useAppStore - Book Loading & Drag-and-Drop", () => {
       expect(updated["Dumbledore"]).toBe("Cụ Dumbledore");
     });
   });
+
+  describe("Book Chat Agent Actions", () => {
+    it("toggles agent drawer open and closed", () => {
+      expect(useAppStore.getState().isAgentDrawerOpen).toBe(false);
+      useAppStore.getState().toggleAgentDrawer();
+      expect(useAppStore.getState().isAgentDrawerOpen).toBe(true);
+      useAppStore.getState().toggleAgentDrawer();
+      expect(useAppStore.getState().isAgentDrawerOpen).toBe(false);
+    });
+
+    it("clears agent chat messages", () => {
+      useAppStore.setState({
+        agentMessages: [
+          { id: "1", role: "user", content: "Hi", timestamp: 100 },
+        ],
+      });
+
+      useAppStore.getState().clearAgentChat();
+      expect(useAppStore.getState().agentMessages.length).toBe(0);
+    });
+
+    it("handles proposal confirmation: approving applies mutating changes", async () => {
+      useAppStore.setState({
+        activePresetId: "classic-hardcover",
+        fontSize: 16,
+        agentMessages: [
+          {
+            id: "msg_proposal_1",
+            role: "assistant",
+            content: "Tôi đề xuất đổi preset",
+            actionStatus: "pending",
+            actionProposal: {
+              id: "act_123",
+              toolName: "apply_style_preset",
+              title: "Đổi phong cách",
+              description: "Đổi sang lightnovel-clean",
+              parameters: { presetId: "lightnovel-clean", fontSize: 19 },
+              createdAt: 100,
+            },
+            timestamp: 100,
+          },
+        ],
+      });
+
+      await useAppStore.getState().confirmAgentAction("msg_proposal_1", true);
+
+      const state = useAppStore.getState();
+      expect(state.activePresetId).toBe("lightnovel-clean");
+      expect(state.fontSize).toBe(19);
+
+      const targetMsg = state.agentMessages.find((m) => m.id === "msg_proposal_1");
+      expect(targetMsg?.actionStatus).toBe("executed");
+
+      const followUp = state.agentMessages[state.agentMessages.length - 1];
+      expect(followUp.content).toContain("Thực thi thành công");
+    });
+
+    it("handles proposal rejection: marks rejected without mutating state", async () => {
+      useAppStore.setState({
+        activePresetId: "classic-hardcover",
+        agentMessages: [
+          {
+            id: "msg_proposal_2",
+            role: "assistant",
+            content: "Đề xuất",
+            actionStatus: "pending",
+            actionProposal: {
+              id: "act_456",
+              toolName: "apply_style_preset",
+              title: "Đổi phong cách",
+              description: "Đổi sang poetry-elegance",
+              parameters: { presetId: "poetry-elegance" },
+              createdAt: 100,
+            },
+            timestamp: 100,
+          },
+        ],
+      });
+
+      await useAppStore.getState().confirmAgentAction("msg_proposal_2", false);
+
+      const state = useAppStore.getState();
+      expect(state.activePresetId).toBe("classic-hardcover"); // Not changed!
+      const targetMsg = state.agentMessages.find((m) => m.id === "msg_proposal_2");
+      expect(targetMsg?.actionStatus).toBe("rejected");
+    });
+  });
 });
 
 

@@ -11,12 +11,13 @@ import {
   Wand2,
   RefreshCw,
   Sparkles,
-  Languages
+  Languages,
+  Bot
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 
 interface NavItem {
-  id: "books" | "reader" | "presets" | "editor" | "ai" | "settings" | "ai-editor" | "converter" | "kindle" | "translator";
+  id: "books" | "reader" | "presets" | "editor" | "ai" | "settings" | "ai-editor" | "converter" | "kindle" | "translator" | "agent";
   label: string;
   icon: any;
   badge?: string | null;
@@ -33,6 +34,8 @@ export function Sidebar() {
     theme,
     setTheme,
     modifiedChapters,
+    toggleAgentDrawer,
+    isAgentDrawerOpen,
   } = useAppStore();
 
   const modifiedCount = Object.keys(modifiedChapters).length;
@@ -104,6 +107,13 @@ export function Sidebar() {
           badgeTone: "success"
         },
         { 
+          id: "agent" as const, 
+          label: "Trợ lý Chat AI", 
+          icon: Bot, 
+          badge: "Agent",
+          badgeTone: "success"
+        },
+        { 
           id: "ai-editor" as const, 
           label: "Biên tập & Soát lỗi AI", 
           icon: Wand2, 
@@ -142,13 +152,19 @@ export function Sidebar() {
             <div className="flex flex-col">
               {group.items.map((item) => {
                 const Icon = item.icon;
-                const isActive = activeTab === item.id;
+                const isActive = item.id === "agent" ? isAgentDrawerOpen : activeTab === item.id;
 
                 return (
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => setActiveTab(item.id)}
+                    onClick={() => {
+                      if (item.id === "agent") {
+                        toggleAgentDrawer();
+                      } else {
+                        setActiveTab(item.id);
+                      }
+                    }}
                     title={isSidebarCollapsed ? item.label : undefined}
                     className={`sidebar-item ${isActive ? "sidebar-item--active" : ""}`}
                     aria-label={item.label}

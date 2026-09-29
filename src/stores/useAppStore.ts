@@ -13,6 +13,8 @@ import { TranslationTone } from "../services/prompts/bookTranslator";
 import { LanguageDetector, LanguageDetectionResult } from "../utils/languageDetector";
 import { EntityExtractor, ExtractedEntityCandidate } from "../services/translation/entityExtractor";
 import { BookResearchService } from "../services/translation/bookResearchService";
+import { AgentService, AgentChatMessage } from "../services/agent/agentService";
+import { AgentToolDispatcher, ReadOnlyStoreContext, MutatingStoreContext } from "../services/agent/agentTools";
 
 export interface ChapterItem {
   id: string;
@@ -298,6 +300,16 @@ export interface AppState {
   applyApprovedEntitiesToGlossary: (approved: Array<{ name: string; translation: string }>) => void;
   isGeneratingResearchBrief: boolean;
   generateBookResearchBrief: () => Promise<string>;
+
+  // AI Chat Agent State & Actions
+  agentMessages: AgentChatMessage[];
+  isAgentDrawerOpen: boolean;
+  isAgentThinking: boolean;
+  toggleAgentDrawer: () => void;
+  setAgentDrawerOpen: (open: boolean) => void;
+  sendAgentMessage: (content: string) => Promise<void>;
+  confirmAgentAction: (messageId: string, approved: boolean) => Promise<void>;
+  clearAgentChat: () => void;
 }
 
 const initialTheme = (typeof window !== "undefined" && (window.localStorage.getItem("lg-theme-mode") as "dark" | "light" | "system")) || "dark";
@@ -1517,6 +1529,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       isBatchEnhancing: false,
       translationProgress: null,
       isTranslating: false,
+      agentMessages: [],
+      isAgentDrawerOpen: false,
+      isAgentThinking: false,
       activeChapterIndex: 0,
     });
   },
@@ -1920,5 +1935,178 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       return "";
     }
+  },
+
+  // AI Chat Agent Implementation
+  agentMessages: [],
+  isAgentDrawerOpen: false,
+  isAgentThinking: false,
+
+  toggleAgentDrawer: () => set({ isAgentDrawerOpen: !get().isAgentDrawerOpen }),
+  setAgentDrawerOpen: (open) => set({ isAgentDrawerOpen: open }),
+
+  sendAgentMessage: async (content: string) => {
+    const trimmed = content.trim();
+    if (!trimmed) return;
+
+    const userMsg: AgentChatMessage = {
+      id: `msg_user_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      role: "user",
+      content: trimmed,
+      timestamp: Date.now(),
+    };
+
+    const currentHistory = [...get().agentMessages, userMsg];
+    set({
+      agentMessages: currentHistory,
+      isAgentThinking: true,
+    });
+
+    const {
+      currentBook,
+      currentFilePath,
+      currentFileBytes,
+      activePresetId,
+      fontSize,
+      lineHeight,
+      dropCaps,
+      activeChapterIndex,
+      activeTab,
+      modifiedChapters,
+      translationConfig,
+      activeGateway,
+      selectedModel,
+    } = get();
+
+    const readOnlyCtx: ReadOnlyStoreContext = {
+      currentBook,
+      activePresetId,
+      fontSize,
+      lineHeight,
+      dropCaps,
+      activeChapterIndex,
+      activeTab,
+      modifiedChapters,
+      translationConfig,
+      readChapterText: async (chIdx: number) => {
+        if (!currentBook || !currentBook.chapters[chIdx]) return "";
+        const ch = currentBook.chapters[chIdx];
+        if (modifiedChapters[ch.href]) return modifiedChapters[ch.href];
+        if (currentFilePath) {
+          return await invoke<string>("read_chapter", { path: currentFilePath, href: ch.href });
+        }
+        if (currentFileBytes) {
+          return await invoke<string>("read_chapter_bytes", { bytes: currentFileBytes, href: ch.href });
+        }
+        return "";
+      },
+      setActiveTab: (tab) => get().setActiveTab(tab),
+      setActiveChapterIndex: (idx) => get().setActiveChapterIndex(idx),
+    };
+
+    const baseUrl = activeGateway ? activeGateway.base_url : "http://localhost:11434";
+    const model = selectedModel || activeGateway?.models?.[0] || "gpt-4o";
+
+    try {
+      const updatedMessages = await AgentService.runAgentTurn(currentHistory, readOnlyCtx, {
+        baseUrl,
+        model,
+      });
+
+      set({
+        agentMessages: updatedMessages,
+        isAgentThinking: false,
+      });
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      set({
+        agentMessages: [
+          ...currentHistory,
+          {
+            id: `msg_err_${Date.now()}`,
+            role: "assistant",
+            content: `⚠️ Có lỗi xảy ra khi trò chuyện với AI: ${errMsg}`,
+            timestamp: Date.now(),
+          },
+        ],
+        isAgentThinking: false,
+      });
+    }
+  },
+
+  confirmAgentAction: async (messageId: string, approved: boolean) => {
+    const { agentMessages, updateBookMetadata, selectPreset, updateTypography, setTranslationConfig, activeProjectId } = get();
+    const msgIdx = agentMessages.findIndex((m) => m.id === messageId);
+    if (msgIdx === -1) return;
+
+    const targetMsg = agentMessages[msgIdx];
+    if (!targetMsg.actionProposal || targetMsg.actionStatus !== "pending") return;
+
+    const proposal = targetMsg.actionProposal;
+
+    if (!approved) {
+      // User rejected proposal
+      const updatedList = [...agentMessages];
+      updatedList[msgIdx] = {
+        ...targetMsg,
+        actionStatus: "rejected",
+      };
+      updatedList.push({
+        id: `msg_rej_${Date.now()}`,
+        role: "assistant",
+        content: `Đã bỏ qua đề xuất "${proposal.title}". Không có thay đổi nào được thực hiện.`,
+        timestamp: Date.now(),
+      });
+      set({ agentMessages: updatedList });
+      return;
+    }
+
+    // User approved proposal
+    const mutatingCtx: MutatingStoreContext = {
+      updateBookMetadata,
+      selectPreset,
+      updateTypography,
+      setTranslationConfig,
+    };
+
+    try {
+      const resultText = await AgentToolDispatcher.executeApprovedAction(proposal, mutatingCtx);
+
+      const updatedList = [...agentMessages];
+      updatedList[msgIdx] = {
+        ...targetMsg,
+        actionStatus: "executed",
+      };
+      updatedList.push({
+        id: `msg_exec_${Date.now()}`,
+        role: "assistant",
+        content: `✅ **Thực thi thành công**: ${resultText}`,
+        timestamp: Date.now(),
+      });
+
+      set({ agentMessages: updatedList });
+
+      if (activeProjectId) {
+        get().saveActiveProject();
+      }
+    } catch (execErr: unknown) {
+      const msg = execErr instanceof Error ? execErr.message : String(execErr);
+      const updatedList = [...agentMessages];
+      updatedList[msgIdx] = {
+        ...targetMsg,
+        actionStatus: "rejected",
+      };
+      updatedList.push({
+        id: `msg_exec_err_${Date.now()}`,
+        role: "assistant",
+        content: `❌ Lỗi khi thực thi đề xuất: ${msg}`,
+        timestamp: Date.now(),
+      });
+      set({ agentMessages: updatedList });
+    }
+  },
+
+  clearAgentChat: () => {
+    set({ agentMessages: [] });
   },
 }));

@@ -14,6 +14,7 @@ import { BookTranslatorView } from "./components/translation/BookTranslatorView"
 import { KindleCompanionView } from "./components/kindle/KindleCompanionView";
 import { ExportModal } from "./components/export/ExportModal";
 import { ConverterView } from "./components/converter/ConverterView";
+import { BookAgentDrawer } from "./components/agent/BookAgentDrawer";
 import { 
   Settings as SettingsIcon, 
   Upload 
@@ -256,6 +257,9 @@ export default function App() {
 
       {/* Bottom Status Bar */}
       <StatusBar />
+
+      {/* AI Book Project Chat Agent Drawer */}
+      <BookAgentDrawer />
 
       {/* Export EPUB Modal */}
       <ExportModal 
