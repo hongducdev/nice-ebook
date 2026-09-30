@@ -32,6 +32,7 @@ export interface TranslationApplyOptions {
   mode: "replace" | "bilingual";
   glossary?: Record<string, string>;
   bilingualCssClass?: string;
+  translatedTitle?: string;
 }
 
 export class ChapterTranslator {
@@ -56,20 +57,18 @@ export class ChapterTranslator {
    * while recording precise string slice offsets.
    */
   public static extractTranslatableBlocks(html: string): TranslatableBlock[] {
-    const blocks: TranslatableBlock[] = [];
+    const rawBlocks: Array<Omit<TranslatableBlock, "id" | "index">> = [];
     
     // Look only inside <body> if present to avoid altering <head> or metadata
     const bodyMatch = /<body\b[^>]*>([\s\S]*?)<\/body>/i.exec(html);
     const searchArea = bodyMatch ? bodyMatch[1] : html;
     const offsetBase = bodyMatch ? bodyMatch.index + bodyMatch[0].indexOf(">") + 1 : 0;
 
-    // Matches standard block elements: <p>, <h1>..<h6>, <blockquote>, <li>
-    // Uses non-greedy inner match to handle consecutive blocks cleanly
-    const blockRegex = /<((?:p|h[1-6]|blockquote|li))\b([^>]*)>([\s\S]*?)<\/\1>/gi;
+    // 1. Matches standard block elements: <p>, <h1>..<h6>, <blockquote>, <li>, <dt>, <dd>, <figcaption>
+    const standardBlockRegex = /<((?:p|h[1-6]|blockquote|li|dt|dd|figcaption))\b([^>]*)>([\s\S]*?)<\/\1>/gi;
     let match: RegExpExecArray | null;
-    let blockIndex = 0;
 
-    while ((match = blockRegex.exec(searchArea)) !== null) {
+    while ((match = standardBlockRegex.exec(searchArea)) !== null) {
       const tag = match[1].toLowerCase();
       const attributes = match[2];
       const innerHtml = match[3];
@@ -93,9 +92,7 @@ export class ChapterTranslator {
       const innerStart = blockStart + openTagLength;
       const innerEnd = innerStart + innerHtml.length;
 
-      blocks.push({
-        id: `p_${blockIndex}`,
-        index: blockIndex,
+      rawBlocks.push({
         tag,
         attributes,
         startIndex: blockStart,
@@ -105,11 +102,67 @@ export class ChapterTranslator {
         originalInnerHtml: innerHtml,
         originalText: plainText,
       });
-
-      blockIndex++;
     }
 
-    return blocks;
+    // 2. Secondary pass: Innermost / leaf <div> elements that contain standalone translatable text
+    // (such as <div class="chapter-title">Chapter 1</div> or chapters styled solely using <div>)
+    // without containing nested <div> or other block elements, or overlapping already captured blocks.
+    // The negative lookahead `(?:(?!<div\b)[\s\S])*?` guarantees we only target the innermost <div> tags.
+    const leafDivRegex = /<div\b([^>]*)>((?:(?!<div\b)[\s\S])*?)<\/div>/gi;
+    while ((match = leafDivRegex.exec(searchArea)) !== null) {
+      const attributes = match[1];
+      const innerHtml = match[2];
+
+      const blockStart = offsetBase + match.index;
+      const blockEnd = blockStart + match[0].length;
+
+      // Skip if this div encloses or overlaps any already extracted standard block
+      const hasOverlap = rawBlocks.some(
+        (b) =>
+          (b.startIndex >= blockStart && b.endIndex <= blockEnd) ||
+          (blockStart >= b.startIndex && blockEnd <= b.endIndex)
+      );
+      if (hasOverlap) {
+        continue;
+      }
+
+      // Skip if the div contains nested block-level markup
+      if (/<(?:p|h[1-6]|blockquote|li|table|ul|ol|header|section|article)\b/i.test(innerHtml)) {
+        continue;
+      }
+
+      const plainText = this.stripHtmlToPlainText(innerHtml);
+      if (!plainText || plainText.length === 0) {
+        continue;
+      }
+      if (/^\s*<img\b[^>]*\/?>\s*$/i.test(innerHtml)) {
+        continue;
+      }
+
+      const openTagLength = 1 + 3 + attributes.length + 1; // "<div" + attrs + ">"
+      const innerStart = blockStart + openTagLength;
+      const innerEnd = innerStart + innerHtml.length;
+
+      rawBlocks.push({
+        tag: "div",
+        attributes,
+        startIndex: blockStart,
+        endIndex: blockEnd,
+        innerStartIndex: innerStart,
+        innerEndIndex: innerEnd,
+        originalInnerHtml: innerHtml,
+        originalText: plainText,
+      });
+    }
+
+    // 3. Sort ascending by startIndex to guarantee deterministic layout order and sequential IDs
+    rawBlocks.sort((a, b) => a.startIndex - b.startIndex);
+
+    return rawBlocks.map((b, idx) => ({
+      ...b,
+      id: `p_${idx}`,
+      index: idx,
+    }));
   }
 
   /**
@@ -148,6 +201,30 @@ export class ChapterTranslator {
     }
 
     return chunks;
+  }
+
+  /**
+   * Synchronizes or replaces the <title> tag inside the <head> element
+   * with the translated chapter title, properly XML-entity encoded.
+   */
+  public static syncHeadTitle(html: string, translatedTitle?: string): string {
+    if (!translatedTitle || !translatedTitle.trim()) {
+      return html;
+    }
+    const cleanTitle = translatedTitle.trim();
+    const escaped = cleanTitle
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+
+    if (/<title\b[^>]*>[\s\S]*?<\/title>/i.test(html)) {
+      return html.replace(/<title\b[^>]*>[\s\S]*?<\/title>/i, `<title>${escaped}</title>`);
+    } else if (/<head\b[^>]*>/i.test(html)) {
+      return html.replace(/<head\b[^>]*>/i, `$&\n  <title>${escaped}</title>`);
+    }
+    return html;
   }
 
   /**
@@ -262,6 +339,10 @@ export class ChapterTranslator {
 
         output = prefix + updatedOpenTag + originalContent + originalCloseTag + "\n" + translatedTag + suffix;
       }
+    }
+
+    if (options.translatedTitle) {
+      output = this.syncHeadTitle(output, options.translatedTitle);
     }
 
     return output;

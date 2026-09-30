@@ -225,7 +225,7 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
               },
             });
           });
-          const parsed = parseTranslationResponse(rawOutput);
+          const parsed = parseTranslationResponse(rawOutput, chunk.map((b) => b.id));
           const translatedKeys = Object.keys(parsed);
 
           if (translatedKeys.length === 0) {
@@ -234,6 +234,50 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
 
           for (const [k, v] of Object.entries(parsed)) {
             allTranslations[k] = v;
+          }
+
+          // Missing Block Recovery: If model returned a partial chunk (e.g. 10/12 blocks),
+          // automatically attempt a targeted sub-pass for the omitted blocks to prevent
+          // residual source language leaking into the chapter.
+          const missingInChunk = chunk.filter((b) => !allTranslations[b.id] || allTranslations[b.id].trim().length === 0);
+          if (missingInChunk.length > 0 && missingInChunk.length < chunk.length && !abortSignal?.aborted) {
+            onLog?.({
+              type: "detail",
+              text: `ℹ️ [Mẻ ${cIdx + 1}] Phát hiện ${missingInChunk.length}/${chunk.length} đoạn chưa dịch, đang gửi yêu cầu dịch bổ sung...`,
+            });
+            try {
+              const recoveryPrompt = buildUserPrompt({
+                sourceLangName: sourceLang,
+                targetLangName: targetLang,
+                tone,
+                blocks: missingInChunk.map((b) => ({ id: b.id, text: b.originalText })),
+                glossary,
+                bookTitle,
+                chapterTitle,
+                researchBrief,
+              });
+              const rawRecovery = await invoke<string>("call_ai_completion", {
+                options: {
+                  base_url: baseUrl,
+                  api_key: apiKey,
+                  model: activeModel,
+                  messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: recoveryPrompt },
+                  ],
+                  temperature,
+                  timeout_secs: Math.min(timeoutSecs, 45),
+                },
+              });
+              const parsedRecovery = parseTranslationResponse(rawRecovery, missingInChunk.map((b) => b.id));
+              for (const [k, v] of Object.entries(parsedRecovery)) {
+                if (v && v.trim().length > 0) {
+                  allTranslations[k] = v;
+                }
+              }
+            } catch (recoveryErr) {
+              console.warn("Targeted missing blocks recovery pass skipped:", recoveryErr);
+            }
           }
 
           successfulModel = activeModel;
@@ -249,9 +293,10 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
             percent: pct,
           });
 
+          const currentResolvedCount = chunk.filter((b) => Boolean(allTranslations[b.id])).length;
           onLog?.({
             type: "success",
-            text: `✅ [Mẻ ${cIdx + 1}/${chunks.length}] Đã nhận bản dịch (${translatedKeys.length}/${chunk.length} đoạn).`,
+            text: `✅ [Mẻ ${cIdx + 1}/${chunks.length}] Đã nhận bản dịch (${currentResolvedCount}/${chunk.length} đoạn).`,
           });
 
           break; // Chunk succeeded, break fallback loop
@@ -280,20 +325,22 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
       throw new DOMException("Thao tác dịch đã bị hủy bởi người dùng", "AbortError");
     }
 
-    // Surgically apply all received translations to the original XHTML chapter
-    const finalHtml = ChapterTranslator.applyTranslations(chapterHtml, allTranslations, {
-      mode,
-      glossary,
-    });
-
     // Determine translated chapter title:
-    // 1. If heading block (h1 or h2) was translated, use that directly
-    // 2. Otherwise translate the chapterTitle if requested
+    // 1. Look for explicit heading blocks (h1..h6) or title/chapter-classed blocks
     let translatedChapterTitle: string | undefined;
-    const headingBlock = blocks.find((b) => b.tag === "h1" || b.tag === "h2");
+    const headingBlock = blocks.find(
+      (b) =>
+        b.tag === "h1" ||
+        b.tag === "h2" ||
+        b.tag === "h3" ||
+        /title|chapter|heading/i.test(b.attributes)
+    );
     if (headingBlock && allTranslations[headingBlock.id]) {
       translatedChapterTitle = allTranslations[headingBlock.id];
-    } else if (options.translateChapterTitle && chapterTitle && chapterTitle.trim()) {
+    }
+
+    // 2. If no heading block translated, or chapterTitle was provided and translateChapterTitle is enabled
+    if (!translatedChapterTitle && options.translateChapterTitle && chapterTitle && chapterTitle.trim()) {
       try {
         translatedChapterTitle = await TranslationService.translateTitle({
           title: chapterTitle,
@@ -308,6 +355,14 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
         translatedChapterTitle = chapterTitle;
       }
     }
+
+    // Surgically apply all received translations to the original XHTML chapter
+    // and sync the <title> tag inside <head> with translatedChapterTitle.
+    const finalHtml = ChapterTranslator.applyTranslations(chapterHtml, allTranslations, {
+      mode,
+      glossary,
+      translatedTitle: translatedChapterTitle,
+    });
 
     const elapsedMs = Math.round(performance.now() - start);
     const translatedCount = Object.keys(allTranslations).length;

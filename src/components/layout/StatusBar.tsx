@@ -1,4 +1,6 @@
 import { Cpu, Activity, Sparkles, Layers, Zap, Route } from "lucide-react";
+import { Badge } from "../ui/badge";
+import { Separator } from "../ui/separator";
 import { useAppStore } from "../../stores/useAppStore";
 import {
   WORKFLOW_TAB,
@@ -23,79 +25,79 @@ export function StatusBar() {
   const planCounter = planSteps.length > 0 ? `${Math.min(planIndex + 1, planSteps.length)}/${planSteps.length}` : "";
 
   return (
-    <footer className="h-7 border-t border-[var(--sidebar-border)] px-3 flex items-center justify-between bg-[var(--ui-titlebar-surface)] text-[11px] text-[var(--muted-foreground)] select-none flex-shrink-0 z-20">
-      <div className="flex items-center gap-3">
+    <footer className="h-7 border-t border-border px-3 flex items-center justify-between bg-muted/30 text-[11px] text-muted-foreground select-none shrink-0 z-20">
+      <div className="flex items-center gap-2.5">
         {/* Gateway connection status */}
         <div className="flex items-center gap-1.5">
-          <span className="font-medium text-[var(--foreground)]">Gateway:</span>
+          <span className="font-medium text-foreground">Gateway:</span>
           {activeGateway ? (
-            <span className="app-badge app-badge--success h-[18px] text-[10px] px-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <Badge variant="outline" className="h-4.5 text-[10px] px-1.5 gap-1 border-emerald-500/40 text-emerald-600 dark:text-emerald-400">
+              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
               <span>{activeGateway.name} ({activeGateway.latency_ms}ms)</span>
-            </span>
+            </Badge>
           ) : (
-            <span className="app-badge app-badge--neutral h-[18px] text-[10px] px-1.5">
+            <Badge variant="secondary" className="h-4.5 text-[10px] px-1.5">
               <span>Lõi Offline (Cục bộ)</span>
-            </span>
+            </Badge>
           )}
         </div>
 
-        <span className="text-[var(--border)]">|</span>
+        <Separator orientation="vertical" className="h-3" />
 
         {/* Content Genre Classification Badge */}
         <div className="flex items-center gap-1.5">
-          <span className="font-medium text-[var(--foreground)]">Phân loại:</span>
+          <span className="font-medium text-foreground">Phân loại:</span>
           {jevDecision ? (
-            <span className="app-badge app-badge--brand h-[18px] text-[10px] px-1.5 font-mono">
+            <Badge variant="outline" className="h-4.5 text-[10px] px-1.5 font-mono gap-1 border-primary/40 text-primary">
               <Sparkles size={10} />
               <span>{jevDecision.genre_label} ({(jevDecision.confidence * 100).toFixed(0)}%)</span>
-            </span>
+            </Badge>
           ) : (
-            <span className="app-badge app-badge--neutral h-[18px] text-[10px] px-1.5">
+            <Badge variant="secondary" className="h-4.5 text-[10px] px-1.5 gap-1">
               <Zap size={10} />
               <span>Tự động nhận diện</span>
-            </span>
+            </Badge>
           )}
         </div>
 
-        <span className="text-[var(--border)]">|</span>
+        <Separator orientation="vertical" className="h-3" />
 
         {/* Active Preset */}
         <div className="flex items-center gap-1.5">
-          <span className="font-medium text-[var(--foreground)]">Phong cách:</span>
-          <span className="text-[var(--foreground)] font-mono text-[11px] flex items-center gap-1">
-            <Layers size={11} className="text-[var(--primary)]" />
+          <span className="font-medium text-foreground">Phong cách:</span>
+          <span className="text-foreground font-mono text-[11px] flex items-center gap-1">
+            <Layers size={11} className="text-primary" />
             <span>{activePreset.name}</span>
           </span>
         </div>
 
         {bookProfile && planSteps.length > 0 && (
           <>
-            <span className="text-[var(--border)]">|</span>
+            <Separator orientation="vertical" className="h-3" />
             <button
               type="button"
               onClick={() => setActiveTab(WORKFLOW_TAB[bookProfile.workflow])}
-              className="flex items-center gap-1.5 hover:text-[var(--foreground)] transition-colors"
+              className="flex items-center gap-1.5 hover:text-foreground transition-colors cursor-pointer"
               title={`Quy trình: ${planSteps.map((step) => step.label).join(" → ")}`}
             >
-              <span className="font-medium text-[var(--foreground)]">Quy trình:</span>
-              <span className="app-badge app-badge--brand h-[18px] text-[10px] px-1.5 font-mono">
+              <span className="font-medium text-foreground">Quy trình:</span>
+              <Badge variant="outline" className="h-4.5 text-[10px] px-1.5 font-mono gap-1 border-primary/40 text-primary">
                 <Route size={10} />
                 <span>
                   {workflowLabel(bookProfile)} · {planCounter}
                 </span>
-              </span>
+              </Badge>
             </button>
           </>
         )}
       </div>
 
-      <div className="flex items-center gap-3 font-mono text-[10px] text-[var(--muted-foreground)]">
+      <div className="flex items-center gap-3 font-mono text-[10px] text-muted-foreground">
         <span className="flex items-center gap-1">
-          <Cpu size={12} className="text-[var(--primary)]" />
+          <Cpu size={12} className="text-primary" />
           <span>Tauri v2 + Rust</span>
         </span>
-        <span className="text-[var(--border)]">|</span>
+        <Separator orientation="vertical" className="h-3" />
         <span className="flex items-center gap-1">
           <Activity size={12} className="text-emerald-500" />
           <span>RAM ~38MB</span>

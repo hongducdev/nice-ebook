@@ -260,4 +260,119 @@ Tôi sẽ kiểm tra thông tin sách cho bạn.
     expect(lastMsg.content).toContain("sk-o");
     expect(lastMsg.content).toContain("****");
   });
+
+  describe("Session Awareness & Action Parsing Resilience", () => {
+    it("handles dummy model actions like 'reply' or 'none' as conversational responses without erroring", () => {
+      const dummyActionOutput = JSON.stringify({
+        action: "reply",
+        parameters: {
+          message: "Tôi đã tìm hiểu xong và đây là câu trả lời của tôi cho bạn.",
+        },
+      });
+
+      const parsed = AgentService.parseActionOutput(dummyActionOutput);
+      expect(parsed.isAction).toBe(false);
+      expect(parsed.conversationalReply).toContain("Tôi đã tìm hiểu xong");
+    });
+
+    it("emits live progress updates through onProgress callback during turn execution", async () => {
+      const mockInvoke = vi.mocked(invoke);
+      mockInvoke.mockResolvedValueOnce("Xin chào!");
+
+      const progressLogs: string[] = [];
+      const history: AgentChatMessage[] = [
+        { id: "1", role: "user", content: "Chào trợ lý", timestamp: 100 },
+      ];
+
+      await AgentService.runAgentTurn(history, mockCtx, {
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-4o",
+        onProgress: (status) => progressLogs.push(status),
+      });
+
+      expect(progressLogs.length).toBeGreaterThan(0);
+      expect(progressLogs[0]).toContain("Trợ lý đang suy nghĩ");
+    });
+
+    it("includes action proposal status in message context for multi-turn session continuity", async () => {
+      const mockInvoke = vi.mocked(invoke);
+      mockInvoke.mockResolvedValueOnce("Tôi hiểu bạn đã chọn phong cách Cổ Phong.");
+
+      const historyWithProposal: AgentChatMessage[] = [
+        {
+          id: "m1",
+          role: "assistant",
+          content: "Tôi đề xuất đổi preset",
+          actionProposal: {
+            id: "act_1",
+            toolName: "apply_style_preset",
+            title: "Áp dụng phong cách Cổ Phong",
+            description: "Đổi sang wuxia-ancient",
+            parameters: { presetId: "wuxia-ancient" },
+            createdAt: 100,
+          },
+          actionStatus: "executed",
+          timestamp: 100,
+        },
+        {
+          id: "m2",
+          role: "user",
+          content: "Bạn vừa làm gì thế?",
+          timestamp: 101,
+        },
+      ];
+
+      await AgentService.runAgentTurn(historyWithProposal, mockCtx, {
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-4o",
+      });
+
+      expect(mockInvoke).toHaveBeenCalled();
+      const sent = (mockInvoke.mock.calls[0][1] as any).options.messages;
+      const historyMsg = sent.find((m: any) => m.content.includes("[HÀNH ĐỘNG ĐỀ XUẤT]"));
+      expect(historyMsg).toBeDefined();
+      expect(historyMsg.content).toContain("Áp dụng phong cách Cổ Phong");
+      expect(historyMsg.content).toContain("ĐÃ THỰC THI THÀNH CÔNG");
+    });
+
+    it("offline fallback maps light-novel and sci-fi to valid app preset IDs", () => {
+      const lnFallback = AgentService.tryOfflineFallback("đổi sang light novel", mockCtx);
+      expect(lnFallback?.actionProposal?.parameters.presetId).toBe("lightnovel-clean");
+
+      const scifiFallback = AgentService.tryOfflineFallback("đổi phong cách khoa học viễn tưởng", mockCtx);
+      expect(scifiFallback?.actionProposal?.parameters.presetId).toBe("scifi-neon");
+
+      const wuxiaFallback = AgentService.tryOfflineFallback("đổi sang phong cách tiên hiệp cổ phong", mockCtx);
+      expect(wuxiaFallback?.actionProposal?.parameters.presetId).toBe("wuxia-ancient");
+    });
+
+    it("does not falsely trigger preset change fallback on descriptive questions without action verbs", () => {
+      const informational1 = AgentService.tryOfflineFallback("Tác giả cuốn này có phong cách viết như thế nào?", mockCtx);
+      expect(informational1).toBeNull();
+
+      const informational2 = AgentService.tryOfflineFallback("Cuốn sách này có phải thể loại khoa học viễn tưởng không?", mockCtx);
+      expect(informational2).toBeNull();
+
+      const informational3 = AgentService.tryOfflineFallback("preset nào phù hợp với tiểu thuyết trinh thám?", mockCtx);
+      expect(informational3).toBeNull();
+
+      const informational4 = AgentService.tryOfflineFallback("lựa chọn phong cách nào tốt nhất cho truyện?", mockCtx);
+      expect(informational4).toBeNull();
+    });
+
+    it("supports diacritic-free action phrases for offline preset fallback", () => {
+      const unaccented = AgentService.tryOfflineFallback("doi sang light novel", mockCtx);
+      expect(unaccented?.actionProposal?.parameters.presetId).toBe("lightnovel-clean");
+    });
+
+    it("offline fallback generates update_metadata proposal when user asks to change book title or author", () => {
+      const titleFallback = AgentService.tryOfflineFallback("đổi tên sách thành Nhà Giả Kim", mockCtx);
+      expect(titleFallback?.actionProposal?.toolName).toBe("update_metadata");
+      expect(titleFallback?.actionProposal?.parameters.title).toBe("Nhà Giả Kim");
+
+      const authorFallback = AgentService.tryOfflineFallback("sửa tác giả thành Paulo Coelho", mockCtx);
+      expect(authorFallback?.actionProposal?.toolName).toBe("update_metadata");
+      expect(authorFallback?.actionProposal?.parameters.author).toBe("Paulo Coelho");
+    });
+  });
 });

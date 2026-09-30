@@ -17,6 +17,8 @@ import {
 import { useAppStore } from "../../stores/useAppStore";
 import { isTranslationWorkflow } from "../../utils/bookTypeDetector";
 import type { ActiveTab } from "../../types/navigation";
+import { Badge } from "../ui/badge";
+import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group";
 
 export interface NavItem {
   id: ActiveTab | "agent";
@@ -144,8 +146,7 @@ export function Sidebar() {
     theme,
     setTheme,
     modifiedChapters,
-    toggleAgentDrawer,
-    isAgentDrawerOpen,
+    setAgentDrawerOpen,
     bookProfile,
     getTranslationCoverage,
     pendingConverterFile,
@@ -194,7 +195,7 @@ export function Sidebar() {
             <div className="flex flex-col">
               {group.items.map((item) => {
                 const Icon = item.icon;
-                const isActive = item.id === "agent" ? isAgentDrawerOpen : activeTab === item.id;
+                const isActive = activeTab === item.id;
 
                 return (
                   <button
@@ -202,7 +203,8 @@ export function Sidebar() {
                     type="button"
                     onClick={() => {
                       if (item.id === "agent") {
-                        toggleAgentDrawer();
+                        setAgentDrawerOpen(false);
+                        setActiveTab("agent");
                       } else {
                         setActiveTab(item.id);
                       }
@@ -215,15 +217,18 @@ export function Sidebar() {
                     <span className="sidebar-item__label">{item.label}</span>
 
                     {!isSidebarCollapsed && item.badge && (
-                      <span className={`ml-auto app-badge text-[10px] h-[18px] px-1.5 ${
-                        item.badgeTone === "success"
-                          ? "app-badge--success"
-                          : item.badgeTone === "warning"
-                          ? "app-badge--warning"
-                          : "app-badge--neutral"
-                      }`}>
+                      <Badge
+                        variant={item.badgeTone === "success" ? "secondary" : "outline"}
+                        className={`ml-auto text-[10px] h-4.5 px-1.5 ${
+                          item.badgeTone === "success"
+                            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                            : item.badgeTone === "warning"
+                            ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                            : "text-muted-foreground"
+                        }`}
+                      >
                         {item.badge}
-                      </span>
+                      </Badge>
                     )}
                   </button>
                 );
@@ -244,63 +249,52 @@ export function Sidebar() {
                 const next = theme === "dark" ? "light" : theme === "light" ? "system" : "dark";
                 setTheme(next);
               }}
-              className="w-8 h-8 rounded-[var(--ui-radius-button)] flex items-center justify-center text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--primary)] transition-colors"
+              className="size-8 rounded-md flex items-center justify-center text-sidebar-foreground hover:bg-sidebar-accent hover:text-primary transition-colors"
               title={`Giao diện: ${
                 theme === "dark" ? "Tối" : theme === "light" ? "Sáng" : "Hệ thống"
               } (Bấm để chuyển đổi)`}
               aria-label="Đổi giao diện"
             >
-              {theme === "light" && <Sun size={16} className="text-[var(--primary)]" />}
-              {theme === "dark" && <Moon size={16} className="text-[var(--primary)]" />}
-              {theme === "system" && <Monitor size={16} className="text-[var(--primary)]" />}
+              {theme === "light" && <Sun size={16} className="text-primary" />}
+              {theme === "dark" && <Moon size={16} className="text-primary" />}
+              {theme === "system" && <Monitor size={16} className="text-primary" />}
             </button>
           </div>
         ) : (
           <div className="flex items-center justify-between px-1 py-1">
-            <span className="text-[11px] font-medium text-[var(--muted-foreground)]">Giao diện</span>
-            <div className="segmented-toggle">
-              <button
-                type="button"
-                onClick={() => setTheme("light")}
-                title="Giao diện Sáng (Light)"
-                data-active={theme === "light" ? "true" : undefined}
-                className="segmented-toggle__item p-1"
-              >
+            <span className="text-[11px] font-medium text-muted-foreground">Giao diện</span>
+            <ToggleGroup
+              type="single"
+              value={theme}
+              onValueChange={(val) => {
+                if (val) setTheme(val as "light" | "dark" | "system");
+              }}
+              className="border border-border rounded-md p-0.5 bg-muted/40"
+            >
+              <ToggleGroupItem value="light" size="sm" className="size-6 p-0 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs" title="Giao diện Sáng (Light)">
                 <Sun size={13} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setTheme("dark")}
-                title="Giao diện Tối (Dark)"
-                data-active={theme === "dark" ? "true" : undefined}
-                className="segmented-toggle__item p-1"
-              >
+              </ToggleGroupItem>
+              <ToggleGroupItem value="dark" size="sm" className="size-6 p-0 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs" title="Giao diện Tối (Dark)">
                 <Moon size={13} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setTheme("system")}
-                title="Theo Hệ Thống (System)"
-                data-active={theme === "system" ? "true" : undefined}
-                className="segmented-toggle__item p-1"
-              >
+              </ToggleGroupItem>
+              <ToggleGroupItem value="system" size="sm" className="size-6 p-0 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs" title="Theo Hệ Thống (System)">
                 <Monitor size={13} />
-              </button>
-            </div>
+              </ToggleGroupItem>
+            </ToggleGroup>
           </div>
         )}
 
         {/* LinguaGacha Profile / Brand Card */}
         <div className="sidebar-profile">
-          <div className="w-6 h-6 rounded flex items-center justify-center bg-[color-mix(in_srgb,var(--primary)_15%,var(--card))] border border-[var(--primary)]/30 overflow-hidden flex-shrink-0">
+          <div className="size-6 rounded flex items-center justify-center bg-card border border-primary/30 overflow-hidden shrink-0">
             <img src="/app-icon.png" alt="NiceEbook Studio" className="w-full h-full object-contain" />
           </div>
           {!isSidebarCollapsed && (
             <div className="flex flex-col min-w-0 flex-1">
-              <span className="text-xs font-semibold text-[var(--foreground)] truncate leading-tight">
+              <span className="text-xs font-semibold text-foreground truncate leading-tight">
                 NiceEbook Studio
               </span>
-              <span className="text-[10px] text-[var(--muted-foreground)] truncate font-mono">
+              <span className="text-[10px] text-muted-foreground truncate font-mono">
                 {activeGateway ? `● ${activeGateway.name}` : "○ Lõi Offline sẵn sàng"}
               </span>
             </div>

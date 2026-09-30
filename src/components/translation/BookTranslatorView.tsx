@@ -20,7 +20,6 @@ import {
   FileText,
   AlertTriangle,
   Loader2,
-  X,
   Search,
   CheckSquare
 } from "lucide-react";
@@ -36,6 +35,57 @@ import { LanguageDetectionResult } from "../../utils/languageDetector";
 import { WorkflowBanner } from "../workflow/WorkflowBanner";
 import { toast } from "sonner";
 import { invoke } from "@tauri-apps/api/core";
+import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../ui/card";
+import { Checkbox } from "../ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "../ui/empty";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import { Progress } from "../ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+import { Separator } from "../ui/separator";
+import { Spinner } from "../ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
+import { Textarea } from "../ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group";
 
 const SOURCE_LANGUAGES = [
   "Tiếng Anh (English)",
@@ -336,10 +386,24 @@ export function BookTranslatorView() {
       if (res.detectedLanguage) {
         setDetectedLangInfo(res.detectedLanguage);
       }
-      // Reveal the two panels the run just filled in, so the result is visible.
-      if (res.properNamesCount + res.termsCount > 0) setShowGlossary(true);
+      // Reveal the two panels the run just filled in, so the result is immediately visible.
+      setShowGlossary(true);
       if (res.researchBriefGenerated) setShowResearchBrief(true);
       setRightTab("terminal");
+
+      // Sync candidate state so user can immediately click "Duyệt" if they want to review
+      const latestCandidates = useAppStore.getState().extractedCandidates;
+      if (latestCandidates && latestCandidates.length > 0) {
+        const initialSelected: Record<string, boolean> = {};
+        const initialEdits: Record<string, string> = {};
+        for (const c of latestCandidates) {
+          initialSelected[c.name] = true;
+          initialEdits[c.name] = c.suggestedTranslation;
+        }
+        setSelectedEntityNames(initialSelected);
+        setEditedTranslations(initialEdits);
+      }
+
       toast.success(
         `Đã tự động cấu hình: ${res.detectedLanguage?.languageName || "Ngôn ngữ"} ➔ ${res.toneLabel} • ${res.properNamesCount} tên riêng • ${res.termsCount} thuật ngữ!`,
         { id: "auto-config" }
@@ -416,71 +480,72 @@ export function BookTranslatorView() {
 
   if (!currentBook) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center select-none animate-in fade-in duration-200">
-        <div className="w-16 h-16 rounded-2xl bg-[var(--secondary)] border border-[var(--border)] flex items-center justify-center text-[var(--primary)] mb-4 shadow-sm">
-          <Languages size={32} />
-        </div>
-        <h2 className="text-base font-semibold text-[var(--foreground)] mb-1">
-          Chưa Có Cuốn Sách Nào Được Mở
-        </h2>
-        <p className="text-xs text-[var(--muted-foreground)] max-w-md mb-5 leading-relaxed">
-          Vui lòng mở một file sách EPUB hoặc nạp từ Trình Chuyển Đổi Ebook để sử dụng chức năng Dịch Thuật AI.
-        </p>
-        <button
-          type="button"
-          onClick={() => setActiveTab("books")}
-          className="lg-button lg-button--primary text-xs h-9 px-4 gap-2 font-medium shadow-sm"
-        >
-          <BookOpen size={14} />
-          <span>Đến Thư Viện Quản Lý Sách</span>
-        </button>
-      </div>
+      <Empty className="flex-1 border-0 select-none animate-in fade-in duration-200">
+        <EmptyMedia variant="icon" className="size-16 rounded-2xl bg-primary/10 text-primary shadow-sm">
+          <Languages className="size-8" />
+        </EmptyMedia>
+        <EmptyHeader>
+          <EmptyTitle>Chưa Có Cuốn Sách Nào Được Mở</EmptyTitle>
+          <EmptyDescription className="max-w-md leading-relaxed">
+            Vui lòng mở một file sách EPUB hoặc nạp từ Trình Chuyển Đổi Ebook để sử dụng chức năng Dịch Thuật AI.
+          </EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button type="button" size="lg" onClick={() => setActiveTab("books")}>
+            <BookOpen size={14} />
+            <span>Đến Thư Viện Quản Lý Sách</span>
+          </Button>
+        </EmptyContent>
+      </Empty>
     );
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[var(--background)]">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
       {/* Top Header */}
-      <header className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-[var(--border)] bg-[var(--card)]/50 backdrop-blur-sm">
+      <header className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-border bg-card/50 backdrop-blur-sm">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[color-mix(in_srgb,var(--primary)_15%,var(--card))] text-[var(--primary)] border border-[var(--primary)]/30">
+          <div className="size-8 rounded-lg flex items-center justify-center bg-primary/10 text-primary border border-primary/30">
             <Languages size={18} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xs font-semibold text-[var(--foreground)] leading-none">
+              <h1 className="text-xs font-semibold text-foreground leading-none">
                 Bước 2: Dịch Thuật Sách AI
               </h1>
-              <span className="app-badge app-badge--brand text-[9px] px-1.5 h-4">
+              <Badge variant="secondary" className="bg-primary/10 text-primary text-[9px] px-1.5 h-4">
                 Surgical XHTML Preserved
-              </span>
+              </Badge>
               {isCurrentChapterTranslated && (
-                <span className="app-badge app-badge--success text-[9px] px-1.5 h-4">
+                <Badge
+                  variant="secondary"
+                  className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[9px] px-1.5 h-4"
+                >
                   Chương này đã dịch
-                </span>
+                </Badge>
               )}
             </div>
-            <p className="text-[11px] text-[var(--muted-foreground)] mt-0.5">
-              Tác phẩm: <strong className="text-[var(--foreground)] font-medium">{currentBook.title}</strong>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Tác phẩm: <strong className="text-foreground font-medium">{currentBook.title}</strong>
             </p>
           </div>
         </div>
 
         {/* Header Stats & Gateway indicator */}
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 bg-[var(--secondary)]/60 px-2.5 py-1 rounded-md border border-[var(--border)] text-[11px]">
-            <Layers size={13} className="text-[var(--primary)]" />
-            <span className="text-[var(--muted-foreground)]">Đã dịch:</span>
-            <strong className="text-[var(--foreground)]">{translatedCount}/{totalChapters} ch.</strong>
-          </div>
+          <Badge variant="secondary" className="h-7 gap-1.5 px-2.5 text-[11px] font-normal">
+            <Layers className="text-primary" />
+            <span className="text-muted-foreground">Đã dịch:</span>
+            <strong className="text-foreground">{translatedCount}/{totalChapters} ch.</strong>
+          </Badge>
 
-          <div className="flex items-center gap-1.5 bg-[var(--secondary)]/60 px-2.5 py-1 rounded-md border border-[var(--border)] text-[11px]">
-            <Sparkles size={13} className="text-[var(--primary)]" />
-            <span className="text-[var(--muted-foreground)]">Model:</span>
-            <strong className="text-[var(--foreground)] font-mono text-[10px]">
+          <Badge variant="secondary" className="h-7 gap-1.5 px-2.5 text-[11px] font-normal">
+            <Sparkles className="text-primary" />
+            <span className="text-muted-foreground">Model:</span>
+            <strong className="text-foreground font-mono text-[10px]">
               {selectedModel || (activeGateway ? activeGateway.models[0] : "Ollama/Local")}
             </strong>
-          </div>
+          </Badge>
         </div>
       </header>
 
@@ -491,7 +556,7 @@ export function BookTranslatorView() {
       {/* Main Body Split: Left Settings & Controls (360px), Right Preview / Logs (flex-1) */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Control Panel */}
-        <div className="w-[360px] flex-shrink-0 border-r border-[var(--border)] bg-[var(--card)]/30 flex flex-col overflow-y-auto p-4 gap-4">
+        <div className="w-[360px] flex-shrink-0 border-r border-border bg-card/30 flex flex-col overflow-y-auto p-4 gap-4">
           {/* Workflow context: what the ingest router detected for this book */}
           {bookProfile && (
             <div className="workflow-context">
@@ -518,468 +583,542 @@ export function BookTranslatorView() {
           )}
 
           {/* One-Click Auto-Configure All Settings Button & Banner */}
-          <div className="p-3 rounded-xl border border-[var(--primary)]/40 bg-[color-mix(in_srgb,var(--primary)_8%,var(--card))] flex flex-col gap-2 shadow-xs">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--foreground)]">
-                <Sparkles size={14} className="text-[var(--primary)]" />
-                <span>Tự Động Cấu Hình Toàn Diện</span>
+          <Card size="sm" className="shrink-0 ring-primary/40 bg-primary/5 shadow-xs">
+            <CardHeader className="flex flex-col gap-1 p-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-1.5 text-xs font-semibold">
+                  <Sparkles className="size-3.5 text-primary" />
+                  <span>Tự Động Cấu Hình Toàn Diện</span>
+                </CardTitle>
+                <Badge variant="secondary" className="bg-primary/10 text-primary text-[9px] px-1.5 h-4">
+                  Tự động 1-Click
+                </Badge>
               </div>
-              <span className="app-badge app-badge--brand text-[9px] px-1.5 h-3.5">
-                Tự động 1-Click
-              </span>
-            </div>
+              <CardDescription className="text-[10px] leading-relaxed mt-0.5">
+                Tự động nhận diện ngôn ngữ, phân tích thể loại đề xuất văn phong, trích xuất thuật ngữ &amp; nghiên cứu bối cảnh sách trong 1 lượt.
+              </CardDescription>
+            </CardHeader>
 
-            <p className="text-[10px] text-[var(--muted-foreground)] leading-relaxed">
-              Tự động nhận diện ngôn ngữ, phân tích thể loại đề xuất văn phong, trích xuất thuật ngữ &amp; nghiên cứu bối cảnh sách trong 1 lượt.
-            </p>
+            <CardContent className="flex flex-col gap-2">
+              <Button
+                type="button"
+                disabled={isAutoConfiguringAll}
+                onClick={handleAutoConfigureAll}
+                className="w-full text-xs shadow-xs"
+                title="Phân tích và tự động cấu hình toàn bộ cài đặt dịch thuật"
+              >
+                {isAutoConfiguringAll ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Sparkles />
+                )}
+                <span>{isAutoConfiguringAll ? "Đang tự động thiết lập toàn bộ..." : "Tự Động Thiết Lập Toàn Bộ"}</span>
+              </Button>
 
-            <button
-              type="button"
-              disabled={isAutoConfiguringAll}
-              onClick={handleAutoConfigureAll}
-              className="lg-button lg-button--primary text-xs h-8 px-3 gap-1.5 font-medium shadow-xs w-full"
-              title="Phân tích và tự động cấu hình toàn bộ cài đặt dịch thuật"
-            >
-              {isAutoConfiguringAll ? (
-                <Loader2 size={13} className="animate-spin" />
-              ) : (
-                <Sparkles size={13} />
+              {autoConfigResult && (
+                <div className="p-2 rounded bg-card/90 border border-border text-[10px] flex flex-col gap-1 text-foreground animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between font-semibold text-primary">
+                    <span>✓ Đã cấu hình xong</span>
+                    <span className="text-muted-foreground font-mono">{autoConfigResult.toneLabel}</span>
+                  </div>
+                  <div className="text-muted-foreground leading-tight">
+                    Ngôn ngữ: <strong>{autoConfigResult.detectedLanguage?.languageName || "Tự động"}</strong> ➔ <strong>{translationConfig.targetLang}</strong>
+                  </div>
+                  <div className="text-muted-foreground leading-tight">
+                    Bộ thuật ngữ &amp; tên riêng: <strong className="text-primary">{autoConfigResult.properNamesCount} tên riêng</strong> + <strong className="text-primary">{autoConfigResult.termsCount} thuật ngữ</strong> = <strong>{Object.keys(translationConfig.glossary || {}).length} mục</strong>
+                  </div>
+                  <div className="text-muted-foreground leading-tight">
+                    Bộ dịch thuật: <strong className="font-mono text-foreground">{autoConfigResult.activeEngineLabel}</strong>
+                  </div>
+                  <div className="text-muted-foreground leading-tight">
+                    Bối cảnh: <strong>{autoConfigResult.researchBriefGenerated ? "Đã lập" : "Bỏ qua"}</strong> • Đã quét <strong>{autoConfigResult.entitiesExtractedCount} thực thể</strong>
+                  </div>
+                </div>
               )}
-              <span>{isAutoConfiguringAll ? "Đang tự động thiết lập toàn bộ..." : "Tự Động Thiết Lập Toàn Bộ"}</span>
-            </button>
-
-            {autoConfigResult && (
-              <div className="mt-1 p-2 rounded bg-[var(--card)]/90 border border-[var(--border)] text-[10px] flex flex-col gap-1 text-[var(--foreground)] animate-in fade-in duration-200">
-                <div className="flex items-center justify-between font-semibold text-[var(--primary)]">
-                  <span>✓ Đã cấu hình xong</span>
-                  <span className="text-[var(--muted-foreground)] font-mono">{autoConfigResult.toneLabel}</span>
-                </div>
-                <div className="text-[var(--muted-foreground)] leading-tight">
-                  Ngôn ngữ: <strong>{autoConfigResult.detectedLanguage?.languageName || "Tự động"}</strong> ➔ <strong>{translationConfig.targetLang}</strong>
-                </div>
-                <div className="text-[var(--muted-foreground)] leading-tight">
-                  Bộ thuật ngữ &amp; tên riêng: <strong className="text-[var(--primary)]">{autoConfigResult.properNamesCount} tên riêng</strong> + <strong className="text-[var(--primary)]">{autoConfigResult.termsCount} thuật ngữ</strong> = <strong>{Object.keys(translationConfig.glossary || {}).length} mục</strong>
-                </div>
-                <div className="text-[var(--muted-foreground)] leading-tight">
-                  Bộ dịch thuật: <strong className="font-mono text-[var(--foreground)]">{autoConfigResult.activeEngineLabel}</strong>
-                </div>
-                <div className="text-[var(--muted-foreground)] leading-tight">
-                  Bối cảnh: <strong>{autoConfigResult.researchBriefGenerated ? "Đã lập" : "Bỏ qua"}</strong> • Đã quét <strong>{autoConfigResult.entitiesExtractedCount} thực thể</strong>
-                </div>
-              </div>
-            )}
-          </div>
+            </CardContent>
+          </Card>
 
           {/* Section 1: Language Pairs */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 1. Cặp ngôn ngữ
               </span>
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="xs"
                 onClick={handleAutoDetect}
-                className="lg-button lg-button--secondary text-[10px] h-6 px-2 gap-1 text-[var(--primary)] font-medium shadow-xs"
+                className="text-primary shadow-xs"
                 title="Tự động phân tích bảng mã và tần suất từ vựng để nhận diện ngôn ngữ gốc"
               >
-                <Wand2 size={11} />
+                <Wand2 />
                 <span>Nhận diện tự động</span>
-              </button>
+              </Button>
             </div>
 
             {detectedLangInfo && (
-              <div className="flex items-center gap-1.5 text-[10px] bg-[var(--secondary)]/60 px-2 py-1 rounded border border-[var(--border)]">
-                <span className="text-[var(--primary)] font-semibold">● Nhận diện:</span>
-                <span className="text-[var(--foreground)]">{detectedLangInfo.languageName}</span>
-                <span className="text-[var(--muted-foreground)] ml-auto font-mono">
+              <div className="flex items-center gap-1.5 text-[10px] bg-secondary/60 px-2 py-1 rounded border border-border">
+                <span className="text-primary font-semibold">● Nhận diện:</span>
+                <span className="text-foreground">{detectedLangInfo.languageName}</span>
+                <span className="text-muted-foreground ml-auto font-mono">
                   {Math.round(detectedLangInfo.confidence * 100)}% ({detectedLangInfo.source})
                 </span>
               </div>
             )}
 
             {isSameLangWarning && (
-              <div className="p-2 rounded bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-500 flex items-start gap-1.5 animate-in fade-in duration-200">
-                <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-                <span>Sách gốc đã là Tiếng Việt. Bạn có muốn đổi ngôn ngữ đích sang tiếng khác hoặc dịch sang Tiếng Anh?</span>
-              </div>
+              <Alert className="bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400 animate-in fade-in duration-200">
+                <AlertTriangle className="size-3.5" />
+                <AlertDescription className="text-[10px] text-amber-600 dark:text-amber-400">
+                  Sách gốc đã là Tiếng Việt. Bạn có muốn đổi ngôn ngữ đích sang tiếng khác hoặc dịch sang Tiếng Anh?
+                </AlertDescription>
+              </Alert>
             )}
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-end gap-2">
               <div className="flex-1 flex flex-col gap-1">
-                <label className="text-[10px] text-[var(--muted-foreground)] font-medium">Ngôn ngữ nguồn</label>
-                <select
+                <Label htmlFor="translator-source-lang" className="text-[10px] text-muted-foreground font-medium">Ngôn ngữ nguồn</Label>
+                <Select
                   value={translationConfig.sourceLang}
-                  onChange={(e) => setTranslationConfig({ sourceLang: e.target.value })}
-                  className="w-full text-xs bg-[var(--secondary)] border border-[var(--border)] rounded-md px-2 py-1.5 text-[var(--foreground)] outline-none focus:border-[var(--primary)] transition-colors cursor-pointer"
+                  onValueChange={(value) => setTranslationConfig({ sourceLang: value })}
                 >
-                  {SOURCE_LANGUAGES.map((lang) => (
-                    <option key={lang} value={lang}>{lang}</option>
-                  ))}
-                </select>
+                  <SelectTrigger id="translator-source-lang" className="w-full text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {SOURCE_LANGUAGES.map((lang) => (
+                        <SelectItem key={lang} value={lang}>{lang}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
               </div>
 
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="icon-sm"
                 onClick={handleSwapLanguages}
-                className="mt-4 p-1.5 rounded-md border border-[var(--border)] hover:bg-[var(--accent)] hover:text-[var(--primary)] text-[var(--muted-foreground)] transition-colors cursor-pointer"
+                className="h-8 mb-0"
                 title="Đảo ngược cặp ngôn ngữ"
               >
-                <ArrowRightLeft size={13} />
-              </button>
+                <ArrowRightLeft className="size-3.5" />
+              </Button>
 
               <div className="flex-1 flex flex-col gap-1">
-                <label className="text-[10px] text-[var(--muted-foreground)] font-medium">Ngôn ngữ đích</label>
-                <select
+                <Label htmlFor="translator-target-lang" className="text-[10px] text-muted-foreground font-medium">Ngôn ngữ đích</Label>
+                <Select
                   value={translationConfig.targetLang}
-                  onChange={(e) => setTranslationConfig({ targetLang: e.target.value })}
-                  className="w-full text-xs bg-[var(--secondary)] border border-[var(--border)] rounded-md px-2 py-1.5 text-[var(--foreground)] outline-none focus:border-[var(--primary)] transition-colors cursor-pointer"
+                  onValueChange={(value) => setTranslationConfig({ targetLang: value })}
                 >
-                  {TARGET_LANGUAGES.map((lang) => (
-                    <option key={lang} value={lang}>{lang}</option>
-                  ))}
-                </select>
+                  <SelectTrigger id="translator-target-lang" className="w-full text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {TARGET_LANGUAGES.map((lang) => (
+                        <SelectItem key={lang} value={lang}>{lang}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </div>
 
           {/* Section 2: Layout Presentation Mode */}
           <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               2. Chế độ hiển thị
             </span>
-            <div className="segmented-toggle w-full">
-              <button
-                type="button"
-                data-active={translationConfig.mode === "replace" ? "true" : undefined}
-                onClick={() => setTranslationConfig({ mode: "replace" })}
-                className="segmented-toggle__item flex-1 text-center py-1.5 text-xs"
+            <ToggleGroup
+              type="single"
+              value={translationConfig.mode}
+              onValueChange={(val) => {
+                if (val === "replace" || val === "bilingual") {
+                  setTranslationConfig({ mode: val });
+                }
+              }}
+              className="grid grid-cols-2 w-full border border-border rounded-md p-0.5 bg-muted/40"
+            >
+              <ToggleGroupItem
+                value="replace"
+                size="sm"
+                className="h-7 text-xs font-medium data-[state=on]:bg-background data-[state=on]:text-primary"
               >
                 Chỉ bản dịch (Thay thế)
-              </button>
-              <button
-                type="button"
-                data-active={translationConfig.mode === "bilingual" ? "true" : undefined}
-                onClick={() => setTranslationConfig({ mode: "bilingual" })}
-                className="segmented-toggle__item flex-1 text-center py-1.5 text-xs"
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="bilingual"
+                size="sm"
+                className="h-7 text-xs font-medium data-[state=on]:bg-background data-[state=on]:text-primary"
               >
                 Song ngữ đối chiếu
-              </button>
-            </div>
-            <p className="text-[10px] text-[var(--muted-foreground)] leading-relaxed">
+              </ToggleGroupItem>
+            </ToggleGroup>
+            <p className="text-[10px] text-muted-foreground leading-relaxed">
               {translationConfig.mode === "replace"
                 ? "Thay thế chữ gốc bằng bản dịch tiếng Việt mượt mà để đọc trọn vẹn tác phẩm."
                 : "Chèn bản dịch ngay dưới mỗi đoạn gốc với định dạng song ngữ, lý tưởng để học ngoại ngữ."}
             </p>
 
-            <label className="flex items-center gap-1.5 text-[11px] text-[var(--foreground)] cursor-pointer select-none mt-1">
-              <input
-                type="checkbox"
+            <Label
+              htmlFor="toggle-translate-titles"
+              className="flex items-center gap-1.5 text-[11px] font-normal text-foreground cursor-pointer select-none mt-1"
+            >
+              <Checkbox
+                id="toggle-translate-titles"
                 checked={translationConfig.translateTitles !== false}
-                onChange={(e) => setTranslationConfig({ translateTitles: e.target.checked })}
-                className="accent-[var(--primary)] rounded cursor-pointer"
+                onCheckedChange={(checked) =>
+                  setTranslationConfig({ translateTitles: Boolean(checked) })
+                }
               />
               <span>Dịch cả tên truyện &amp; tiêu đề các chương</span>
-            </label>
+            </Label>
           </div>
 
           {/* Section 3: Tone Presets */}
           <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               3. Văn phong dịch thuật
             </span>
-            <div className="grid grid-cols-2 gap-1.5">
+            <ToggleGroup
+              type="single"
+              value={translationConfig.tone}
+              onValueChange={(val) => {
+                if (val) setTranslationConfig({ tone: val as TranslationTone });
+              }}
+              variant="outline"
+              className="grid grid-cols-2 gap-1.5 w-full"
+            >
               {(Object.keys(TONE_DESCRIPTIONS) as TranslationTone[]).map((tKey) => {
                 const info = TONE_DESCRIPTIONS[tKey];
-                const isSelected = translationConfig.tone === tKey;
                 return (
-                  <button
+                  <ToggleGroupItem
                     key={tKey}
-                    type="button"
-                    onClick={() => setTranslationConfig({ tone: tKey })}
-                    className={`p-2 rounded-lg border text-left flex flex-col gap-1 transition-all cursor-pointer ${
-                      isSelected
-                        ? "bg-[color-mix(in_srgb,var(--primary)_12%,var(--card))] border-[var(--primary)] text-[var(--foreground)] shadow-xs"
-                        : "bg-[var(--secondary)]/40 border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:border-[var(--border-strong)]"
-                    }`}
+                    value={tKey}
+                    className="w-full h-auto flex-col items-start justify-start gap-1 p-2 text-left whitespace-normal data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-foreground"
                   >
                     <span className="text-xs font-semibold">{info.name}</span>
                     <span className="text-[10px] opacity-80 line-clamp-2 leading-tight">
                       {info.description}
                     </span>
-                  </button>
+                  </ToggleGroupItem>
                 );
               })}
-            </div>
+            </ToggleGroup>
           </div>
 
           {/* Section 4: Contextual Research Brief */}
-          <div className="flex flex-col gap-2 border border-[var(--border)] rounded-lg p-2.5 bg-[var(--secondary)]/20">
-            <div
-              className="flex items-center justify-between cursor-pointer select-none"
-              onClick={() => setShowResearchBrief(!showResearchBrief)}
-            >
-              <div className="flex items-center gap-1.5">
-                <FileText size={13} className="text-[var(--primary)]" />
-                <span className="text-xs font-semibold text-[var(--foreground)]">
-                  Nghiên cứu bối cảnh (Research Brief)
-                </span>
-              </div>
-              <span className={`app-badge text-[10px] px-1.5 h-4 ${
-                translationConfig.useResearchBrief ? "app-badge--brand" : "app-badge--neutral"
-              }`}>
-                {translationConfig.useResearchBrief ? "Đang bật" : "Tắt"}
-              </span>
-            </div>
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              4. Nghiên cứu bối cảnh
+            </span>
+            <Card size="sm" className="shrink-0 bg-secondary/20">
+              <CardHeader
+                className="cursor-pointer select-none py-2.5 px-3 flex flex-row items-center justify-between"
+                onClick={() => setShowResearchBrief(!showResearchBrief)}
+              >
+                <CardTitle className="flex items-center gap-1.5 text-xs">
+                  <FileText className="size-3.5 text-primary" />
+                  <span>Research Brief (Bối cảnh tác phẩm)</span>
+                </CardTitle>
+                <Badge
+                  variant={translationConfig.useResearchBrief ? "secondary" : "outline"}
+                  className={`text-[10px] px-1.5 h-4 ${
+                    translationConfig.useResearchBrief ? "bg-primary/10 text-primary" : ""
+                  }`}
+                >
+                  {translationConfig.useResearchBrief ? "Đang bật" : "Tắt"}
+                </Badge>
+              </CardHeader>
 
             {showResearchBrief && (
-              <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-[var(--border)] animate-in fade-in duration-150">
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-1.5 text-[11px] text-[var(--foreground)] cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(translationConfig.useResearchBrief)}
-                      onChange={(e) => setTranslationConfig({ useResearchBrief: e.target.checked })}
-                      className="accent-[var(--primary)] rounded"
-                    />
-                    <span>Áp dụng vào bản dịch</span>
-                  </label>
+              <>
+                <Separator />
+                <CardContent className="flex flex-col gap-2 animate-in fade-in duration-150">
+                  <div className="flex items-center justify-between">
+                    <Label
+                      htmlFor="toggle-research-brief"
+                      className="flex items-center gap-1.5 text-[11px] font-normal text-foreground cursor-pointer select-none"
+                    >
+                      <Checkbox
+                        id="toggle-research-brief"
+                        checked={Boolean(translationConfig.useResearchBrief)}
+                        onCheckedChange={(checked) =>
+                          setTranslationConfig({ useResearchBrief: Boolean(checked) })
+                        }
+                      />
+                      <span>Áp dụng vào bản dịch</span>
+                    </Label>
 
-                  <button
-                    type="button"
-                    disabled={isGeneratingResearchBrief}
-                    onClick={handleGenerateBrief}
-                    className="lg-button lg-button--secondary text-[10px] h-6 px-2 gap-1 text-[var(--primary)] font-medium shadow-xs"
-                    title="Nghiên cứu thời đại, văn hóa và quy tắc xưng hô nhân vật bằng AI"
-                  >
-                    {isGeneratingResearchBrief ? (
-                      <Loader2 size={11} className="animate-spin" />
-                    ) : (
-                      <Sparkles size={11} />
-                    )}
-                    <span>{isGeneratingResearchBrief ? "Đang nghiên cứu..." : "AI Nghiên Cứu"}</span>
-                  </button>
-                </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="xs"
+                      disabled={isGeneratingResearchBrief}
+                      onClick={handleGenerateBrief}
+                      className="text-primary shadow-xs"
+                      title="Nghiên cứu thời đại, văn hóa và quy tắc xưng hô nhân vật bằng AI"
+                    >
+                      {isGeneratingResearchBrief ? (
+                        <Loader2 className="animate-spin" />
+                      ) : (
+                        <Sparkles />
+                      )}
+                      <span>{isGeneratingResearchBrief ? "Đang nghiên cứu..." : "AI Nghiên Cứu"}</span>
+                    </Button>
+                  </div>
 
-                <textarea
-                  rows={4}
-                  value={translationConfig.researchBrief || ""}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val.length <= 1500) {
-                      setTranslationConfig({ researchBrief: val });
-                    }
-                  }}
-                  placeholder="Bấm 'AI Nghiên Cứu' hoặc tự viết quy tắc xưng hô, bối cảnh thời đại, danh xưng nhân vật tại đây..."
-                  className="w-full text-[11px] bg-[var(--card)] border border-[var(--border)] rounded p-2 text-[var(--foreground)] font-mono resize-none outline-none focus:border-[var(--primary)] leading-relaxed"
-                />
+                  <Textarea
+                    rows={4}
+                    value={translationConfig.researchBrief || ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.length <= 1500) {
+                        setTranslationConfig({ researchBrief: val });
+                      }
+                    }}
+                    placeholder="Bấm 'AI Nghiên Cứu' hoặc tự viết quy tắc xưng hô, bối cảnh thời đại, danh xưng nhân vật tại đây..."
+                    className="text-[11px] font-mono resize-none leading-relaxed"
+                  />
 
-                <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)]">
-                  <span>Tự động đưa vào prompt để định hình văn phong chuẩn.</span>
-                  <span className="font-mono">{(translationConfig.researchBrief || "").length}/1200 ký tự</span>
-                </div>
-              </div>
+                  <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                    <span>Tự động đưa vào prompt để định hình văn phong chuẩn.</span>
+                    <span className="font-mono">{(translationConfig.researchBrief || "").length}/1200 ký tự</span>
+                  </div>
+                </CardContent>
+              </>
             )}
+          </Card>
           </div>
 
           {/* Section 5: Glossary / Terminology Accordion */}
-          <div className="flex flex-col gap-2 border border-[var(--border)] rounded-lg p-2.5 bg-[var(--secondary)]/20">
-            <div
-              className="flex items-center justify-between cursor-pointer select-none"
-              onClick={() => setShowGlossary(!showGlossary)}
-            >
-              <div className="flex items-center gap-1.5">
-                <Sliders size={13} className="text-[var(--primary)]" />
-                <span className="text-xs font-semibold text-[var(--foreground)]">
-                  Bộ thuật ngữ &amp; Tên riêng (Glossary)
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  disabled={isExtractingEntities}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleScanEntities();
-                  }}
-                  className="lg-button lg-button--secondary text-[10px] h-5 px-1.5 gap-1 text-[var(--primary)] font-medium shadow-xs"
-                  title="Tự động trích xuất các nhân vật, địa danh và thuật ngữ quan trọng"
-                >
-                  {isExtractingEntities ? (
-                    <Loader2 size={10} className="animate-spin" />
-                  ) : (
-                    <Search size={10} />
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              5. Thuật ngữ &amp; Tên riêng (Glossary)
+            </span>
+            <Card size="sm" className="shrink-0 bg-secondary/20">
+              <CardHeader
+                className="cursor-pointer select-none py-2.5 px-3 flex flex-row items-center justify-between"
+                onClick={() => setShowGlossary(!showGlossary)}
+              >
+                <CardTitle className="flex items-center gap-1.5 text-xs">
+                  <Sliders className="size-3.5 text-primary" />
+                  <span>Danh mục thuật ngữ</span>
+                </CardTitle>
+                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  {extractedCandidates.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      onClick={() => setShowEntityModal(true)}
+                      className="text-xs shadow-xs gap-1"
+                      title="Xem lại hoặc chỉnh sửa danh sách các thực thể đã trích xuất"
+                    >
+                      <Eye className="size-3" />
+                      <span>Duyệt ({extractedCandidates.length})</span>
+                    </Button>
                   )}
-                  <span>{isExtractingEntities ? "Đang quét..." : "Quét AI"}</span>
-                </button>
 
-                <span className="app-badge app-badge--neutral text-[10px] px-1.5 h-4">
-                  {Object.keys(translationConfig.glossary || {}).length} từ
-                </span>
-              </div>
-            </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="xs"
+                    disabled={isExtractingEntities}
+                    onClick={handleScanEntities}
+                    className="text-primary shadow-xs"
+                    title="Tự động trích xuất các nhân vật, địa danh và thuật ngữ quan trọng"
+                  >
+                    {isExtractingEntities ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <Search />
+                    )}
+                    <span>{isExtractingEntities ? "Đang quét..." : "Quét AI"}</span>
+                  </Button>
+
+                  <Badge variant="secondary" className="text-[10px] px-1.5 h-4">
+                    {Object.keys(translationConfig.glossary || {}).length} từ
+                  </Badge>
+                </div>
+              </CardHeader>
 
             {showGlossary && (
-              <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-[var(--border)] animate-in fade-in duration-150">
-                <p className="text-[10px] text-[var(--muted-foreground)]">
-                  Cố định tên nhân vật hoặc thuật ngữ để bản dịch luôn đồng nhất qua mọi chương:
-                </p>
+              <>
+                <Separator />
+                <CardContent className="flex flex-col gap-2 animate-in fade-in duration-150">
+                  <p className="text-[10px] text-muted-foreground">
+                    Cố định tên nhân vật hoặc thuật ngữ để bản dịch luôn đồng nhất qua mọi chương:
+                  </p>
 
-                {/* Term List */}
-                <div className="max-h-28 overflow-y-auto flex flex-col gap-1 pr-1">
-                  {Object.entries(translationConfig.glossary || {}).length === 0 ? (
-                    <span className="text-[10px] text-[var(--muted-foreground)] italic">
-                      Chưa có thuật ngữ nào được tạo.
-                    </span>
-                  ) : (
-                    Object.entries(translationConfig.glossary || {}).map(([k, v]) => (
-                      <div
-                        key={k}
-                        className="flex items-center justify-between bg-[var(--card)] px-2 py-1 rounded border border-[var(--border)] text-xs"
-                      >
-                        <span className="font-mono text-[11px] text-[var(--foreground)] truncate max-w-[120px]">
-                          {k}
-                        </span>
-                        <span className="text-[10px] text-[var(--muted-foreground)]">➔</span>
-                        <span className="text-[11px] text-[var(--primary)] truncate max-w-[120px]">
-                          {v}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveGlossaryTerm(k)}
-                          className="text-[var(--muted-foreground)] hover:text-red-400 p-0.5 cursor-pointer ml-1"
+                  {/* Term List */}
+                  <div className="max-h-28 overflow-y-auto flex flex-col gap-1 pr-1">
+                    {Object.entries(translationConfig.glossary || {}).length === 0 ? (
+                      <span className="text-[10px] text-muted-foreground italic">
+                        Chưa có thuật ngữ nào được tạo.
+                      </span>
+                    ) : (
+                      Object.entries(translationConfig.glossary || {}).map(([k, v]) => (
+                        <div
+                          key={k}
+                          className="flex items-center justify-between bg-card px-2 py-1 rounded border border-border text-xs"
                         >
-                          <Trash2 size={11} />
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
+                          <span className="font-mono text-[11px] text-foreground truncate max-w-[120px]">
+                            {k}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">➔</span>
+                          <span className="text-[11px] text-primary truncate max-w-[120px]">
+                            {v}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => handleRemoveGlossaryTerm(k)}
+                            className="text-muted-foreground hover:text-red-400 ml-1"
+                          >
+                            <Trash2 />
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                  </div>
 
-                {/* Term Input */}
-                <div className="flex items-center gap-1.5 mt-1">
-                  <input
-                    type="text"
-                    placeholder="Gốc (VD: Harry)"
-                    value={newTermKey}
-                    onChange={(e) => setNewTermKey(e.target.value)}
-                    className="flex-1 text-xs bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1 text-[var(--foreground)] outline-none focus:border-[var(--primary)]"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Dịch (VD: Harry)"
-                    value={newTermVal}
-                    onChange={(e) => setNewTermVal(e.target.value)}
-                    className="flex-1 text-xs bg-[var(--card)] border border-[var(--border)] rounded px-2 py-1 text-[var(--foreground)] outline-none focus:border-[var(--primary)]"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddGlossaryTerm}
-                    className="p-1 rounded bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90 cursor-pointer"
-                    title="Thêm thuật ngữ"
-                  >
-                    <Plus size={14} />
-                  </button>
-                </div>
-              </div>
+                  {/* Term Input */}
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <Input
+                      type="text"
+                      placeholder="Gốc (VD: Harry)"
+                      value={newTermKey}
+                      onChange={(e) => setNewTermKey(e.target.value)}
+                      className="flex-1 text-xs"
+                    />
+                    <Input
+                      type="text"
+                      placeholder="Dịch (VD: Harry)"
+                      value={newTermVal}
+                      onChange={(e) => setNewTermVal(e.target.value)}
+                      className="flex-1 text-xs"
+                    />
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      onClick={handleAddGlossaryTerm}
+                      title="Thêm thuật ngữ"
+                    >
+                      <Plus />
+                    </Button>
+                  </div>
+                </CardContent>
+              </>
             )}
+          </Card>
           </div>
 
           {/* Section 6: Scope & Chapter Selector */}
           <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-              5. Phạm vi dịch
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              6. Phạm vi dịch
             </span>
-            <div className="segmented-toggle w-full">
-              <button
-                type="button"
-                data-active={scope === "single" ? "true" : undefined}
-                onClick={() => setScope("single")}
-                className="segmented-toggle__item flex-1 text-center py-1 text-xs"
+            <ToggleGroup
+              type="single"
+              value={scope}
+              onValueChange={(val) => {
+                if (val === "single" || val === "unprocessed" || val === "all") {
+                  setScope(val);
+                }
+              }}
+              className="grid grid-cols-3 w-full border border-border rounded-md p-0.5 bg-muted/40"
+            >
+              <ToggleGroupItem
+                value="single"
+                size="sm"
+                className="h-7 text-xs font-medium data-[state=on]:bg-background data-[state=on]:text-primary"
               >
                 Chương chọn
-              </button>
-              <button
-                type="button"
-                data-active={scope === "unprocessed" ? "true" : undefined}
-                onClick={() => setScope("unprocessed")}
-                className="segmented-toggle__item flex-1 text-center py-1 text-xs"
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="unprocessed"
+                size="sm"
+                className="h-7 text-xs font-medium data-[state=on]:bg-background data-[state=on]:text-primary"
               >
                 Chưa dịch ({unprocessedCount})
-              </button>
-              <button
-                type="button"
-                data-active={scope === "all" ? "true" : undefined}
-                onClick={() => setScope("all")}
-                className="segmented-toggle__item flex-1 text-center py-1 text-xs"
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="all"
+                size="sm"
+                className="h-7 text-xs font-medium data-[state=on]:bg-background data-[state=on]:text-primary"
               >
                 Toàn bộ ({totalChapters})
-              </button>
-            </div>
+              </ToggleGroupItem>
+            </ToggleGroup>
 
             {scope === "single" && (
               <div className="flex flex-col gap-1 mt-1">
-                <label className="text-[10px] text-[var(--muted-foreground)] font-medium">Chọn chương cần dịch:</label>
-                <select
-                  value={activeChapterIndex}
-                  onChange={(e) => setActiveChapterIndex(Number(e.target.value))}
-                  className="w-full text-xs bg-[var(--secondary)] border border-[var(--border)] rounded-md px-2 py-1.5 text-[var(--foreground)] outline-none focus:border-[var(--primary)] cursor-pointer truncate"
+                <Label htmlFor="translator-chapter" className="text-[10px] text-muted-foreground font-medium">Chọn chương cần dịch:</Label>
+                <Select
+                  value={String(activeChapterIndex)}
+                  onValueChange={(value) => setActiveChapterIndex(Number(value))}
                 >
-                  {currentBook.chapters.map((ch, idx) => {
-                    const isDone = Boolean(modifiedChapters[ch.href]);
-                    return (
-                      <option key={ch.href} value={idx}>
-                        {isDone ? "✓ " : ""}{idx + 1}. {ch.title}
-                      </option>
-                    );
-                  })}
-                </select>
+                  <SelectTrigger id="translator-chapter" className="w-full text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {currentBook.chapters.map((ch, idx) => {
+                        const isDone = Boolean(modifiedChapters[ch.href]);
+                        return (
+                          <SelectItem key={ch.href} value={String(idx)}>
+                            {isDone ? "✓ " : ""}{idx + 1}. {ch.title}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
               </div>
             )}
           </div>
 
           {/* Section 6: Action Execution */}
-          <div className="mt-auto pt-4 border-t border-[var(--border)] flex flex-col gap-2.5">
+          <Separator className="mt-auto" />
+          <div className="flex flex-col gap-2.5">
             {/* Course complete: whole book translated */}
             {!isTranslating && totalChapters > 0 && translatedCount >= totalChapters && (
-              <div
-                className="p-2.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 flex flex-col gap-2 animate-in fade-in duration-200"
+              <Alert
                 role="status"
+                className="border-emerald-500/40 bg-emerald-500/10 animate-in fade-in duration-200"
               >
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--foreground)]">
-                  <Check size={14} className="text-emerald-500" />
-                  <span>Đã dịch xong toàn bộ {totalChapters} chương</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("reader")}
-                    className="lg-button lg-button--primary flex-1 h-7 text-[11px] gap-1"
-                  >
-                    <BookOpenCheck size={12} />
+                <Check className="size-3.5 text-emerald-500" />
+                <AlertTitle className="text-xs">
+                  Đã dịch xong toàn bộ {totalChapters} chương
+                </AlertTitle>
+                <AlertDescription className="flex items-center gap-2">
+                  <Button type="button" size="sm" className="flex-1 text-[11px]" onClick={() => setActiveTab("reader")}>
+                    <BookOpenCheck />
                     <span>Đọc bản dịch</span>
-                  </button>
-                </div>
-              </div>
+                  </Button>
+                </AlertDescription>
+              </Alert>
             )}
 
             {/* Progress Bar when translating */}
             {isTranslating && translationProgress && (
-              <div className="p-2.5 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/5 flex flex-col gap-1.5 animate-in fade-in duration-200">
+              <div className="p-2.5 rounded-lg border border-primary/30 bg-primary/5 flex flex-col gap-1.5 animate-in fade-in duration-200">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-[var(--foreground)] truncate max-w-[200px]">
+                  <span className="font-semibold text-foreground truncate max-w-[200px]">
                     Đang dịch: {translationProgress.currentChapterTitle}
                   </span>
-                  <span className="font-mono text-[var(--primary)] font-bold text-xs">
+                  <span className="font-mono text-primary font-bold text-xs">
                     {translationProgress.percent}%
                   </span>
                 </div>
-                <div className="w-full h-1.5 rounded-full bg-[var(--secondary)] overflow-hidden">
-                  <div
-                    className="h-full bg-[var(--primary)] transition-all duration-300 rounded-full"
-                    style={{ width: `${Math.max(5, translationProgress.percent)}%` }}
-                  />
-                </div>
-                <span className="text-[10px] text-[var(--muted-foreground)]">
+                <Progress value={translationProgress.percent} className="h-1.5" />
+                <span className="text-[10px] text-muted-foreground">
                   Chương {translationProgress.currentChapterIndex}/{translationProgress.totalChapters}
                   {translationProgress.totalBlocks > 0 &&
                     ` • ${translationProgress.currentBlock}/${translationProgress.totalBlocks} đoạn`}
@@ -990,12 +1129,13 @@ export function BookTranslatorView() {
             {/* Buttons */}
             <div className="flex items-center gap-2">
               {!isTranslating ? (
-                <button
+                <Button
                   type="button"
+                  size="lg"
                   onClick={handleStartTranslation}
-                  className="lg-button lg-button--primary flex-1 h-9 text-xs font-semibold gap-1.5 shadow-sm"
+                  className="flex-1 text-xs font-semibold shadow-sm"
                 >
-                  <Play size={14} className="fill-current" />
+                  <Play className="fill-current" />
                   <span>
                     {scope === "single"
                       ? "Bắt Đầu Dịch Chương Này"
@@ -1003,102 +1143,107 @@ export function BookTranslatorView() {
                       ? `Dịch ${unprocessedCount} Chương Chưa Dịch`
                       : `Dịch Toàn Bộ ${totalChapters} Chương`}
                   </span>
-                </button>
+                </Button>
               ) : (
-                <button
+                <Button
                   type="button"
+                  size="lg"
+                  variant="destructive"
                   onClick={stopTranslation}
-                  className="lg-button bg-red-600 hover:bg-red-700 text-white flex-1 h-9 text-xs font-semibold gap-1.5 shadow-sm cursor-pointer"
+                  className="flex-1 text-xs font-semibold shadow-sm"
                 >
-                  <Square size={14} className="fill-current" />
+                  <Square className="fill-current" />
                   <span>Dừng / Hủy Bỏ</span>
-                </button>
+                </Button>
               )}
 
               {isCurrentChapterTranslated && !isTranslating && (
-                <button
+                <Button
                   type="button"
+                  size="lg"
+                  variant="secondary"
                   onClick={() => {
                     if (activeChapter) {
                       resetChapterTranslation(activeChapter.href);
                       toast.info(`Đã khôi phục chương "${activeChapter.title}" về bản gốc`);
                     }
                   }}
-                  className="lg-button lg-button--secondary h-9 px-2.5 text-[var(--muted-foreground)] hover:text-red-400"
+                  className="text-muted-foreground hover:text-red-400"
                   title="Khôi phục chương này về nguyên tác ban đầu"
                 >
-                  <RotateCcw size={14} />
-                </button>
+                  <RotateCcw />
+                </Button>
               )}
             </div>
 
-            <button
+            <Button
               type="button"
+              variant="secondary"
               onClick={() => setActiveTab("reader")}
-              className="lg-button lg-button--secondary text-xs h-8 gap-1.5 text-[var(--foreground)]"
+              className="text-xs text-foreground"
             >
-              <BookOpenCheck size={13} />
+              <BookOpenCheck />
               <span>Xem Thử Trên Trình Đọc Sách</span>
-            </button>
+            </Button>
           </div>
         </div>
 
         {/* Right Panel: Preview & Terminal Logs */}
-        <div className="flex-1 flex flex-col h-full overflow-hidden bg-[var(--background)]">
+        <Tabs
+          value={rightTab}
+          onValueChange={(value) => {
+            if (value === "preview" || value === "terminal") setRightTab(value);
+          }}
+          className="flex-1 flex flex-col gap-0 h-full overflow-hidden bg-background"
+        >
           {/* Right Sub-Header Tabs */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--border)] bg-[var(--card)]/40 flex-shrink-0">
-            <div className="segmented-toggle">
-              <button
-                type="button"
-                data-active={rightTab === "preview" ? "true" : undefined}
-                onClick={() => setRightTab("preview")}
-                className="segmented-toggle__item px-3 py-1 text-xs gap-1.5 flex items-center"
-              >
-                <Eye size={12} />
+          <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card/40 flex-shrink-0">
+            <TabsList>
+              <TabsTrigger value="preview" className="px-3 text-xs">
+                <Eye />
                 <span>Xem Trước Chương</span>
-              </button>
-              <button
-                type="button"
-                data-active={rightTab === "terminal" ? "true" : undefined}
-                onClick={() => setRightTab("terminal")}
-                className="segmented-toggle__item px-3 py-1 text-xs gap-1.5 flex items-center"
-              >
-                <Terminal size={12} />
+              </TabsTrigger>
+              <TabsTrigger value="terminal" className="px-3 text-xs">
+                <Terminal />
                 <span>Nhật Ký Terminal Log</span>
                 {terminalLogs.length > 0 && (
-                  <span className="app-badge app-badge--brand text-[9px] px-1 h-3.5 ml-1">
+                  <Badge variant="secondary" className="bg-primary/10 text-primary text-[9px] px-1 h-3.5 ml-1">
                     {terminalLogs.length}
-                  </span>
+                  </Badge>
                 )}
-              </button>
-            </div>
+              </TabsTrigger>
+            </TabsList>
 
             {rightTab === "terminal" ? (
               <div className="flex items-center gap-1.5">
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="sm"
                   onClick={handleCopyLogs}
-                  className="lg-button lg-button--secondary text-xs h-7 px-2 gap-1"
+                  className="text-xs"
                   title="Sao chép toàn bộ nhật ký"
                 >
-                  {copiedLogs ? <Check size={12} /> : <Copy size={12} />}
+                  {copiedLogs ? <Check /> : <Copy />}
                   <span>{copiedLogs ? "Đã sao chép" : "Sao chép"}</span>
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="sm"
                   onClick={clearTerminalLogs}
-                  className="lg-button lg-button--secondary text-xs h-7 px-2 text-[var(--muted-foreground)] hover:text-red-400"
+                  className="text-xs text-muted-foreground hover:text-red-400"
                   title="Xóa nhật ký"
                 >
-                  <Trash2 size={12} />
+                  <Trash2 />
                   <span>Xóa</span>
-                </button>
+                </Button>
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 {activeChapter && (
                   <span>
-                    Chương {activeChapterIndex + 1}: <strong className="text-[var(--foreground)]">{activeChapter.title}</strong>
+                    Chương {activeChapterIndex + 1}: <strong className="text-foreground">{activeChapter.title}</strong>
                   </span>
                 )}
               </div>
@@ -1106,164 +1251,157 @@ export function BookTranslatorView() {
           </div>
 
           {/* Content Area */}
-          <div className="flex-1 overflow-hidden relative">
-            {rightTab === "preview" ? (
-              <div className="w-full h-full p-4 overflow-hidden flex flex-col items-center justify-center">
-                <div className="max-w-3xl w-full h-full bg-[var(--card)] rounded-xl border border-[var(--border)] shadow-sm overflow-hidden flex flex-col">
-                  {isLoadingPreview ? (
-                    <div className="flex-1 flex items-center justify-center text-xs text-[var(--muted-foreground)]">
-                      Đang đọc nội dung chương...
-                    </div>
-                  ) : previewHtml ? (
-                    <iframe
-                      ref={iframeRef}
-                      title="Chapter Translation Preview"
-                      className="w-full h-full border-none select-text bg-white dark:bg-[#18181f]"
-                      sandbox="allow-same-origin"
-                    />
-                  ) : (
-                    <div className="flex-1 flex items-center justify-center text-xs text-[var(--muted-foreground)]">
+          <TabsContent value="preview" className="flex-1 overflow-hidden relative">
+            <div className="w-full h-full p-4 overflow-hidden flex flex-col items-center justify-center">
+              <div className="max-w-3xl w-full h-full bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col">
+                {isLoadingPreview ? (
+                  <div className="flex-1 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                    <Spinner className="size-3.5" />
+                    <span>Đang đọc nội dung chương...</span>
+                  </div>
+                ) : previewHtml ? (
+                  <iframe
+                    ref={iframeRef}
+                    title="Chapter Translation Preview"
+                    className="w-full h-full border-none select-text bg-white dark:bg-background"
+                    sandbox="allow-same-origin"
+                  />
+                ) : (
+                  <Empty className="border-0">
+                    <EmptyMedia variant="icon">
+                      <FileText />
+                    </EmptyMedia>
+                    <EmptyDescription className="text-xs">
                       Không có nội dung để hiển thị.
-                    </div>
-                  )}
-                </div>
+                    </EmptyDescription>
+                  </Empty>
+                )}
               </div>
-            ) : (
-              /* Terminal Log Window — chi tiết hoá nhật ký dịch */
-              <TranslationLogPanel
-                logs={terminalLogs}
-                filter={logFilter}
-                search={logSearch}
-                autoScroll={logAutoScroll}
-                onFilterChange={setLogFilter}
-                onSearchChange={setLogSearch}
-                onToggleAutoScroll={() => setLogAutoScroll((v) => !v)}
-                endRef={terminalEndRef}
-              />
-            )}
-          </div>
-        </div>
+            </div>
+          </TabsContent>
+
+          {/* Terminal Log Window — chi tiết hoá nhật ký dịch */}
+          <TabsContent value="terminal" className="flex-1 overflow-hidden relative">
+            <TranslationLogPanel
+              logs={terminalLogs}
+              filter={logFilter}
+              search={logSearch}
+              autoScroll={logAutoScroll}
+              onFilterChange={setLogFilter}
+              onSearchChange={setLogSearch}
+              onToggleAutoScroll={() => setLogAutoScroll((v) => !v)}
+              endRef={terminalEndRef}
+            />
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* Entity & Terminology Review Modal */}
-      {showEntityModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] bg-[var(--secondary)]/40">
-              <div className="flex items-center gap-2">
-                <Search size={16} className="text-[var(--primary)]" />
-                <h3 className="text-xs font-semibold text-[var(--foreground)]">
-                  Kết Quả Trích Xuất Thuật Ngữ &amp; Tên Riêng
-                </h3>
-                <span className="app-badge app-badge--brand text-[10px] px-1.5 h-4">
-                  {extractedCandidates.length} thực thể
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowEntityModal(false)}
-                className="p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer"
-              >
-                <X size={15} />
-              </button>
-            </div>
+      <Dialog open={showEntityModal} onOpenChange={setShowEntityModal}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+          <DialogHeader className="-mx-4 -mt-4 rounded-t-xl border-b border-border bg-secondary/40 p-4">
+            <DialogTitle className="flex items-center gap-2 text-xs">
+              <Search className="size-4 text-primary" />
+              <span>Kết Quả Trích Xuất Thuật Ngữ &amp; Tên Riêng</span>
+              <Badge variant="secondary" className="bg-primary/10 text-primary text-[10px] px-1.5 h-4">
+                {extractedCandidates.length} thực thể
+              </Badge>
+            </DialogTitle>
+            <DialogDescription className="text-[11px] leading-relaxed">
+              Các tên nhân vật, địa danh và thuật ngữ quan trọng được phát hiện từ các chương sách. Bạn có thể chỉnh sửa bản dịch đề xuất trước khi thêm vào bộ từ điển Glossary:
+            </DialogDescription>
+          </DialogHeader>
 
-            {/* Modal Body */}
-            <div className="p-4 flex-1 overflow-y-auto flex flex-col gap-3">
-              <p className="text-[11px] text-[var(--muted-foreground)] leading-relaxed">
-                Các tên nhân vật, địa danh và thuật ngữ quan trọng được phát hiện từ các chương sách. Bạn có thể chỉnh sửa bản dịch đề xuất trước khi thêm vào bộ từ điển Glossary:
-              </p>
+          {/* Modal Body */}
+          <div className="min-h-0 flex-1 overflow-y-auto flex flex-col gap-3">
+            <div className="border border-border rounded-lg overflow-hidden">
+              <Table className="text-xs">
+                <TableHeader className="bg-secondary/60 text-[10px] uppercase font-semibold text-muted-foreground">
+                  <TableRow>
+                    <TableHead className="p-2 w-10 text-center">Chọn</TableHead>
+                    <TableHead className="p-2">Tên / Thuật ngữ gốc</TableHead>
+                    <TableHead className="p-2 w-20">Loại</TableHead>
+                    <TableHead className="p-2 w-16 text-center">Tần suất</TableHead>
+                    <TableHead className="p-2">Bản dịch đề xuất (Có thể sửa)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-border/60">
+                  {extractedCandidates.map((c) => {
+                    const isChecked = Boolean(selectedEntityNames[c.name]);
+                    const currentVal = editedTranslations[c.name] ?? c.suggestedTranslation;
 
-              <div className="border border-[var(--border)] rounded-lg overflow-hidden">
-                <table className="w-full text-xs text-left border-collapse">
-                  <thead className="bg-[var(--secondary)]/60 text-[10px] uppercase font-semibold text-[var(--muted-foreground)] border-b border-[var(--border)]">
-                    <tr>
-                      <th className="p-2 w-10 text-center">Chọn</th>
-                      <th className="p-2">Tên / Thuật ngữ gốc</th>
-                      <th className="p-2 w-20">Loại</th>
-                      <th className="p-2 w-16 text-center">Tần suất</th>
-                      <th className="p-2">Bản dịch đề xuất (Có thể sửa)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--border)]/60">
-                    {extractedCandidates.map((c) => {
-                      const isChecked = Boolean(selectedEntityNames[c.name]);
-                      const currentVal = editedTranslations[c.name] ?? c.suggestedTranslation;
-
-                      return (
-                        <tr key={c.id} className="hover:bg-[var(--secondary)]/30 transition-colors">
-                          <td className="p-2 text-center">
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={(e) =>
-                                setSelectedEntityNames({
-                                  ...selectedEntityNames,
-                                  [c.name]: e.target.checked,
-                                })
-                              }
-                              className="accent-[var(--primary)] rounded cursor-pointer"
-                            />
-                          </td>
-                          <td className="p-2 font-mono text-[11px] text-[var(--foreground)] font-medium">
-                            {c.name}
-                          </td>
-                          <td className="p-2">
-                            <span className="app-badge app-badge--neutral text-[9px] px-1 h-3.5">
-                              {c.category === "person" ? "Nhân vật" : c.category === "place" ? "Địa danh" : "Thuật ngữ"}
-                            </span>
-                          </td>
-                          <td className="p-2 text-center text-[10px] font-mono text-[var(--muted-foreground)]">
-                            {c.count}x
-                          </td>
-                          <td className="p-2">
-                            <input
-                              type="text"
-                              value={currentVal}
-                              onChange={(e) =>
-                                setEditedTranslations({
-                                  ...editedTranslations,
-                                  [c.name]: e.target.value,
-                                })
-                              }
-                              className="w-full text-xs bg-[var(--background)] border border-[var(--border)] rounded px-2 py-1 text-[var(--foreground)] outline-none focus:border-[var(--primary)]"
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border)] bg-[var(--secondary)]/40">
-              <span className="text-[11px] text-[var(--muted-foreground)]">
-                Đã chọn: <strong className="text-[var(--foreground)]">{Object.values(selectedEntityNames).filter(Boolean).length}</strong> mục
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowEntityModal(false)}
-                  className="lg-button lg-button--secondary text-xs h-8 px-3"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="button"
-                  onClick={handleApplyApprovedEntities}
-                  className="lg-button lg-button--primary text-xs h-8 px-3 gap-1.5 font-medium shadow-xs"
-                >
-                  <CheckSquare size={13} />
-                  <span>Áp Dụng Vào Glossary</span>
-                </button>
-              </div>
+                    return (
+                      <TableRow key={c.id} className="hover:bg-secondary/30 transition-colors">
+                        <TableCell className="p-2 text-center">
+                          <Checkbox
+                            checked={isChecked}
+                            onCheckedChange={(checked) =>
+                              setSelectedEntityNames({
+                                ...selectedEntityNames,
+                                [c.name]: Boolean(checked),
+                              })
+                            }
+                            className="cursor-pointer"
+                          />
+                        </TableCell>
+                        <TableCell className="p-2 font-mono text-[11px] text-foreground font-medium">
+                          {c.name}
+                        </TableCell>
+                        <TableCell className="p-2">
+                          <Badge variant="secondary" className="text-[9px] px-1 h-3.5">
+                            {c.category === "person" ? "Nhân vật" : c.category === "place" ? "Địa danh" : "Thuật ngữ"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="p-2 text-center text-[10px] font-mono text-muted-foreground">
+                          {c.count}x
+                        </TableCell>
+                        <TableCell className="p-2">
+                          <Input
+                            type="text"
+                            value={currentVal}
+                            onChange={(e) =>
+                              setEditedTranslations({
+                                ...editedTranslations,
+                                [c.name]: e.target.value,
+                              })
+                            }
+                            className="w-full text-xs"
+                          />
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             </div>
           </div>
-        </div>
-      )}
+
+          {/* Modal Footer */}
+          <DialogFooter className="sm:justify-between">
+            <span className="text-[11px] text-muted-foreground">
+              Đã chọn: <strong className="text-foreground">{Object.values(selectedEntityNames).filter(Boolean).length}</strong> mục
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setShowEntityModal(false)}
+                className="text-xs"
+              >
+                Hủy
+              </Button>
+              <Button
+                type="button"
+                onClick={handleApplyApprovedEntities}
+                className="text-xs font-medium shadow-xs"
+              >
+                <CheckSquare />
+                <span>Áp Dụng Vào Glossary</span>
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

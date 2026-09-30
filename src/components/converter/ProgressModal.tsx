@@ -2,12 +2,22 @@ import {
   Loader2, 
   CheckCircle2, 
   AlertCircle, 
-  X, 
   Sparkles, 
   Cpu, 
   BookCheck,
   FileText
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "../ui/dialog";
+import { Progress } from "../ui/progress";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
 
 export type ProgressStage = "reading" | "extracting" | "ocr" | "jev" | "packaging" | "done" | "error";
 
@@ -50,9 +60,9 @@ export function ProgressModal({
       case "jev":
         return <Cpu size={18} className="text-amber-500 animate-pulse" />;
       case "packaging":
-        return <BookCheck size={18} className="text-[var(--primary)]" />;
+        return <BookCheck size={18} className="text-primary" />;
       case "extracting":
-        return <FileText size={18} className="text-[var(--primary)]" />;
+        return <FileText size={18} className="text-primary" />;
       case "ocr":
         return <Sparkles size={18} className="text-amber-500" />;
       case "done":
@@ -60,52 +70,42 @@ export function ProgressModal({
       case "error":
         return <AlertCircle size={18} className="text-rose-500" />;
       default:
-        return <Loader2 size={18} className="text-[var(--primary)] animate-spin" />;
+        return <Loader2 size={18} className="text-primary animate-spin" />;
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 select-none animate-in fade-in duration-150">
-      <div className="card-surface rounded-[var(--ui-radius-card)] w-full max-w-md overflow-hidden shadow-2xl border border-[var(--border)] bg-[var(--card)]">
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open && canCancel && onCancel) onCancel(); }}>
+      <DialogContent showCloseButton={canCancel && Boolean(onCancel)} className="sm:max-w-md p-0 gap-0 overflow-hidden">
         {/* Modal Header */}
-        <div className="h-11 px-4 border-b border-[var(--border)] flex items-center justify-between bg-[var(--ui-titlebar-surface)]">
+        <DialogHeader className="px-5 py-3.5 border-b border-border bg-muted/30 shrink-0">
           <div className="flex items-center gap-2">
             {getStageIcon()}
-            <span className="font-semibold text-xs text-[var(--foreground)]">{title}</span>
+            <DialogTitle className="text-sm font-semibold">{title}</DialogTitle>
           </div>
-
-          {canCancel && onCancel && (
-            <button
-              type="button"
-              onClick={onCancel}
-              title="Hủy bỏ tiến trình"
-              className="w-7 h-7 rounded flex items-center justify-center text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors"
-            >
-              <X size={15} />
-            </button>
-          )}
-        </div>
+          <DialogDescription className="sr-only">Tiến trình xử lý sách điện tử</DialogDescription>
+        </DialogHeader>
 
         {/* Modal Body */}
         <div className="p-5 flex flex-col gap-4">
           {/* Main Status Callout */}
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-lg bg-[color-mix(in_srgb,var(--primary)_12%,var(--card))] border border-[var(--primary)]/30 flex items-center justify-center text-[var(--primary)] shrink-0 shadow-xs">
+            <div className="size-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0 shadow-xs">
               {stage === "done" ? (
-                <CheckCircle2 size={22} className="text-emerald-500" />
+                <CheckCircle2 className="size-5 text-emerald-500" />
               ) : stage === "error" ? (
-                <AlertCircle size={22} className="text-rose-500" />
+                <AlertCircle className="size-5 text-destructive" />
               ) : (
-                <Loader2 size={22} className="animate-spin" />
+                <Loader2 className="size-5 animate-spin" />
               )}
             </div>
 
             <div className="flex-1 min-w-0">
-              <h4 className="text-sm font-semibold text-[var(--foreground)] truncate leading-tight">
+              <h4 className="text-sm font-semibold text-foreground truncate leading-tight">
                 {statusText}
               </h4>
               {subText && (
-                <p className="text-xs text-[var(--muted-foreground)] mt-1 leading-relaxed">
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
                   {subText}
                 </p>
               )}
@@ -113,49 +113,46 @@ export function ProgressModal({
           </div>
 
           {/* Progress Bar Container */}
-          <div className="flex flex-col gap-1.5 bg-[var(--background)] p-3 rounded-lg border border-[var(--border)]">
+          <div className="flex flex-col gap-2 bg-muted/40 p-3 rounded-lg border border-border">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-[var(--muted-foreground)] font-medium">Tiến độ thực hiện</span>
-              <span className="font-mono font-semibold text-[var(--primary)]">
+              <span className="text-muted-foreground font-medium">Tiến độ thực hiện</span>
+              <span className="font-mono font-semibold text-primary">
                 {isIndeterminate ? "Đang xử lý..." : `${clampedPercent}%`}
               </span>
             </div>
 
-            <div className="w-full bg-[var(--secondary)] h-2 rounded-full overflow-hidden relative">
-              {isIndeterminate ? (
-                <div className="h-full bg-[var(--primary)] w-1/3 rounded-full animate-indeterminate" />
-              ) : (
-                <div
-                  className="h-full bg-gradient-to-r from-[var(--primary)] to-indigo-500 rounded-full transition-all duration-200"
-                  style={{ width: `${clampedPercent}%` }}
-                />
-              )}
-            </div>
+            {isIndeterminate ? (
+              <div className="w-full bg-secondary h-2 rounded-full overflow-hidden relative">
+                <div className="h-full bg-primary w-1/3 rounded-full animate-pulse" />
+              </div>
+            ) : (
+              <Progress value={clampedPercent} className="h-2" />
+            )}
           </div>
 
           {/* Stepper Stages (if provided) */}
           {steps && steps.length > 0 && (
-            <div className="flex flex-col gap-2 pt-1 border-t border-[var(--border)]">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+            <div className="flex flex-col gap-2 pt-2 border-t border-border">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Các bước thực hiện
               </span>
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
                 {steps.map((step, idx) => (
                   <div
                     key={step.id || idx}
-                    className="flex items-center justify-between text-xs py-1 px-2 rounded bg-[var(--background)]/50 border border-[var(--border)]/50"
+                    className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded-md bg-background border border-border/70 shadow-2xs"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-mono font-bold bg-[var(--secondary)] text-[var(--muted-foreground)]">
+                      <span className="size-4.5 rounded-full flex items-center justify-center text-[10px] font-mono font-bold bg-muted text-muted-foreground">
                         {idx + 1}
                       </span>
                       <span
                         className={`${
                           step.status === "running"
-                            ? "text-[var(--foreground)] font-semibold"
+                            ? "text-foreground font-semibold"
                             : step.status === "completed"
-                            ? "text-emerald-500 line-through opacity-85"
-                            : "text-[var(--muted-foreground)]"
+                            ? "text-emerald-600 dark:text-emerald-400 line-through opacity-85"
+                            : "text-muted-foreground"
                         }`}
                       >
                         {step.label}
@@ -164,27 +161,27 @@ export function ProgressModal({
 
                     <div>
                       {step.status === "running" && (
-                        <span className="flex items-center gap-1 text-[11px] text-[var(--primary)] font-medium">
-                          <Loader2 size={12} className="animate-spin" />
+                        <Badge variant="outline" className="h-5 text-[11px] gap-1 border-primary/40 text-primary">
+                          <Loader2 className="size-3 animate-spin" />
                           <span>Đang chạy</span>
-                        </span>
+                        </Badge>
                       )}
                       {step.status === "completed" && (
-                        <span className="flex items-center gap-1 text-[11px] text-emerald-500 font-medium">
-                          <CheckCircle2 size={12} />
+                        <Badge variant="secondary" className="h-5 text-[11px] gap-1 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
+                          <CheckCircle2 className="size-3" />
                           <span>Xong</span>
-                        </span>
+                        </Badge>
                       )}
                       {step.status === "pending" && (
-                        <span className="text-[11px] text-[var(--muted-foreground)] opacity-70">
+                        <span className="text-[11px] text-muted-foreground opacity-70">
                           Chờ
                         </span>
                       )}
                       {step.status === "error" && (
-                        <span className="flex items-center gap-1 text-[11px] text-rose-500 font-medium">
-                          <AlertCircle size={12} />
+                        <Badge variant="destructive" className="h-5 text-[11px] gap-1">
+                          <AlertCircle className="size-3" />
                           <span>Lỗi</span>
-                        </span>
+                        </Badge>
                       )}
                     </div>
                   </div>
@@ -192,21 +189,22 @@ export function ProgressModal({
               </div>
             </div>
           )}
-
-          {/* Action Footer */}
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
-            {canCancel && onCancel && stage !== "done" && (
-              <button
-                type="button"
-                onClick={onCancel}
-                className="app-button app-button--secondary text-xs px-4"
-              >
-                <span>Hủy Bỏ (Dừng Lại)</span>
-              </button>
-            )}
-          </div>
         </div>
-      </div>
-    </div>
+
+        {/* Action Footer */}
+        {canCancel && onCancel && stage !== "done" && (
+          <DialogFooter className="m-0 px-5 py-3 border-t border-border bg-muted/30 flex items-center justify-end shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onCancel}
+              className="text-xs h-8"
+            >
+              Hủy Bỏ (Dừng Lại)
+            </Button>
+          </DialogFooter>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

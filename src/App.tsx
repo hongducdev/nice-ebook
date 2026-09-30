@@ -16,16 +16,30 @@ import { KindleCompanionView } from "./components/kindle/KindleCompanionView";
 import { ExportModal } from "./components/export/ExportModal";
 import { ConverterView } from "./components/converter/ConverterView";
 import { BookAgentDrawer } from "./components/agent/BookAgentDrawer";
+import { BookAgentFullView } from "./components/agent/BookAgentFullView";
 import { BookPipelineStepper } from "./components/workflow/BookPipelineStepper";
 import { notifyIngestRoute } from "./components/workflow/ingestRouteToast";
 import { workflowKindFromFile, workflowLabel } from "./utils/bookTypeDetector";
+import { TooltipProvider } from "./components/ui/tooltip";
+import { Card, CardHeader, CardTitle, CardDescription } from "./components/ui/card";
+import { Badge } from "./components/ui/badge";
+import { Button } from "./components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group";
 import { 
   Settings as SettingsIcon, 
-  Upload 
+  Upload,
+  Sun,
+  Moon,
+  Monitor,
+  Trash2,
+  ShieldCheck,
+  Cpu,
+  Info
 } from "lucide-react";
-
 export default function App() {
-  const [isExportOpen, setIsExportOpen] = useState(false);
+  if (typeof window !== "undefined") {
+    (window as any).__APP_STORE__ = useAppStore;
+  }
   const [isAppLoading, setIsAppLoading] = useState(true);
   const [splashStep, setSplashStep] = useState("Khởi tạo môi trường Studio...");
   const [splashProgress, setSplashProgress] = useState(30);
@@ -44,6 +58,8 @@ export default function App() {
     setAutoRouteOnIngest,
     resetWorkflowState,
     bookProfile,
+    isExportOpen,
+    setIsExportOpen,
   } = useAppStore();
 
   // Auto scan local gateways once on startup with smooth splash progression
@@ -150,7 +166,8 @@ export default function App() {
   }, [loadBookFromPath, setIsDraggingFile, setActiveTab]);
 
   return (
-    <div className="app-shell">
+    <TooltipProvider>
+      <div className="app-shell">
       <Toaster 
         position="bottom-right" 
         theme={theme === "light" ? "light" : "dark"} 
@@ -189,7 +206,7 @@ export default function App() {
 
         {/* LinguaGacha Workspace Frame with 8px Corner */}
         <main className="workspace-frame">
-          {currentBook && activeTab !== "books" && activeTab !== "settings" && (
+          {currentBook && activeTab !== "books" && activeTab !== "settings" && activeTab !== "agent" && (
             <div className="px-4 py-1.5 border-b border-[var(--border)] bg-[var(--card)]/40 flex-shrink-0 flex items-center justify-between">
               <BookPipelineStepper compact className="flex-1" />
             </div>
@@ -203,156 +220,154 @@ export default function App() {
           {activeTab === "ai-editor" && <ChapterEnhancerView />}
           {activeTab === "translator" && <BookTranslatorView />}
           {activeTab === "kindle" && <KindleCompanionView />}
+          {activeTab === "agent" && <BookAgentFullView />}
           {activeTab === "settings" && (
-            <div className="flex-1 flex flex-col p-4 overflow-y-auto max-w-4xl mx-auto w-full gap-4">
-              <div className="flex items-center gap-2.5 pb-2 border-b border-[var(--border)]">
-                <div className="w-8 h-8 rounded flex items-center justify-center bg-[var(--secondary)] text-[var(--foreground)] border border-[var(--border)]">
-                  <SettingsIcon size={16} />
+            <div className="flex-1 flex flex-col p-6 overflow-y-auto max-w-4xl mx-auto w-full gap-5">
+              <div className="flex items-center gap-3 pb-3 border-b border-border">
+                <div className="size-9 rounded-md flex items-center justify-center bg-secondary text-foreground border border-border">
+                  <SettingsIcon size={18} />
                 </div>
                 <div>
-                  <h2 className="text-sm font-semibold text-[var(--foreground)]">Cài Đặt & Giới Thiệu</h2>
-                  <p className="text-xs text-[var(--muted-foreground)]">Thông tin kiến trúc, bản quyền và an toàn hệ thống.</p>
+                  <h2 className="text-base font-semibold text-foreground">Cài Đặt & Giới Thiệu</h2>
+                  <p className="text-xs text-muted-foreground">Thông tin kiến trúc, bản quyền và an toàn hệ thống.</p>
                 </div>
               </div>
 
-              {/* Setting Cards using LinguaGacha setting-card-row */}
-              <div className="flex flex-col gap-3">
-                <div className="setting-card-row">
-                  <div className="setting-card-row__copy">
-                    <div className="flex items-center gap-2">
-                      <h3 className="setting-card-row__title">Chủ đề giao diện (Appearance Theme)</h3>
-                      <span className="app-badge app-badge--brand text-[10px] h-[18px]">LinguaGacha Design</span>
+              <div className="flex flex-col gap-3.5">
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                    <div className="flex flex-col gap-1 pr-4">
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-sm font-medium">Chủ đề giao diện (Appearance Theme)</CardTitle>
+                        <Badge variant="outline" className="text-[10px] h-4.5 border-primary/40 text-primary">LinguaGacha Design</Badge>
+                      </div>
+                      <CardDescription className="text-xs">
+                        Chuyển đổi giữa chế độ Sáng (Light), Tối (Dark) hoặc đồng bộ theo cấu hình Hệ điều hành (System).
+                      </CardDescription>
                     </div>
-                    <p className="setting-card-row__description">
-                      Chuyển đổi giữa chế độ Sáng (Light), Tối (Dark) hoặc đồng bộ theo cấu hình Hệ điều hành (System).
-                    </p>
-                  </div>
-                  <div className="setting-card-row__action">
-                    <div className="segmented-toggle">
-                      <button
-                        type="button"
-                        data-active={theme === "light" ? "true" : undefined}
-                        data-variant="primary"
-                        onClick={() => setTheme("light")}
-                        className="segmented-toggle__item"
-                      >
+                    <ToggleGroup
+                      type="single"
+                      value={theme}
+                      onValueChange={(val) => {
+                        if (val) setTheme(val as "light" | "dark" | "system");
+                      }}
+                      className="border border-border rounded-md p-0.5 bg-muted/40"
+                    >
+                      <ToggleGroupItem value="light" size="sm" className="h-7 text-xs px-2.5 gap-1.5 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs">
+                        <Sun size={13} />
                         Sáng
-                      </button>
-                      <button
-                        type="button"
-                        data-active={theme === "dark" ? "true" : undefined}
-                        data-variant="primary"
-                        onClick={() => setTheme("dark")}
-                        className="segmented-toggle__item"
-                      >
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="dark" size="sm" className="h-7 text-xs px-2.5 gap-1.5 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs">
+                        <Moon size={13} />
                         Tối
-                      </button>
-                      <button
-                        type="button"
-                        data-active={theme === "system" ? "true" : undefined}
-                        data-variant="primary"
-                        onClick={() => setTheme("system")}
-                        className="segmented-toggle__item"
-                      >
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="system" size="sm" className="h-7 text-xs px-2.5 gap-1.5 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs">
+                        <Monitor size={13} />
                         Hệ thống
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                  </CardHeader>
+                </Card>
 
-                <div className="setting-card-row">
-                  <div className="setting-card-row__copy">
-                    <h3 className="setting-card-row__title">Tự động chuyển quy trình khi nạp sách</h3>
-                    <p className="setting-card-row__description">
-                      Nhận diện ngôn ngữ khi nạp sách: EPUB ngoại ngữ tự mở Dịch thuật AI, PDF scan tự mở OCR,
-                      PDF/TXT/MD mở trình chuyển đổi. Tắt để chỉ hiện gợi ý trong thẻ quy trình.
-                    </p>
-                  </div>
-                  <div className="setting-card-row__action">
-                    <div className="segmented-toggle">
-                      <button
-                        type="button"
-                        data-active={autoRouteOnIngest ? "true" : undefined}
-                        data-variant="primary"
-                        onClick={() => setAutoRouteOnIngest(true)}
-                        className="segmented-toggle__item"
-                      >
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                    <div className="flex flex-col gap-1 pr-4">
+                      <CardTitle className="text-sm font-medium">Tự động chuyển quy trình khi nạp sách</CardTitle>
+                      <CardDescription className="text-xs">
+                        Nhận diện ngôn ngữ khi nạp sách: EPUB ngoại ngữ tự mở Dịch thuật AI, PDF scan tự mở OCR,
+                        PDF/TXT/MD mở trình chuyển đổi. Tắt để chỉ hiện gợi ý trong thẻ quy trình.
+                      </CardDescription>
+                    </div>
+                    <ToggleGroup
+                      type="single"
+                      value={autoRouteOnIngest ? "on" : "off"}
+                      onValueChange={(val) => {
+                        if (val) setAutoRouteOnIngest(val === "on");
+                      }}
+                      className="border border-border rounded-md p-0.5 bg-muted/40"
+                    >
+                      <ToggleGroupItem value="on" size="sm" className="h-7 text-xs px-3 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs">
                         Bật
-                      </button>
-                      <button
-                        type="button"
-                        data-active={!autoRouteOnIngest ? "true" : undefined}
-                        data-variant="primary"
-                        onClick={() => setAutoRouteOnIngest(false)}
-                        className="segmented-toggle__item"
-                      >
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="off" size="sm" className="h-7 text-xs px-3 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs">
                         Tắt
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                  </CardHeader>
+                </Card>
 
-                <div className="setting-card-row">
-                  <div className="setting-card-row__copy">
-                    <h3 className="setting-card-row__title">Quy trình của sách đang mở</h3>
-                    <p className="setting-card-row__description">
-                      {bookProfile
-                        ? `Đã nhận diện ${bookProfile.languageFlag} ${bookProfile.languageName} — quy trình "${workflowLabel(
-                            bookProfile
-                          )}". Xoá tiến trình để bắt đầu lại từ bước đầu.`
-                        : "Chưa có sách nào được mở."}
-                    </p>
-                  </div>
-                  <div className="setting-card-row__action">
-                    <button
-                      type="button"
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                    <div className="flex flex-col gap-1 pr-4">
+                      <CardTitle className="text-sm font-medium">Quy trình của sách đang mở</CardTitle>
+                      <CardDescription className="text-xs">
+                        {bookProfile
+                          ? `Đã nhận diện ${bookProfile.languageFlag} ${bookProfile.languageName} — quy trình "${workflowLabel(
+                              bookProfile
+                            )}". Xoá tiến trình để bắt đầu lại từ bước đầu.`
+                          : "Chưa có sách nào được mở."}
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       disabled={!bookProfile}
                       onClick={() => {
                         resetWorkflowState();
                         toast.success("Đã xoá tiến trình quy trình của sách hiện tại");
                       }}
-                      className="lg-button lg-button--secondary text-xs"
+                      className="text-xs h-8 gap-1.5"
                     >
+                      <Trash2 size={13} />
                       Xoá tiến trình
-                    </button>
-                  </div>
-                </div>
+                    </Button>
+                  </CardHeader>
+                </Card>
 
-                <div className="setting-card-row">
-                  <div className="setting-card-row__copy">
-                    <h3 className="setting-card-row__title">Về NiceEbook Studio</h3>
-                    <p className="setting-card-row__description">
-                      Phần mềm thiết kế và làm đẹp sách điện tử (EPUB) tự động bằng AI, phong cách thẩm mỹ chuẩn mực lấy cảm hứng từ LinguaGacha, tích hợp lõi phân loại và chuẩn hóa siêu tốc chạy trực tiếp trong Rust.
-                    </p>
-                  </div>
-                  <div className="setting-card-row__action">
-                    <span className="app-badge app-badge--brand text-xs font-mono">v0.1.0-alpha</span>
-                  </div>
-                </div>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                    <div className="flex flex-col gap-1 pr-4">
+                      <div className="flex items-center gap-2">
+                        <Info size={14} className="text-muted-foreground" />
+                        <CardTitle className="text-sm font-medium">Về NiceEbook Studio</CardTitle>
+                      </div>
+                      <CardDescription className="text-xs">
+                        Phần mềm thiết kế và làm đẹp sách điện tử (EPUB) tự động bằng AI, phong cách thẩm mỹ chuẩn mực lấy cảm hứng từ LinguaGacha, tích hợp lõi phân loại và chuẩn hóa siêu tốc chạy trực tiếp trong Rust.
+                      </CardDescription>
+                    </div>
+                    <Badge variant="secondary" className="font-mono text-xs">v0.1.0-alpha</Badge>
+                  </CardHeader>
+                </Card>
 
-                <div className="setting-card-row">
-                  <div className="setting-card-row__copy">
-                    <h3 className="setting-card-row__title">Kiến trúc kỹ thuật & Bộ nhớ</h3>
-                    <p className="setting-card-row__description">
-                      Tauri v2 + Rust Core + React 19 + Tailwind CSS 4. Tối ưu bộ nhớ Native WebView &lt; 40MB RAM.
-                    </p>
-                  </div>
-                  <div className="setting-card-row__action">
-                    <span className="app-badge app-badge--success text-xs font-mono">RAM ~38MB</span>
-                  </div>
-                </div>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                    <div className="flex flex-col gap-1 pr-4">
+                      <div className="flex items-center gap-2">
+                        <Cpu size={14} className="text-muted-foreground" />
+                        <CardTitle className="text-sm font-medium">Kiến trúc kỹ thuật & Bộ nhớ</CardTitle>
+                      </div>
+                      <CardDescription className="text-xs">
+                        Tauri v2 + Rust Core + React 19 + Tailwind CSS 4. Tối ưu bộ nhớ Native WebView &lt; 40MB RAM.
+                      </CardDescription>
+                    </div>
+                    <Badge variant="outline" className="font-mono text-xs border-emerald-500/40 text-emerald-600 dark:text-emerald-400">RAM ~38MB</Badge>
+                  </CardHeader>
+                </Card>
 
-                <div className="setting-card-row">
-                  <div className="setting-card-row__copy">
-                    <h3 className="setting-card-row__title">Quyền riêng tư & Bảo mật Zero-Key</h3>
-                    <p className="setting-card-row__description">
-                      Sách được phân tích và đóng gói 100% cục bộ trên máy tính. Dữ liệu không bao giờ bị tải lên bất kỳ máy chủ đám mây nào khi sử dụng chế độ xử lý cục bộ (Offline).
-                    </p>
-                  </div>
-                  <div className="setting-card-row__action">
-                    <span className="app-badge app-badge--success text-xs font-mono">Zero-Cloud</span>
-                  </div>
-                </div>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                    <div className="flex flex-col gap-1 pr-4">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck size={14} className="text-muted-foreground" />
+                        <CardTitle className="text-sm font-medium">Quyền riêng tư & Bảo mật Zero-Key</CardTitle>
+                      </div>
+                      <CardDescription className="text-xs">
+                        Sách được phân tích và đóng gói 100% cục bộ trên máy tính. Dữ liệu không bao giờ bị tải lên bất kỳ máy chủ đám mây nào khi sử dụng chế độ xử lý cục bộ (Offline).
+                      </CardDescription>
+                    </div>
+                    <Badge variant="outline" className="font-mono text-xs border-emerald-500/40 text-emerald-600 dark:text-emerald-400">Zero-Cloud</Badge>
+                  </CardHeader>
+                </Card>
               </div>
             </div>
           )}
@@ -370,6 +385,7 @@ export default function App() {
         isOpen={isExportOpen} 
         onClose={() => setIsExportOpen(false)} 
       />
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }

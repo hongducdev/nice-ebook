@@ -81,6 +81,43 @@ Hope this helps!`;
     expect(parsed["p_0"]).toBe("Câu đầu tiên");
     expect(parsed["p_1"]).toBe("Câu thứ hai");
   });
+
+  it("normalizes diverse ID formats (numeric 0, 'p0', 'P_0', '0') to canonical 'p_0'", () => {
+    const raw = JSON.stringify([
+      { id: 0, text: "Đoạn 0" },
+      { id: "p1", text: "Đoạn 1" },
+      { id: "P_2", text: "Đoạn 2" },
+      { id: "3", text: "Đoạn 3" },
+    ]);
+
+    const parsed = parseTranslationResponse(raw);
+    expect(parsed["p_0"]).toBe("Đoạn 0");
+    expect(parsed["p_1"]).toBe("Đoạn 1");
+    expect(parsed["p_2"]).toBe("Đoạn 2");
+    expect(parsed["p_3"]).toBe("Đoạn 3");
+  });
+
+  it("safely applies positional fallback when IDs are mislabeled but total count matches expected 1:1", () => {
+    const raw = JSON.stringify([
+      { id: "block_a", text: "Đoạn thứ nhất" },
+      { id: "block_b", text: "Đoạn thứ hai" },
+    ]);
+
+    const parsed = parseTranslationResponse(raw, ["p_0", "p_1"]);
+    expect(parsed["p_0"]).toBe("Đoạn thứ nhất");
+    expect(parsed["p_1"]).toBe("Đoạn thứ hai");
+  });
+
+  it("guards against ID collisions when multiple raw IDs normalize to the same key", () => {
+    const raw = JSON.stringify([
+      { id: "p_0", text: "Bản dịch gốc của p_0" },
+      { id: "p0", text: "Trùng lặp p0 không được đè lên p_0" },
+      { id: 0, text: "Trùng lặp số 0 không được đè lên p_0" },
+    ]);
+
+    const parsed = parseTranslationResponse(raw);
+    expect(parsed["p_0"]).toBe("Bản dịch gốc của p_0");
+  });
 });
 
 describe("TranslationService", () => {
@@ -227,5 +264,64 @@ describe("TranslationService", () => {
     });
 
     expect(result.translatedChapterTitle).toBe("Chương 1: Cậu bé sống sót");
+  });
+
+  it("translates chapterTitle using translateTitle if no heading block exists in HTML", async () => {
+    const mockInvoke = vi.mocked(invoke);
+    // 1. Chunk completion call
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify([{ id: "p_0", text: "Đoạn văn thường." }])
+    );
+    // 2. translateTitle call
+    mockInvoke.mockResolvedValueOnce('"Chương 1: Khởi đầu mới"');
+
+    const chapterHtml = `<html><body><p>Regular paragraph only.</p></body></html>`;
+
+    const result = await TranslationService.translateChapter({
+      chapterHtml,
+      chapterTitle: "Chapter 1: A New Beginning",
+      sourceLang: "English",
+      targetLang: "Vietnamese",
+      tone: "literary",
+      mode: "replace",
+      translateChapterTitle: true,
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-4o",
+    });
+
+    expect(result.translatedChapterTitle).toBe("Chương 1: Khởi đầu mới");
+    expect(mockInvoke).toHaveBeenCalledTimes(2);
+  });
+
+  it("recovers missing block automatically via targeted sub-pass", async () => {
+    const mockInvoke = vi.mocked(invoke);
+    // Primary chunk response omits p_1
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify([
+        { id: "p_0", text: "Đoạn số không" },
+        // p_1 omitted
+      ])
+    );
+    // Missing block recovery pass returns p_1
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify([{ id: "p_1", text: "Đoạn số một được bù" }])
+    );
+
+    const chapterHtml = `<html><body><p>Paragraph 0</p><p>Paragraph 1</p></body></html>`;
+
+    const result = await TranslationService.translateChapter({
+      chapterHtml,
+      chapterTitle: "Chapter 1",
+      sourceLang: "English",
+      targetLang: "Vietnamese",
+      tone: "literary",
+      mode: "replace",
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-4o",
+    });
+
+    expect(result.translatedHtml).toContain("Đoạn số không");
+    expect(result.translatedHtml).toContain("Đoạn số một được bù");
+    expect(mockInvoke).toHaveBeenCalledTimes(2);
   });
 });

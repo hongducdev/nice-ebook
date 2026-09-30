@@ -15,4 +15,5 @@ export type ActiveTab =
   | "ai-editor"
   | "converter"
   | "kindle"
-  | "translator";
+  | "translator"
+  | "agent";

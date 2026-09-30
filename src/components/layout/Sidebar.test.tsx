@@ -13,6 +13,7 @@ const ALL_EXPECTED_TABS: ActiveTab[] = [
   "converter",
   "kindle",
   "translator",
+  "agent",
 ];
 
 describe("Sidebar Navigation Exhaustiveness", () => {
@@ -28,7 +29,7 @@ describe("Sidebar Navigation Exhaustiveness", () => {
 
     const allItemIds = groups.flatMap((g) => g.items.map((i) => i.id));
 
-    // 1. Assert all 10 ActiveTab values are present
+    // 1. Assert all 11 ActiveTab values are present
     for (const expectedTab of ALL_EXPECTED_TABS) {
       expect(allItemIds).toContain(expectedTab);
     }

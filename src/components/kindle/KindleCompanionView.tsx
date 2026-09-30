@@ -22,6 +22,39 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { XRayEntityItem } from "../../services/kindle/xrayService";
+import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Checkbox } from "../ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "../ui/empty";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import { Separator } from "../ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+import { Textarea } from "../ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group";
 
 export function KindleCompanionView() {
   const {
@@ -112,23 +145,28 @@ export function KindleCompanionView() {
 
   if (!currentBook) {
     return (
-      <div className="flex flex-col items-center justify-center h-[calc(100vh-140px)] text-center p-6">
-        <div className="w-16 h-16 rounded-full bg-[var(--muted)] flex items-center justify-center mb-4 text-[var(--muted-foreground)]">
-          <BookOpen size={32} />
-        </div>
-        <h2 className="text-lg font-semibold text-[var(--foreground)] mb-2">
-          Chưa có sách nào được mở
-        </h2>
-        <p className="text-sm text-[var(--muted-foreground)] max-w-md mb-6">
-          Vui lòng nạp một file sách (EPUB, PDF, TXT) trước để sử dụng bộ công cụ Kindle Companion.
-        </p>
-        <button
-          type="button"
-          onClick={() => setActiveTab("books")}
-          className="app-btn app-btn--primary px-4 py-2"
-        >
-          Đến Thư Viện Sách
-        </button>
+      <div className="flex-1 flex items-center justify-center p-6">
+        <Empty className="max-w-lg border border-border bg-card">
+          <EmptyHeader>
+            <EmptyMedia
+              variant="icon"
+              className="size-16 rounded-full bg-muted text-muted-foreground"
+            >
+              <BookOpen className="size-8" />
+            </EmptyMedia>
+            <EmptyTitle className="text-lg font-semibold text-foreground">
+              Chưa có sách nào được mở
+            </EmptyTitle>
+            <EmptyDescription className="max-w-md text-sm">
+              Vui lòng nạp một file sách (EPUB, PDF, TXT) trước để sử dụng bộ công cụ Kindle Companion.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button type="button" onClick={() => setActiveTab("books")}>
+              Đến Thư Viện Sách
+            </Button>
+          </EmptyContent>
+        </Empty>
       </div>
     );
   }
@@ -267,52 +305,63 @@ export function KindleCompanionView() {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-[calc(100vh-80px)] overflow-hidden bg-[var(--background)]">
+    <div className="flex-1 flex flex-col h-[calc(100vh-80px)] overflow-hidden bg-background">
       {/* Top Banner Header */}
-      <div className="p-4 border-b border-[var(--border)] bg-[var(--card)] flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className="p-4 border-b border-border bg-card flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-base font-bold text-[var(--foreground)] flex items-center gap-2">
-              <Sparkles size={18} className="text-[var(--primary)]" />
+            <h1 className="text-base font-bold text-foreground flex items-center gap-2">
+              <Sparkles size={18} className="text-primary" />
               Bước 7: Kindle X-Ray, Word Wise &amp; Xuất Bản
             </h1>
-            <span className="app-badge app-badge--brand text-[10px] h-[18px]">Universal EPUB</span>
+            <Badge
+              variant="outline"
+              className="text-[10px] h-[18px] border-primary/40 text-primary"
+            >
+              Universal EPUB
+            </Badge>
           </div>
-          <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-            Sách hiện tại: <span className="font-semibold text-[var(--foreground)]">{currentBook.title}</span> — {currentBook.author} ({currentBook.chapter_count} chương)
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Sách hiện tại: <span className="font-semibold text-foreground">{currentBook.title}</span> — {currentBook.author} ({currentBook.chapter_count} chương)
           </p>
         </div>
 
         {/* Sub-tab Navigation */}
-        <div className="segmented-toggle">
-          <button
-            type="button"
-            data-active={activeSubTab === "wordwise" ? "true" : undefined}
-            onClick={() => setActiveSubTab("wordwise")}
-            className="segmented-toggle__item flex items-center gap-1.5"
+        <ToggleGroup
+          type="single"
+          value={activeSubTab}
+          onValueChange={(val) => {
+            if (val === "wordwise" || val === "xray" || val === "sdr") setActiveSubTab(val);
+          }}
+          variant="outline"
+          size="sm"
+          className="border border-border rounded-md p-0.5 bg-muted/40"
+        >
+          <ToggleGroupItem
+            value="wordwise"
+            size="sm"
+            className="h-6 text-xs px-2 gap-1.5 data-[state=on]:bg-background data-[state=on]:text-primary"
           >
-            <Languages size={14} />
+            <Languages className="size-3.5" />
             Word Wise (Từ vựng)
-          </button>
-          <button
-            type="button"
-            data-active={activeSubTab === "xray" ? "true" : undefined}
-            onClick={() => setActiveSubTab("xray")}
-            className="segmented-toggle__item flex items-center gap-1.5"
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            value="xray"
+            size="sm"
+            className="h-6 text-xs px-2 gap-1.5 data-[state=on]:bg-background data-[state=on]:text-primary"
           >
-            <UserCheck size={14} />
+            <UserCheck className="size-3.5" />
             X-Ray (Nhân vật &amp; Bối cảnh)
-          </button>
-          <button
-            type="button"
-            data-active={activeSubTab === "sdr" ? "true" : undefined}
-            onClick={() => setActiveSubTab("sdr")}
-            className="segmented-toggle__item flex items-center gap-1.5"
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            value="sdr"
+            size="sm"
+            className="h-6 text-xs px-2 gap-1.5 data-[state=on]:bg-background data-[state=on]:text-primary"
           >
-            <Usb size={14} />
+            <Usb className="size-3.5" />
             Xuất Kindle (.sdr)
-          </button>
-        </div>
+          </ToggleGroupItem>
+        </ToggleGroup>
       </div>
 
       {/* Main Content Area */}
@@ -322,142 +371,181 @@ export function KindleCompanionView() {
           <div className="max-w-4xl mx-auto flex flex-col gap-6">
             {/* Stat Row */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="p-3.5 rounded-[var(--ui-radius-card)] bg-[var(--card)] border border-[var(--border)]">
-                <span className="text-xs text-[var(--muted-foreground)]">Chương đã có Word Wise</span>
-                <div className="text-xl font-bold text-[var(--foreground)] mt-1 flex items-center gap-2">
-                  {annotatedChaptersCount} / {currentBook.chapter_count}
-                  {annotatedChaptersCount > 0 && (
-                    <span className="app-badge app-badge--success text-[10px]">Đã bật</span>
-                  )}
-                </div>
-              </div>
-              <div className="p-3.5 rounded-[var(--ui-radius-card)] bg-[var(--card)] border border-[var(--border)]">
-                <span className="text-xs text-[var(--muted-foreground)]">Cấp độ từ lọc</span>
-                <div className="text-xl font-bold text-[var(--foreground)] mt-1">
-                  Mức {wordWiseSettings.maxDifficulty} (CEFR {wordWiseSettings.maxDifficulty <= 1 ? "C2" : wordWiseSettings.maxDifficulty <= 3 ? "C1+" : "B2+"})
-                </div>
-              </div>
-              <div className="p-3.5 rounded-[var(--ui-radius-card)] bg-[var(--card)] border border-[var(--border)]">
-                <span className="text-xs text-[var(--muted-foreground)]">Ngôn ngữ giải nghĩa</span>
-                <div className="text-xl font-bold text-[var(--foreground)] mt-1 flex items-center gap-2">
-                  {wordWiseSettings.language === "vi" ? "Tiếng Việt (Anh - Việt)" : "English (Anh - Anh)"}
-                </div>
-              </div>
+              <Card size="sm">
+                <CardContent className="flex flex-col gap-1">
+                  <span className="text-xs text-muted-foreground">Chương đã có Word Wise</span>
+                  <div className="text-xl font-bold text-foreground flex items-center gap-2">
+                    {annotatedChaptersCount} / {currentBook.chapter_count}
+                    {annotatedChaptersCount > 0 && (
+                      <Badge
+                        variant="secondary"
+                        className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                      >
+                        Đã bật
+                      </Badge>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card size="sm">
+                <CardContent className="flex flex-col gap-1">
+                  <span className="text-xs text-muted-foreground">Cấp độ từ lọc</span>
+                  <div className="text-xl font-bold text-foreground">
+                    Mức {wordWiseSettings.maxDifficulty} (CEFR {wordWiseSettings.maxDifficulty <= 1 ? "C2" : wordWiseSettings.maxDifficulty <= 3 ? "C1+" : "B2+"})
+                  </div>
+                </CardContent>
+              </Card>
+              <Card size="sm">
+                <CardContent className="flex flex-col gap-1">
+                  <span className="text-xs text-muted-foreground">Ngôn ngữ giải nghĩa</span>
+                  <div className="text-xl font-bold text-foreground flex items-center gap-2">
+                    {wordWiseSettings.language === "vi" ? "Tiếng Việt (Anh - Việt)" : "English (Anh - Anh)"}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
 
             {/* Word Wise Configuration Card */}
-            <div className="p-5 rounded-[var(--ui-radius-card)] bg-[var(--card)] border border-[var(--border)] flex flex-col gap-5">
-              <div className="flex items-center gap-2 border-b border-[var(--border)] pb-3">
-                <Sliders size={18} className="text-[var(--primary)]" />
-                <h2 className="text-sm font-semibold text-[var(--foreground)]">
+            <Card>
+              <CardHeader className="border-b">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Sliders size={18} className="text-primary" />
                   Cấu Hình Word Wise
-                </h2>
-              </div>
+                </CardTitle>
+              </CardHeader>
 
-              {/* Setting: Difficulty Level */}
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[var(--foreground)]">
-                    Độ khó từ vựng muốn hiển thị gợi ý
-                  </label>
-                  <span className="text-xs font-mono text-[var(--primary)]">
-                    Mức {wordWiseSettings.maxDifficulty} / 5
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                  {[
-                    { lvl: 1, label: "Mức 1: C2 Hiếm", desc: "Chỉ từ rất hiếm/văn học" },
-                    { lvl: 2, label: "Mức 2: C1 Nâng cao", desc: "Từ học thuật/văn phong cao" },
-                    { lvl: 3, label: "Mức 3: C1 Khuyên dùng", desc: "Từ trung cấp nâng cao" },
-                    { lvl: 4, label: "Mức 4: B2+", desc: "Nhiều từ phong phú hơn" },
-                    { lvl: 5, label: "Mức 5: Toàn bộ", desc: "Bao gồm cả từ B2 thông dụng" },
-                  ].map((item) => (
-                    <button
-                      key={item.lvl}
-                      type="button"
-                      onClick={() => setWordWiseSettings({ maxDifficulty: item.lvl as any })}
-                      className={`p-2.5 rounded-[var(--ui-radius-button)] border text-left transition-all ${
-                        wordWiseSettings.maxDifficulty === item.lvl
-                          ? "border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_10%,var(--card))] text-[var(--primary)] font-medium"
-                          : "border-[var(--border)] hover:bg-[var(--secondary)] text-[var(--foreground)]"
-                      }`}
-                    >
-                      <div className="text-xs font-bold">{item.label}</div>
-                      <div className="text-[10px] text-[var(--muted-foreground)] mt-0.5">{item.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Setting: Language */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-t border-[var(--border)] pt-4">
-                <div>
-                  <div className="text-xs font-medium text-[var(--foreground)]">Ngôn ngữ chú thích (Glosses)</div>
-                  <div className="text-[11px] text-[var(--muted-foreground)]">
-                    Gợi ý hiển thị bằng Tiếng Việt giúp người học tiếng Anh ghi nhớ từ vựng nhanh gấp 3 lần.
+              <CardContent className="flex flex-col gap-5">
+                {/* Setting: Difficulty Level */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-foreground">
+                      Độ khó từ vựng muốn hiển thị gợi ý
+                    </Label>
+                    <span className="text-xs font-mono text-primary">
+                      Mức {wordWiseSettings.maxDifficulty} / 5
+                    </span>
                   </div>
-                </div>
-                <div className="segmented-toggle">
-                  <button
-                    type="button"
-                    data-active={wordWiseSettings.language === "vi" ? "true" : undefined}
-                    onClick={() => setWordWiseSettings({ language: "vi" })}
-                    className="segmented-toggle__item"
+                  <ToggleGroup
+                    type="single"
+                    value={String(wordWiseSettings.maxDifficulty)}
+                    onValueChange={(val) => {
+                      const lvl = Number(val);
+                      if (lvl === 1 || lvl === 2 || lvl === 3 || lvl === 4 || lvl === 5) {
+                        setWordWiseSettings({ maxDifficulty: lvl });
+                      }
+                    }}
+                    variant="outline"
+                    className="grid grid-cols-2 md:grid-cols-5 gap-2 w-full"
                   >
-                    Tiếng Việt (Anh - Việt)
-                  </button>
-                  <button
-                    type="button"
-                    data-active={wordWiseSettings.language === "en" ? "true" : undefined}
-                    onClick={() => setWordWiseSettings({ language: "en" })}
-                    className="segmented-toggle__item"
-                  >
-                    Tiếng Anh (Anh - Anh)
-                  </button>
+                    {[
+                      { lvl: 1, label: "Mức 1: C2 Hiếm", desc: "Chỉ từ rất hiếm/văn học" },
+                      { lvl: 2, label: "Mức 2: C1 Nâng cao", desc: "Từ học thuật/văn phong cao" },
+                      { lvl: 3, label: "Mức 3: C1 Khuyên dùng", desc: "Từ trung cấp nâng cao" },
+                      { lvl: 4, label: "Mức 4: B2+", desc: "Nhiều từ phong phú hơn" },
+                      { lvl: 5, label: "Mức 5: Toàn bộ", desc: "Bao gồm cả từ B2 thông dụng" },
+                    ].map((item) => (
+                      <ToggleGroupItem
+                        key={item.lvl}
+                        value={String(item.lvl)}
+                        className="w-full h-auto! flex-col items-start! justify-start whitespace-normal! p-2.5 text-left data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary"
+                      >
+                        <div className="text-xs font-bold">{item.label}</div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">{item.desc}</div>
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
                 </div>
-              </div>
 
-              {/* Setting: Max occurrences per chapter */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-t border-[var(--border)] pt-4">
-                <div>
-                  <div className="text-xs font-medium text-[var(--foreground)]">Tần suất chú thích lặp lại mỗi chương</div>
-                  <div className="text-[11px] text-[var(--muted-foreground)]">
-                    Tránh làm rối mắt nếu một từ xuất hiện nhiều lần liên tiếp trong một chương.
+                <Separator />
+
+                {/* Setting: Language */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-medium text-foreground">Ngôn ngữ chú thích (Glosses)</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Gợi ý hiển thị bằng Tiếng Việt giúp người học tiếng Anh ghi nhớ từ vựng nhanh gấp 3 lần.
+                    </div>
                   </div>
-                </div>
-                <div className="segmented-toggle">
-                  {[
-                    { val: 1, label: "1 lần" },
-                    { val: 2, label: "2 lần" },
-                    { val: 3, label: "3 lần (Chuẩn)" },
-                    { val: 0, label: "Không giới hạn" },
-                  ].map((item) => (
-                    <button
-                      key={item.val}
-                      type="button"
-                      data-active={wordWiseSettings.maxOccurrencesPerWord === item.val ? "true" : undefined}
-                      onClick={() => setWordWiseSettings({ maxOccurrencesPerWord: item.val })}
-                      className="segmented-toggle__item"
+                  <ToggleGroup
+                    type="single"
+                    value={wordWiseSettings.language}
+                    onValueChange={(val) => {
+                      if (val === "vi" || val === "en") setWordWiseSettings({ language: val });
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="border border-border rounded-md p-0.5 bg-muted/40"
+                  >
+                    <ToggleGroupItem
+                      value="vi"
+                      size="sm"
+                      className="h-6 text-xs px-2 data-[state=on]:bg-background data-[state=on]:text-primary"
                     >
-                      {item.label}
-                    </button>
-                  ))}
+                      Tiếng Việt (Anh - Việt)
+                    </ToggleGroupItem>
+                    <ToggleGroupItem
+                      value="en"
+                      size="sm"
+                      className="h-6 text-xs px-2 data-[state=on]:bg-background data-[state=on]:text-primary"
+                    >
+                      Tiếng Anh (Anh - Anh)
+                    </ToggleGroupItem>
+                  </ToggleGroup>
                 </div>
-              </div>
-            </div>
+
+                <Separator />
+
+                {/* Setting: Max occurrences per chapter */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-medium text-foreground">Tần suất chú thích lặp lại mỗi chương</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Tránh làm rối mắt nếu một từ xuất hiện nhiều lần liên tiếp trong một chương.
+                    </div>
+                  </div>
+                  <ToggleGroup
+                    type="single"
+                    value={String(wordWiseSettings.maxOccurrencesPerWord)}
+                    onValueChange={(val) => {
+                      if (val) setWordWiseSettings({ maxOccurrencesPerWord: Number(val) });
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="border border-border rounded-md p-0.5 bg-muted/40"
+                  >
+                    {[
+                      { val: 1, label: "1 lần" },
+                      { val: 2, label: "2 lần" },
+                      { val: 3, label: "3 lần (Chuẩn)" },
+                      { val: 0, label: "Không giới hạn" },
+                    ].map((item) => (
+                      <ToggleGroupItem
+                        key={item.val}
+                        value={String(item.val)}
+                        size="sm"
+                        className="h-6 text-xs px-2 data-[state=on]:bg-background data-[state=on]:text-primary"
+                      >
+                        {item.label}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Live Preview Box */}
-            <div className="p-5 rounded-[var(--ui-radius-card)] bg-[var(--card)] border border-[var(--border)] flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-[var(--foreground)] flex items-center gap-1.5">
-                  <Eye size={14} className="text-[var(--primary)]" />
-                  Xem Trước Hiển Thị Word Wise (Live Preview)
-                </span>
-                <span className="text-[10px] text-[var(--muted-foreground)]">
-                  Thẻ HTML5 &lt;ruby&gt; chuẩn Kindle &amp; EPUB
-                </span>
-              </div>
-              <div className="p-4 rounded border border-[var(--border)] bg-[var(--background)] text-sm leading-relaxed font-serif">
+            <Card>
+              <CardContent className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <Eye className="size-3.5 text-primary" />
+                    Xem Trước Hiển Thị Word Wise (Live Preview)
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    Thẻ HTML5 &lt;ruby&gt; chuẩn Kindle &amp; EPUB
+                  </span>
+                </div>
+                <div className="p-4 rounded border border-border bg-background text-sm leading-relaxed font-serif">
                 The{" "}
                 <ruby className="kindle-wordwise">
                   ephemeral
@@ -475,48 +563,54 @@ export function KindleCompanionView() {
                 </ruby>{" "}
                 observation.
               </div>
-            </div>
+              </CardContent>
+            </Card>
 
             {/* Actions */}
             <div className="flex flex-wrap items-center gap-3">
-              <button
+              <Button
                 type="button"
+                size="sm"
                 onClick={handleApplyWordWise}
                 disabled={isApplyingWordWise}
-                className="app-btn app-btn--primary px-4 py-2 text-xs flex items-center gap-2"
+                className="text-xs gap-2 px-4"
               >
                 {isApplyingWordWise ? (
-                  <Loader2 size={14} className="animate-spin" />
+                  <Loader2 className="size-3.5 animate-spin" />
                 ) : (
-                  <CheckCircle2 size={14} />
+                  <CheckCircle2 className="size-3.5" />
                 )}
                 {isApplyingWordWise ? "Đang nhúng Word Wise..." : "Áp Dụng Vào Sách (Nhúng Thẻ Ruby)"}
-              </button>
+              </Button>
 
               {annotatedChaptersCount > 0 && (
-                <button
+                <Button
                   type="button"
+                  variant="outline"
+                  size="sm"
                   onClick={handleRemoveWordWise}
                   disabled={isStrippingWordWise}
-                  className="app-btn app-btn--secondary px-4 py-2 text-xs flex items-center gap-2 text-[var(--destructive)]"
+                  className="text-xs gap-2 px-4 text-destructive"
                 >
                   {isStrippingWordWise ? (
-                    <Loader2 size={14} className="animate-spin" />
+                    <Loader2 className="size-3.5 animate-spin" />
                   ) : (
-                    <Trash2 size={14} />
+                    <Trash2 className="size-3.5" />
                   )}
                   Gỡ Bỏ Chú Thích Word Wise
-                </button>
+                </Button>
               )}
 
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => setActiveTab("reader")}
-                className="app-btn app-btn--secondary px-4 py-2 text-xs ml-auto flex items-center gap-1.5"
+                className="text-xs ml-auto gap-1.5 px-4"
               >
-                <BookOpen size={14} />
+                <BookOpen className="size-3.5" />
                 Xem Thử Trong Trình Đọc
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -526,116 +620,133 @@ export function KindleCompanionView() {
           <div className="max-w-4xl mx-auto flex flex-col gap-6">
             {/* Stat Row */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="p-3.5 rounded-[var(--ui-radius-card)] bg-[var(--card)] border border-[var(--border)]">
-                <span className="text-xs text-[var(--muted-foreground)]">Nhân vật (People)</span>
-                <div className="text-xl font-bold text-[var(--foreground)] mt-1 flex items-center gap-2">
-                  {xrayData?.people.length || 0}
-                </div>
-              </div>
-              <div className="p-3.5 rounded-[var(--ui-radius-card)] bg-[var(--card)] border border-[var(--border)]">
-                <span className="text-xs text-[var(--muted-foreground)]">Địa danh &amp; Thuật ngữ (Terms)</span>
-                <div className="text-xl font-bold text-[var(--foreground)] mt-1">
-                  {xrayData?.terms.length || 0}
-                </div>
-              </div>
-              <div className="p-3.5 rounded-[var(--ui-radius-card)] bg-[var(--card)] border border-[var(--border)]">
-                <span className="text-xs text-[var(--muted-foreground)]">Tổng lượt xuất hiện đã quét</span>
-                <div className="text-xl font-bold text-[var(--foreground)] mt-1">
-                  {xrayData?.totalOccurrences || 0} lần
-                </div>
-              </div>
+              <Card size="sm">
+                <CardContent className="flex flex-col gap-1">
+                  <span className="text-xs text-muted-foreground">Nhân vật (People)</span>
+                  <div className="text-xl font-bold text-foreground flex items-center gap-2">
+                    {xrayData?.people.length || 0}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card size="sm">
+                <CardContent className="flex flex-col gap-1">
+                  <span className="text-xs text-muted-foreground">Địa danh &amp; Thuật ngữ (Terms)</span>
+                  <div className="text-xl font-bold text-foreground">
+                    {xrayData?.terms.length || 0}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card size="sm">
+                <CardContent className="flex flex-col gap-1">
+                  <span className="text-xs text-muted-foreground">Tổng lượt xuất hiện đã quét</span>
+                  <div className="text-xl font-bold text-foreground">
+                    {xrayData?.totalOccurrences || 0} lần
+                  </div>
+                </CardContent>
+              </Card>
             </div>
 
             {/* Action Toolbar */}
-            <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-[var(--ui-radius-card)] bg-[var(--card)] border border-[var(--border)]">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleRunXRayScan}
-                  disabled={isAnalyzingXRay}
-                  className="app-btn app-btn--primary px-3 py-1.5 text-xs flex items-center gap-1.5"
-                >
-                  {isAnalyzingXRay ? (
-                    <Loader2 size={13} className="animate-spin" />
-                  ) : (
-                    <Sparkles size={13} />
-                  )}
-                  {isAnalyzingXRay ? "Đang quét..." : "Quét Tự Động Nhân Vật (X-Ray)"}
-                </button>
+            <Card>
+              <CardContent className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleRunXRayScan}
+                    disabled={isAnalyzingXRay}
+                    className="text-xs gap-1.5"
+                  >
+                    {isAnalyzingXRay ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="size-3.5" />
+                    )}
+                    {isAnalyzingXRay ? "Đang quét..." : "Quét Tự Động Nhân Vật (X-Ray)"}
+                  </Button>
 
-                <button
-                  type="button"
-                  onClick={handleEmbedAppendix}
-                  disabled={isEmbeddingAppendix || !xrayData}
-                  className={`app-btn px-3 py-1.5 text-xs flex items-center gap-1.5 ${
-                    hasAppendixChapter
-                      ? "app-btn--secondary text-[var(--ui-success)]"
-                      : "app-btn--secondary"
-                  }`}
-                >
-                  {isEmbeddingAppendix ? (
-                    <Loader2 size={13} className="animate-spin" />
-                  ) : (
-                    <Layers size={13} />
-                  )}
-                  {hasAppendixChapter ? "Đã nhúng phụ lục (Cập nhật)" : "Nhúng Phụ Lục Vào Sách"}
-                </button>
-              </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleEmbedAppendix}
+                    disabled={isEmbeddingAppendix || !xrayData}
+                    className={`text-xs gap-1.5 ${
+                      hasAppendixChapter ? "text-emerald-600 dark:text-emerald-400" : ""
+                    }`}
+                  >
+                    {isEmbeddingAppendix ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Layers className="size-3.5" />
+                    )}
+                    {hasAppendixChapter ? "Đã nhúng phụ lục (Cập nhật)" : "Nhúng Phụ Lục Vào Sách"}
+                  </Button>
+                </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditForm({ name: "", aliases: "", type: "person", role: "", description: "" });
-                    setIsAddingNew(true);
-                    setEditingEntity(null);
-                  }}
-                  className="app-btn app-btn--secondary px-3 py-1.5 text-xs flex items-center gap-1.5"
-                >
-                  <Plus size={13} />
-                  Thêm Thủ Công
-                </button>
-              </div>
-            </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setEditForm({ name: "", aliases: "", type: "person", role: "", description: "" });
+                      setIsAddingNew(true);
+                      setEditingEntity(null);
+                    }}
+                    className="text-xs gap-1.5"
+                  >
+                    <Plus className="size-3.5" />
+                    Thêm Thủ Công
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Search and Filters */}
             {xrayData && (
               <div className="flex flex-col md:flex-row items-center justify-between gap-3">
-                <div className="segmented-toggle">
-                  <button
-                    type="button"
-                    data-active={xrayFilter === "all" ? "true" : undefined}
-                    onClick={() => setXrayFilter("all")}
-                    className="segmented-toggle__item"
+                <ToggleGroup
+                  type="single"
+                  value={xrayFilter}
+                  onValueChange={(val) => {
+                    if (val === "all" || val === "person" || val === "term") setXrayFilter(val);
+                  }}
+                  variant="outline"
+                  size="sm"
+                  className="border border-border rounded-md p-0.5 bg-muted/40"
+                >
+                  <ToggleGroupItem
+                    value="all"
+                    size="sm"
+                    className="h-6 text-xs px-2 data-[state=on]:bg-background data-[state=on]:text-primary"
                   >
                     Tất cả ({(xrayData.people.length + xrayData.terms.length)})
-                  </button>
-                  <button
-                    type="button"
-                    data-active={xrayFilter === "person" ? "true" : undefined}
-                    onClick={() => setXrayFilter("person")}
-                    className="segmented-toggle__item"
+                  </ToggleGroupItem>
+                  <ToggleGroupItem
+                    value="person"
+                    size="sm"
+                    className="h-6 text-xs px-2 data-[state=on]:bg-background data-[state=on]:text-primary"
                   >
                     Nhân vật ({xrayData.people.length})
-                  </button>
-                  <button
-                    type="button"
-                    data-active={xrayFilter === "term" ? "true" : undefined}
-                    onClick={() => setXrayFilter("term")}
-                    className="segmented-toggle__item"
+                  </ToggleGroupItem>
+                  <ToggleGroupItem
+                    value="term"
+                    size="sm"
+                    className="h-6 text-xs px-2 data-[state=on]:bg-background data-[state=on]:text-primary"
                   >
                     Thuật ngữ ({xrayData.terms.length})
-                  </button>
-                </div>
+                  </ToggleGroupItem>
+                </ToggleGroup>
 
                 <div className="relative w-full md:w-64">
-                  <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
-                  <input
+                  <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
                     type="text"
                     placeholder="Tìm nhân vật, địa danh..."
                     value={xraySearch}
                     onChange={(e) => setXraySearch(e.target.value)}
-                    className="w-full text-xs pl-8 pr-3 py-1.5 rounded-[var(--ui-radius-button)] border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] focus:outline-none focus:border-[var(--primary)]"
+                    className="h-8 w-full text-xs pl-8"
                   />
                 </div>
               </div>
@@ -643,87 +754,101 @@ export function KindleCompanionView() {
 
             {/* Entities List */}
             {filteredEntities.length === 0 ? (
-              <div className="p-8 text-center rounded-[var(--ui-radius-card)] bg-[var(--card)] border border-[var(--border)] text-[var(--muted-foreground)] text-xs">
-                {xrayData ? "Không tìm thấy thực thể nào phù hợp." : "Chưa có dữ liệu X-Ray. Hãy bấm 'Quét Tự Động Nhân Vật' để bắt đầu."}
-              </div>
+              <Empty className="border border-border bg-card">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <Search className="size-4" />
+                  </EmptyMedia>
+                  <EmptyDescription className="text-xs">
+                    {xrayData ? "Không tìm thấy thực thể nào phù hợp." : "Chưa có dữ liệu X-Ray. Hãy bấm 'Quét Tự Động Nhân Vật' để bắt đầu."}
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {filteredEntities.map((entity) => {
                   const initials = entity.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
                   return (
-                    <div
-                      key={entity.id}
-                      className="p-4 rounded-[var(--ui-radius-card)] bg-[var(--card)] border border-[var(--border)] flex flex-col justify-between gap-3 shadow-xs"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-bold flex items-center justify-center flex-shrink-0">
-                              {initials}
+                    <Card key={entity.id}>
+                      <CardContent className="flex flex-col gap-3">
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-2.5">
+                              <div className="size-8 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center flex-shrink-0">
+                                {initials}
+                              </div>
+                              <div>
+                                <h3 className="text-xs font-bold text-foreground">{entity.name}</h3>
+                                {entity.role && (
+                                  <span className="text-[10px] text-muted-foreground">{entity.role}</span>
+                                )}
+                              </div>
                             </div>
-                            <div>
-                              <h3 className="text-xs font-bold text-[var(--foreground)]">{entity.name}</h3>
-                              {entity.role && (
-                                <span className="text-[10px] text-[var(--muted-foreground)]">{entity.role}</span>
-                              )}
-                            </div>
+                            <Badge variant="secondary" className="text-[10px] font-mono">
+                              {entity.occurrencesCount} lần
+                            </Badge>
                           </div>
-                          <span className="app-badge app-badge--neutral text-[10px] font-mono">
-                            {entity.occurrencesCount} lần
-                          </span>
+
+                          {entity.aliases && entity.aliases.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mb-2">
+                              {entity.aliases.map((a, i) => (
+                                <Badge
+                                  key={i}
+                                  variant="secondary"
+                                  className="h-auto text-[9.5px] px-1.5 py-0.5 font-normal"
+                                >
+                                  {a}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+
+                          <p className="text-xs text-foreground line-clamp-3 leading-relaxed">
+                            {entity.description}
+                          </p>
                         </div>
 
-                        {entity.aliases && entity.aliases.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mb-2">
-                            {entity.aliases.map((a, i) => (
-                              <span key={i} className="text-[9.5px] px-1.5 py-0.5 rounded bg-[var(--secondary)] text-[var(--secondary-foreground)]">
-                                {a}
-                              </span>
-                            ))}
+                        {/* Excerpt Snippet */}
+                        {entity.excerpts && entity.excerpts.length > 0 && (
+                          <div className="p-2 rounded bg-muted/30 border border-border text-[11px] text-muted-foreground italic line-clamp-2">
+                            "{entity.excerpts[0].snippet}"
                           </div>
                         )}
 
-                        <p className="text-xs text-[var(--foreground)] line-clamp-3 leading-relaxed">
-                          {entity.description}
-                        </p>
-                      </div>
-
-                      {/* Excerpt Snippet */}
-                      {entity.excerpts && entity.excerpts.length > 0 && (
-                        <div className="p-2 rounded bg-[var(--background)] border border-[var(--border)] text-[11px] text-[var(--muted-foreground)] italic line-clamp-2">
-                          "{entity.excerpts[0].snippet}"
+                        {/* Card Actions */}
+                        <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-border">
+                          <Button
+                            type="button"
+                            variant="link"
+                            size="sm"
+                            className="h-auto p-0 text-[11px]"
+                            onClick={() => {
+                              setEditingEntity(entity);
+                              setIsAddingNew(false);
+                              setEditForm({
+                                name: entity.name,
+                                aliases: (entity.aliases || []).join(", "),
+                                type: entity.type,
+                                role: entity.role || "",
+                                description: entity.description,
+                              });
+                            }}
+                          >
+                            Chỉnh sửa
+                          </Button>
+                          <Separator orientation="vertical" className="h-3" />
+                          <Button
+                            type="button"
+                            variant="link"
+                            size="sm"
+                            className="h-auto p-0 text-[11px] text-destructive hover:text-destructive"
+                            onClick={() => handleDeleteEntity(entity.id)}
+                          >
+                            Xóa
+                          </Button>
                         </div>
-                      )}
-
-                      {/* Card Actions */}
-                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingEntity(entity);
-                            setIsAddingNew(false);
-                            setEditForm({
-                              name: entity.name,
-                              aliases: (entity.aliases || []).join(", "),
-                              type: entity.type,
-                              role: entity.role || "",
-                              description: entity.description,
-                            });
-                          }}
-                          className="text-[11px] text-[var(--primary)] hover:underline"
-                        >
-                          Chỉnh sửa
-                        </button>
-                        <span className="text-[var(--border)]">|</span>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteEntity(entity.id)}
-                          className="text-[11px] text-[var(--destructive)] hover:underline"
-                        >
-                          Xóa
-                        </button>
-                      </div>
-                    </div>
+                      </CardContent>
+                    </Card>
                   );
                 })}
               </div>
@@ -734,348 +859,386 @@ export function KindleCompanionView() {
         {/* ===================== TAB 3: KINDLE NATIVE SDR ===================== */}
         {activeSubTab === "sdr" && (
           <div className="max-w-4xl mx-auto flex flex-col gap-6">
-            <div className="p-5 rounded-[var(--ui-radius-card)] bg-[var(--card)] border border-[var(--border)] flex flex-col gap-4">
-              <div className="flex items-center gap-2 border-b border-[var(--border)] pb-3">
-                <Info size={18} className="text-[var(--primary)]" />
-                <h2 className="text-sm font-semibold text-[var(--foreground)]">
+            <Card>
+              <CardHeader className="border-b">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Info size={18} className="text-primary" />
                   Hướng Dẫn Kích Hoạt Trên Máy Kindle
-                </h2>
-              </div>
+                </CardTitle>
+              </CardHeader>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Method 1: Send-to-Kindle (Recommended) */}
-                <div className="p-4 rounded border border-[var(--border)] bg-[var(--background)] flex flex-col justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2 text-xs font-bold text-[var(--foreground)] mb-1">
-                      <Send size={14} className="text-[var(--ui-success)]" />
-                      Cách 1: Gửi Qua Send-to-Kindle (Khuyên dùng)
-                    </div>
-                    <p className="text-xs text-[var(--muted-foreground)] leading-relaxed mb-3">
-                      Không cần cắm cáp USB! Chỉ cần xuất sách EPUB đã nhúng thẻ Word Wise (tại tab Word Wise), sau đó gửi qua email hoặc website Send-to-Kindle của Amazon.
-                    </p>
-                    <ul className="text-xs text-[var(--foreground)] space-y-1.5 list-disc pl-4">
-                      <li>Máy Kindle hiển thị chữ chú thích nhỏ ngay trên đầu từ.</li>
-                      <li>Hỗ trợ cả giải nghĩa <strong>Anh - Việt</strong>.</li>
-                      <li>Hoạt động trên cả Kindle app điện thoại và máy đọc sách.</li>
-                    </ul>
-                    <div className="mt-3 p-2 rounded bg-[var(--card)] border border-[var(--border)] text-[10px] text-[var(--muted-foreground)] leading-relaxed">
-                      <strong className="text-[var(--foreground)]">Lưu ý về cách gọi tên:</strong> đây là
-                      chú thích từ vựng dạng <em>ruby</em> (chữ nhỏ phía trên từ), hiển thị giống Word
-                      Wise nhưng KHÔNG kích hoạt công cụ Word Wise độc quyền của Amazon.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setActiveSubTab("wordwise")}
-                    className="app-btn app-btn--primary px-3 py-1.5 text-xs flex items-center justify-center gap-1.5 w-full mt-2"
-                  >
-                    <Languages size={13} />
-                    Đến Tab Word Wise Nhúng Vào Sách
-                  </button>
-                </div>
-
-                {/* Method 2: Sideload via USB (.sdr) */}
-                <div className="p-4 rounded border border-[var(--border)] bg-[var(--background)] flex flex-col justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2 text-xs font-bold text-[var(--foreground)] mb-1">
-                      <Usb size={14} className="text-[var(--primary)]" />
-                      Cách 2: Chép Cáp USB (Thư Mục .sdr)
-                    </div>
-                    <p className="text-xs text-[var(--muted-foreground)] leading-relaxed mb-3">
-                      Dành cho sách định dạng AZW3 / KFX chép trực tiếp vào thư mục <code>documents/</code> của máy Kindle.
-                    </p>
-                    <div className="text-xs text-[var(--foreground)] space-y-2">
-                      <div className="p-2 rounded bg-[var(--card)] font-mono text-[11px] border border-[var(--border)]">
-                        documents/<br />
-                        ├── {currentBook.title.replace(/[\\/:*?"<>|]/g, "_")}.azw3<br />
-                        └── {currentBook.title.replace(/[\\/:*?"<>|]/g, "_")}.sdr/<br />
-                        &nbsp;&nbsp;&nbsp;&nbsp;├── XRAY.entities.B0xxxxxx.asc<br />
-                        &nbsp;&nbsp;&nbsp;&nbsp;└── LanguageLayer.en.B0xxxxxx.kll
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-3 mt-3 pt-3 border-t border-[var(--border)]">
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Method 1: Send-to-Kindle (Recommended) */}
+                  <div className="p-4 rounded border border-border bg-background flex flex-col justify-between gap-3">
                     <div>
-                      <label className="text-[11px] font-medium text-[var(--foreground)] block mb-1">
-                        Mã định danh ASIN sách trên Kindle
-                      </label>
-                      <input
-                        type="text"
-                        value={sdrAsin}
-                        onChange={(e) => setSdrAsin(e.target.value.toUpperCase())}
-                        placeholder="B0XXXXXXXX"
-                        className="w-full text-xs font-mono px-3 py-1.5 rounded-[var(--ui-radius-button)] border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] focus:outline-none focus:border-[var(--primary)]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[11px] font-medium text-[var(--foreground)] block mb-1">
-                        Thư mục lưu (chọn thư mục documents trên Kindle hoặc thư mục máy tính)
-                      </label>                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          readOnly
-                          value={targetSdrDir || ""}
-                          placeholder="Chưa chọn thư mục..."
-                          className="flex-1 text-xs px-3 py-1.5 rounded-[var(--ui-radius-button)] border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              const selected = await open({ directory: true, multiple: false });
-                              if (selected && typeof selected === "string") {
-                                setTargetSdrDir(selected);
-                              }
-                            } catch (e) {
-                              // Non-fatal: User cancelled directory selection dialog or denied access
-                              console.error("Directory picker cancelled or failed:", e);
-                            }
-                          }}
-                          className="app-btn app-btn--secondary px-2.5 py-1.5 text-xs flex items-center gap-1.5 flex-shrink-0"
-                        >
-                          <FolderOpen size={13} />
-                          Chọn thư mục
-                        </button>
+                      <div className="flex items-center gap-2 text-xs font-bold text-foreground mb-1">
+                        <Send size={14} className="text-emerald-600 dark:text-emerald-400" />
+                        Cách 1: Gửi Qua Send-to-Kindle (Khuyên dùng)
                       </div>
-                    </div>
-
-                    <label className="flex items-start gap-2 p-2 rounded-[var(--ui-radius-button)] border border-[var(--border)] cursor-pointer hover:bg-[var(--secondary)]">
-                      <input
-                        type="checkbox"
-                        checked={allowMissingBookFile}
-                        onChange={(e) => setAllowMissingBookFile(e.target.checked)}
-                        className="mt-0.5 accent-[var(--primary)]"
-                      />
-                      <span>
-                        <span className="block text-[11px] font-semibold text-[var(--foreground)]">
-                          Tôi sẽ tự chép kèm tệp sách (chưa có trong thư mục)
-                        </span>
-                        <span className="block text-[10px] text-[var(--muted-foreground)] leading-relaxed">
-                          Mặc định ứng dụng sẽ từ chối tạo sidecar nếu chưa thấy tệp sách trong thư mục
-                          đã chọn, vì sidecar mồ côi sẽ không có tác dụng trên máy Kindle.
-                        </span>
-                      </span>
-                    </label>
-
-                    <button
-                      type="button"
-                      disabled={isExportingSdr || !targetSdrDir}
-                      onClick={async () => {
-                        if (!targetSdrDir) {
-                          toast.error("Vui lòng chọn thư mục lưu trữ trước.");
-                          return;
-                        }
-                        setIsExportingSdr(true);
-                        setExportedSdrResult(null);
-                        try {
-                          const xrayPayload = xrayData
-                            ? {
-                                asin: sdrAsin,
-                                book_title: currentBook.title,
-                                people: xrayData.people.map((p) => ({
-                                  id: p.id,
-                                  name: p.name,
-                                  aliases: p.aliases,
-                                  entity_type: "person",
-                                  role: p.role,
-                                  description: p.description,
-                                  occurrences_count: p.occurrencesCount,
-                                  occurrences: p.excerpts.map((ex) => [ex.startOffset || 100, p.name.length]),
-                                })),
-                                terms: xrayData.terms.map((t) => ({
-                                  id: t.id,
-                                  name: t.name,
-                                  aliases: t.aliases,
-                                  entity_type: "term",
-                                  role: t.role,
-                                  description: t.description,
-                                  occurrences_count: t.occurrencesCount,
-                                  occurrences: t.excerpts.map((ex) => [ex.startOffset || 100, t.name.length]),
-                                })),
-                              }
-                            : null;
-
-                          const wordwisePayload = {
-                            asin: sdrAsin,
-                            acr: currentBook.title.replace(/[^A-Za-z0-9_]/g, "_").slice(0, 30),
-                            revision: "rev_8d271dc3",
-                            glosses: [],
-                          };
-
-                          const res = await invoke<{
-                            sdr_dir_path: string;
-                            total_bytes: number;
-                            paired_book_file: string | null;
-                          }>("export_kindle_sdr", {
-                            outputDir: targetSdrDir,
-                            bookBasename: currentBook.title,
-                            asin: sdrAsin,
-                            xrayPayload,
-                            wordwisePayload,
-                            allowMissingBookFile,
-                          });
-
-                          setExportedSdrResult({
-                            path: res.sdr_dir_path,
-                            bytes: res.total_bytes,
-                            pairedBookFile: res.paired_book_file ?? null,
-                          });
-                          toast.success("Đã xuất thư mục .sdr cho máy Kindle thành công!");
-                        } catch (err) {
-                          // Handled via user-visible notification; not rethrown to prevent unhandled rejection in UI event
-                          console.error("Export Kindle SDR failed:", err);
-                          toast.error(`Lỗi khi xuất SDR: ${err}`);
-                        } finally {
-                          setIsExportingSdr(false);
-                        }
-                      }}
-                      className="app-btn app-btn--primary px-4 py-2 text-xs flex items-center justify-center gap-1.5 w-full mt-1"
-                    >
-                      {isExportingSdr ? (
-                        <Loader2 size={13} className="animate-spin" />
-                      ) : (
-                        <Usb size={13} />
-                      )}
-                      {isExportingSdr ? "Đang xuất file SDR..." : "Xuất Thư Mục .sdr Cho Kindle"}
-                    </button>
-
-                    <div className="p-2.5 rounded bg-[color-mix(in_srgb,var(--ui-warning)_10%,var(--card))] border border-[color-mix(in_srgb,var(--ui-warning)_30%,var(--border))] flex items-start gap-1.5">
-                      <Info size={11} className="text-[var(--ui-warning)] mt-0.5 flex-shrink-0" />
-                      <p className="text-[10px] text-[var(--foreground)] leading-relaxed">
-                        <strong>Hai cách này loại trừ nhau.</strong> Thư mục <code>.sdr</code> chỉ hợp lệ
-                        khi đi kèm <em>đúng</em> tệp sách mà nó được tạo ra (byte offset phải khớp).
-                        Vì bản Kindle do NiceEbook tạo đã nhúng sẵn chú thích ruby trong nội dung, bạn
-                        <strong> không cần</strong> và <strong>không nên</strong> ghép sidecar này với tệp
-                        AZW3 do ứng dụng xuất ra — hãy dùng một trong hai hướng, không dùng cả hai.
+                      <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+                        Không cần cắm cáp USB! Chỉ cần xuất sách EPUB đã nhúng thẻ Word Wise (tại tab Word Wise), sau đó gửi qua email hoặc website Send-to-Kindle của Amazon.
                       </p>
+                      <ul className="text-xs text-foreground flex flex-col gap-1.5 list-disc pl-4">
+                        <li>Máy Kindle hiển thị chữ chú thích nhỏ ngay trên đầu từ.</li>
+                        <li>Hỗ trợ cả giải nghĩa <strong>Anh - Việt</strong>.</li>
+                        <li>Hoạt động trên cả Kindle app điện thoại và máy đọc sách.</li>
+                      </ul>
+                      <Alert className="mt-3 border-border bg-card">
+                        <AlertDescription className="text-[10px] leading-relaxed">
+                          <strong className="text-foreground">Lưu ý về cách gọi tên:</strong> đây là
+                          chú thích từ vựng dạng <em>ruby</em> (chữ nhỏ phía trên từ), hiển thị giống Word
+                          Wise nhưng KHÔNG kích hoạt công cụ Word Wise độc quyền của Amazon.
+                        </AlertDescription>
+                      </Alert>
                     </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => setActiveSubTab("wordwise")}
+                      className="text-xs gap-1.5 w-full mt-2"
+                    >
+                      <Languages className="size-3.5" />
+                      Đến Tab Word Wise Nhúng Vào Sách
+                    </Button>
+                  </div>
 
-                    {exportedSdrResult && (
-                      <div className="p-3 rounded bg-[color-mix(in_srgb,var(--ui-success)_10%,var(--card))] border border-[var(--ui-success)]/30 text-xs text-[var(--foreground)] flex flex-col gap-1">
-                        <div className="flex items-center gap-1.5 text-[var(--ui-success)] font-semibold">
-                          <CheckCircle2 size={14} />
-                          Đã tạo xong thư mục sidecar:
-                        </div>
-                        <div className="font-mono text-[11px] break-all">{exportedSdrResult.path}</div>
-                        <div className="text-[10px] text-[var(--muted-foreground)]">
-                          Dung lượng SQLite: {(exportedSdrResult.bytes / 1024).toFixed(1)} KB
-                        </div>
-                        <div className="text-[10px] text-[var(--muted-foreground)]">
-                          {exportedSdrResult.pairedBookFile
-                            ? `Ghép với tệp sách: ${exportedSdrResult.pairedBookFile}`
-                            : "Chưa có tệp sách đi kèm — hãy tự chép kèm đúng tệp sách này."}
+                  {/* Method 2: Sideload via USB (.sdr) */}
+                  <div className="p-4 rounded border border-border bg-background flex flex-col justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 text-xs font-bold text-foreground mb-1">
+                        <Usb size={14} className="text-primary" />
+                        Cách 2: Chép Cáp USB (Thư Mục .sdr)
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+                        Dành cho sách định dạng AZW3 / KFX chép trực tiếp vào thư mục <code>documents/</code> của máy Kindle.
+                      </p>
+                      <div className="text-xs text-foreground flex flex-col gap-2">
+                        <div className="p-2 rounded bg-card font-mono text-[11px] border border-border">
+                          documents/<br />
+                          ├── {currentBook.title.replace(/[\\/:*?"<>|]/g, "_")}.azw3<br />
+                          └── {currentBook.title.replace(/[\\/:*?"<>|]/g, "_")}.sdr/<br />
+                          &nbsp;&nbsp;&nbsp;&nbsp;├── XRAY.entities.B0xxxxxx.asc<br />
+                          &nbsp;&nbsp;&nbsp;&nbsp;└── LanguageLayer.en.B0xxxxxx.kll
                         </div>
                       </div>
-                    )}
+                    </div>
+                    <div className="flex flex-col gap-3 mt-3 pt-3 border-t border-border">
+                      <div className="flex flex-col gap-1">
+                        <Label htmlFor="kindle-sdr-asin" className="text-[11px] font-medium text-foreground">
+                          Mã định danh ASIN sách trên Kindle
+                        </Label>
+                        <Input
+                          id="kindle-sdr-asin"
+                          type="text"
+                          value={sdrAsin}
+                          onChange={(e) => setSdrAsin(e.target.value.toUpperCase())}
+                          placeholder="B0XXXXXXXX"
+                          className="h-8 w-full text-xs font-mono"
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <Label htmlFor="kindle-sdr-dir" className="text-[11px] font-medium text-foreground">
+                          Thư mục lưu (chọn thư mục documents trên Kindle hoặc thư mục máy tính)
+                        </Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            id="kindle-sdr-dir"
+                            type="text"
+                            readOnly
+                            value={targetSdrDir || ""}
+                            placeholder="Chưa chọn thư mục..."
+                            className="h-8 flex-1 text-xs"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={async () => {
+                              try {
+                                const selected = await open({ directory: true, multiple: false });
+                                if (selected && typeof selected === "string") {
+                                  setTargetSdrDir(selected);
+                                }
+                              } catch (e) {
+                                // Non-fatal: User cancelled directory selection dialog or denied access
+                                console.error("Directory picker cancelled or failed:", e);
+                              }
+                            }}
+                            className="text-xs gap-1.5 flex-shrink-0"
+                          >
+                            <FolderOpen className="size-3.5" />
+                            Chọn thư mục
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-2 p-2 rounded-lg border border-border hover:bg-muted/40">
+                        <Checkbox
+                          id="kindle-allow-missing-book"
+                          checked={allowMissingBookFile}
+                          onCheckedChange={(checked) => setAllowMissingBookFile(checked === true)}
+                          className="mt-0.5"
+                        />
+                        <Label
+                          htmlFor="kindle-allow-missing-book"
+                          className="text-left cursor-pointer leading-normal"
+                        >
+                          <span className="flex flex-col gap-0.5">
+                            <span className="block text-[11px] font-semibold text-foreground">
+                              Tôi sẽ tự chép kèm tệp sách (chưa có trong thư mục)
+                            </span>
+                            <span className="block text-[10px] font-normal text-muted-foreground leading-relaxed">
+                              Mặc định ứng dụng sẽ từ chối tạo sidecar nếu chưa thấy tệp sách trong thư mục
+                              đã chọn, vì sidecar mồ côi sẽ không có tác dụng trên máy Kindle.
+                            </span>
+                          </span>
+                        </Label>
+                      </div>
+
+                      <Button
+                        type="button"
+                        disabled={isExportingSdr || !targetSdrDir}
+                        onClick={async () => {
+                          if (!targetSdrDir) {
+                            toast.error("Vui lòng chọn thư mục lưu trữ trước.");
+                            return;
+                          }
+                          setIsExportingSdr(true);
+                          setExportedSdrResult(null);
+                          try {
+                            const xrayPayload = xrayData
+                              ? {
+                                  asin: sdrAsin,
+                                  book_title: currentBook.title,
+                                  people: xrayData.people.map((p) => ({
+                                    id: p.id,
+                                    name: p.name,
+                                    aliases: p.aliases,
+                                    entity_type: "person",
+                                    role: p.role,
+                                    description: p.description,
+                                    occurrences_count: p.occurrencesCount,
+                                    occurrences: p.excerpts.map((ex) => [ex.startOffset || 100, p.name.length]),
+                                  })),
+                                  terms: xrayData.terms.map((t) => ({
+                                    id: t.id,
+                                    name: t.name,
+                                    aliases: t.aliases,
+                                    entity_type: "term",
+                                    role: t.role,
+                                    description: t.description,
+                                    occurrences_count: t.occurrencesCount,
+                                    occurrences: t.excerpts.map((ex) => [ex.startOffset || 100, t.name.length]),
+                                  })),
+                                }
+                              : null;
+  
+                            const wordwisePayload = {
+                              asin: sdrAsin,
+                              acr: currentBook.title.replace(/[^A-Za-z0-9_]/g, "_").slice(0, 30),
+                              revision: "rev_8d271dc3",
+                              glosses: [],
+                            };
+  
+                            const res = await invoke<{
+                              sdr_dir_path: string;
+                              total_bytes: number;
+                              paired_book_file: string | null;
+                            }>("export_kindle_sdr", {
+                              outputDir: targetSdrDir,
+                              bookBasename: currentBook.title,
+                              asin: sdrAsin,
+                              xrayPayload,
+                              wordwisePayload,
+                              allowMissingBookFile,
+                            });
+  
+                            setExportedSdrResult({
+                              path: res.sdr_dir_path,
+                              bytes: res.total_bytes,
+                              pairedBookFile: res.paired_book_file ?? null,
+                            });
+                            toast.success("Đã xuất thư mục .sdr cho máy Kindle thành công!");
+                          } catch (err) {
+                            // Handled via user-visible notification; not rethrown to prevent unhandled rejection in UI event
+                            console.error("Export Kindle SDR failed:", err);
+                            toast.error(`Lỗi khi xuất SDR: ${err}`);
+                          } finally {
+                            setIsExportingSdr(false);
+                          }
+                        }}
+                        className="text-xs gap-1.5 w-full mt-1"
+                      >
+                        {isExportingSdr ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Usb className="size-3.5" />
+                        )}
+                        {isExportingSdr ? "Đang xuất file SDR..." : "Xuất Thư Mục .sdr Cho Kindle"}
+                      </Button>
+  
+                      <Alert className="border-amber-500/30 bg-amber-500/10">
+                        <Info className="size-3 text-amber-600 dark:text-amber-400" />
+                        <AlertDescription className="text-[10px] text-foreground leading-relaxed">
+                          <strong>Hai cách này loại trừ nhau.</strong> Thư mục <code>.sdr</code> chỉ hợp lệ
+                          khi đi kèm <em>đúng</em> tệp sách mà nó được tạo ra (byte offset phải khớp).
+                          Vì bản Kindle do NiceEbook tạo đã nhúng sẵn chú thích ruby trong nội dung, bạn
+                          <strong> không cần</strong> và <strong>không nên</strong> ghép sidecar này với tệp
+                          AZW3 do ứng dụng xuất ra — hãy dùng một trong hai hướng, không dùng cả hai.
+                        </AlertDescription>
+                      </Alert>
+  
+                      {exportedSdrResult && (
+                        <Alert className="border-emerald-500/20 bg-emerald-500/10">
+                          <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                          <AlertTitle className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                            Đã tạo xong thư mục sidecar:
+                          </AlertTitle>
+                          <AlertDescription className="flex flex-col gap-1 text-xs text-foreground">
+                            <div className="font-mono text-[11px] break-all">{exportedSdrResult.path}</div>
+                            <div className="text-[10px] text-muted-foreground">
+                              Dung lượng SQLite: {(exportedSdrResult.bytes / 1024).toFixed(1)} KB
+                            </div>
+                            <div className="text-[10px] text-muted-foreground">
+                              {exportedSdrResult.pairedBookFile
+                                ? `Ghép với tệp sách: ${exportedSdrResult.pairedBookFile}`
+                                : "Chưa có tệp sách đi kèm — hãy tự chép kèm đúng tệp sách này."}
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           </div>
         )}
       </div>
 
       {/* Edit / Add Modal */}
-      {(editingEntity || isAddingNew) && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-[var(--ui-radius-card)] bg-[var(--card)] border border-[var(--border)] shadow-xl p-5 flex flex-col gap-4">
-            <h3 className="text-sm font-bold text-[var(--foreground)]">
+      <Dialog
+        open={Boolean(editingEntity || isAddingNew)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingEntity(null);
+            setIsAddingNew(false);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-bold text-foreground">
               {isAddingNew ? "Thêm Thực Thể X-Ray Mới" : "Chỉnh Sửa Thực Thể X-Ray"}
-            </h3>
+            </DialogTitle>
+          </DialogHeader>
 
-            <div className="flex flex-col gap-3">
-              <div>
-                <label className="text-xs font-medium text-[var(--foreground)] block mb-1">
-                  Tên thực thể
-                </label>
-                <input
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="xray-entity-name" className="text-xs font-medium text-foreground">
+                Tên thực thể
+              </Label>
+              <Input
+                id="xray-entity-name"
+                type="text"
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                placeholder="Ví dụ: Sherlock Holmes hoặc Phố Baker"
+                className="h-8 text-xs"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-col gap-1">
+                <Label className="text-xs font-medium text-foreground">Phân loại</Label>
+                <Select
+                  value={editForm.type}
+                  onValueChange={(val) => {
+                    if (val === "person" || val === "term") setEditForm({ ...editForm, type: val });
+                  }}
+                >
+                  <SelectTrigger size="sm" className="w-full text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="person">Nhân vật (Person)</SelectItem>
+                      <SelectItem value="term">Thuật ngữ / Địa danh (Term)</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="xray-entity-role" className="text-xs font-medium text-foreground">
+                  Vai trò / Nhãn phụ
+                </Label>
+                <Input
+                  id="xray-entity-role"
                   type="text"
-                  value={editForm.name}
-                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                  placeholder="Ví dụ: Sherlock Holmes hoặc Phố Baker"
-                  className="w-full text-xs px-3 py-2 rounded-[var(--ui-radius-button)] border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] focus:outline-none focus:border-[var(--primary)]"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs font-medium text-[var(--foreground)] block mb-1">
-                    Phân loại
-                  </label>
-                  <select
-                    value={editForm.type}
-                    onChange={(e) => setEditForm({ ...editForm, type: e.target.value as any })}
-                    className="w-full text-xs px-3 py-2 rounded-[var(--ui-radius-button)] border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] focus:outline-none focus:border-[var(--primary)]"
-                  >
-                    <option value="person">Nhân vật (Person)</option>
-                    <option value="term">Thuật ngữ / Địa danh (Term)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs font-medium text-[var(--foreground)] block mb-1">
-                    Vai trò / Nhãn phụ
-                  </label>
-                  <input
-                    type="text"
-                    value={editForm.role}
-                    onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
-                    placeholder="Thám tử, Địa danh..."
-                    className="w-full text-xs px-3 py-2 rounded-[var(--ui-radius-button)] border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] focus:outline-none focus:border-[var(--primary)]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-[var(--foreground)] block mb-1">
-                  Tên gọi khác / Bí danh (ngăn cách bằng dấu phẩy)
-                </label>
-                <input
-                  type="text"
-                  value={editForm.aliases}
-                  onChange={(e) => setEditForm({ ...editForm, aliases: e.target.value })}
-                  placeholder="Holmes, Mr. Holmes..."
-                  className="w-full text-xs px-3 py-2 rounded-[var(--ui-radius-button)] border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] focus:outline-none focus:border-[var(--primary)]"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-[var(--foreground)] block mb-1">
-                  Mô tả / Tiểu sử
-                </label>
-                <textarea
-                  rows={3}
-                  value={editForm.description}
-                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                  placeholder="Mô tả tóm tắt về nhân vật hoặc địa danh..."
-                  className="w-full text-xs px-3 py-2 rounded-[var(--ui-radius-button)] border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] focus:outline-none focus:border-[var(--primary)] resize-none"
+                  value={editForm.role}
+                  onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+                  placeholder="Thám tử, Địa danh..."
+                  className="h-8 text-xs"
                 />
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingEntity(null);
-                  setIsAddingNew(false);
-                }}
-                className="app-btn app-btn--secondary px-3 py-1.5 text-xs"
-              >
-                Hủy bỏ
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveEntity}
-                className="app-btn app-btn--primary px-3 py-1.5 text-xs"
-              >
-                Lưu Thay Đổi
-              </button>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="xray-entity-aliases" className="text-xs font-medium text-foreground">
+                Tên gọi khác / Bí danh (ngăn cách bằng dấu phẩy)
+              </Label>
+              <Input
+                id="xray-entity-aliases"
+                type="text"
+                value={editForm.aliases}
+                onChange={(e) => setEditForm({ ...editForm, aliases: e.target.value })}
+                placeholder="Holmes, Mr. Holmes..."
+                className="h-8 text-xs"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="xray-entity-description" className="text-xs font-medium text-foreground">
+                Mô tả / Tiểu sử
+              </Label>
+              <Textarea
+                id="xray-entity-description"
+                rows={3}
+                value={editForm.description}
+                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                placeholder="Mô tả tóm tắt về nhân vật hoặc địa danh..."
+                className="min-h-16 text-xs resize-none"
+              />
             </div>
           </div>
-        </div>
-      )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              onClick={() => {
+                setEditingEntity(null);
+                setIsAddingNew(false);
+              }}
+            >
+              Hủy bỏ
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="text-xs"
+              onClick={handleSaveEntity}
+            >
+              Lưu Thay Đổi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

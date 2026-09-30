@@ -3,6 +3,7 @@ import { Sparkles, ChevronRight, BookOpen, Upload } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../../stores/useAppStore";
 import { toast } from "sonner";
+import { Card } from "../ui/card";
 
 export function BookDropzone() {
   const { 
@@ -193,61 +194,61 @@ export function BookDropzone() {
         onDrop={handleDrop}
         className={`w-full p-10 rounded-2xl border-2 border-dashed transition-all cursor-pointer group flex flex-col items-center select-none ${
           isDragOver
-            ? "border-indigo-500 bg-indigo-500/10 scale-[1.01]"
-            : "border-[#27272a] hover:border-indigo-500/50 bg-[#121216]/50 hover:bg-[#16161b]"
+            ? "border-primary bg-primary/10 scale-[1.01]"
+            : "border-border hover:border-primary/50 bg-card/60 hover:bg-muted/40 shadow-xs"
         }`}
       >
-        <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-5 group-hover:scale-110 group-hover:bg-indigo-500/20 transition-all shadow-inner">
+        <div className="size-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary mb-5 group-hover:scale-110 group-hover:bg-primary/20 transition-all shadow-inner">
           {isLoadingBook ? (
-            <Upload className="w-8 h-8 animate-bounce text-indigo-400" />
+            <Upload className="size-8 animate-bounce text-primary" />
           ) : (
-            <Sparkles className="w-8 h-8" />
+            <Sparkles className="size-8" />
           )}
         </div>
 
-        <h3 className="text-base font-semibold text-zinc-100 mb-1">
+        <h3 className="text-base font-semibold text-foreground mb-1">
           {isLoadingBook ? "Đang xử lý sách..." : "Kéo thả file sách (.epub, .pdf, .txt, .md) vào đây"}
         </h3>
-        <p className="text-xs text-[#71717a] max-w-sm mb-4">
+        <p className="text-xs text-muted-foreground max-w-sm mb-4 leading-relaxed">
           Hỗ trợ mở file EPUB trực tiếp, hoặc chuyển đổi từ PDF (kể cả PDF scan ảnh với OCR) và TXT/Markdown sang EPUB chuẩn mực.
         </p>
-        <div className="flex items-center gap-2 text-xs text-indigo-400 font-medium group-hover:underline">
+        <div className="flex items-center gap-1.5 text-xs text-primary font-medium group-hover:underline">
           <span>Hoặc bấm để duyệt file trên máy tính</span>
-          <ChevronRight className="w-3.5 h-3.5" />
+          <ChevronRight className="size-3.5" />
         </div>
       </div>
 
       {/* Feature cards below dropzone */}
       <div className="grid grid-cols-3 gap-3 w-full mt-6 text-left select-none">
-        <div className="p-3.5 rounded-xl bg-[#141418] border border-[#27272a]/70">
+        <Card className="p-3.5 bg-card/60 border-border shadow-2xs">
           <div className="flex items-center gap-1.5 mb-1">
-            <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
-            <span className="text-[11px] font-semibold text-indigo-400">Xử lý cục bộ (Offline)</span>
+            <BookOpen className="size-3.5 text-primary" />
+            <span className="text-[11px] font-semibold text-primary">Xử lý cục bộ (Offline)</span>
           </div>
-          <p className="text-[11px] text-[#71717a] leading-relaxed">
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
             Nhận diện thể loại và gợi ý phong cách 100% offline không cần API key.
           </p>
-        </div>
+        </Card>
 
-        <div className="p-3.5 rounded-xl bg-[#141418] border border-[#27272a]/70">
+        <Card className="p-3.5 bg-card/60 border-border shadow-2xs">
           <div className="flex items-center gap-1.5 mb-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span className="text-[11px] font-semibold text-emerald-400">9Router Auto-Discovery</span>
+            <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">9Router Auto-Discovery</span>
           </div>
-          <p className="text-[11px] text-[#71717a] leading-relaxed">
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
             Tự động tìm kiếm các cổng AI 9router, Cockpit, Ollama trên localhost.
           </p>
-        </div>
+        </Card>
 
-        <div className="p-3.5 rounded-xl bg-[#141418] border border-[#27272a]/70">
+        <Card className="p-3.5 bg-card/60 border-border shadow-2xs">
           <div className="flex items-center gap-1.5 mb-1">
-            <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-            <span className="text-[11px] font-semibold text-purple-400">Live CSS Hot-Reload</span>
+            <Sparkles className="size-3.5 text-primary" />
+            <span className="text-[11px] font-semibold text-primary">Live CSS Hot-Reload</span>
           </div>
-          <p className="text-[11px] text-[#71717a] leading-relaxed">
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
             Xem trước giao diện sách trực tiếp với tốc độ phản hồi dưới 50ms.
           </p>
-        </div>
+        </Card>
       </div>
     </div>
   );

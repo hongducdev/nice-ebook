@@ -50,9 +50,10 @@ ${toneInfo.instructions}
 QUY TẮC CỐT LÕI BẮT BUỘC:
 1. Bạn sẽ nhận một mảng JSON các đoạn văn: [{"id": "p_0", "text": "..."}, {"id": "p_1", "text": "..."}].
 2. Bạn PHẢI trả về một mảng JSON có đúng cấu trúc: [{"id": "p_0", "text": "<bản dịch>"}, ...].
-3. Giữ NGUYÊN VẸN các mã ID ("id"), KHÔNG ĐƯỢC gộp, tách, xóa bỏ hay tự ý sinh thêm bất kỳ đoạn nào. Số lượng phần tử trả về phải khớp đúng số lượng phần tử đầu vào.
-4. Giữ nguyên các ký tự đặc biệt, dấu ngoặc kép, dấu chấm lửng (...), dấu gạch ngang thoại nếu có trong văn bản gốc.
-5. CHỈ TRẢ VỀ DUY NHẤT MÃ RAW JSON dạng mảng [...]. Tuyệt đối KHÔNG bọc trong \`\`\`json hoặc thêm bất kỳ lời chào/lời dẫn nào.`;
+3. DỊCH TRIỆT ĐỂ 100%: Dịch toàn bộ mọi đoạn văn và mọi tiêu đề, tuyệt đối KHÔNG bỏ sót bất kỳ đoạn nào. Không để sót chữ Hán hoặc ngôn ngữ nguồn chưa dịch trong văn bản tiếng Việt.
+4. Giữ NGUYÊN VẸN các mã ID ("id"), KHÔNG ĐƯỢC gộp, tách, xóa bỏ hay tự ý sinh thêm bất kỳ đoạn nào. Số lượng phần tử trả về phải khớp đúng số lượng phần tử đầu vào.
+5. Giữ nguyên các ký tự đặc biệt, dấu ngoặc kép, dấu chấm lửng (...), dấu gạch ngang thoại nếu có trong văn bản gốc.
+6. CHỈ TRẢ VỀ DUY NHẤT MÃ RAW JSON dạng mảng [...]. Tuyệt đối KHÔNG bọc trong \`\`\`json hoặc thêm bất kỳ lời chào/lời dẫn nào.`;
 }
 
 export function buildUserPrompt(options: BuildTranslationPromptOptions): string {
@@ -92,10 +93,37 @@ export function buildUserPrompt(options: BuildTranslationPromptOptions): string 
 }
 
 /**
- * Safely parses the LLM output into a dictionary of { [blockId]: translatedText }.
- * Handles code fences, loose JSON arrays, and ensures invalid entries fall back safely.
+ * Normalizes an ID key like "p0", 0, "0", "P_0" to standard "p_0" format.
  */
-export function parseTranslationResponse(rawOutput: string): Record<string, string> {
+export function normalizeBlockId(rawId: unknown): string {
+  if (typeof rawId === "number") {
+    return `p_${rawId}`;
+  }
+  if (typeof rawId === "string") {
+    const trimmed = rawId.trim();
+    if (/^p_\d+$/i.test(trimmed)) {
+      return trimmed.toLowerCase();
+    }
+    const matchP = /^p(\d+)$/i.exec(trimmed);
+    if (matchP) {
+      return `p_${matchP[1]}`;
+    }
+    if (/^\d+$/.test(trimmed)) {
+      return `p_${trimmed}`;
+    }
+    return trimmed;
+  }
+  return "";
+}
+
+/**
+ * Safely parses the LLM output into a dictionary of { [blockId]: translatedText }.
+ * Handles code fences, loose JSON arrays, safe ID normalization, and strict positional fallback.
+ */
+export function parseTranslationResponse(
+  rawOutput: string,
+  expectedBlockIds?: string[]
+): Record<string, string> {
   const result: Record<string, string> = {};
   if (!rawOutput || rawOutput.trim().length === 0) {
     return result;
@@ -124,11 +152,37 @@ export function parseTranslationResponse(rawOutput: string): Record<string, stri
   try {
     const parsed = JSON.parse(clean);
     if (Array.isArray(parsed)) {
+      const itemsWithText: Array<{ id: string; text: string }> = [];
       for (const item of parsed) {
-        if (item && typeof item === "object" && typeof item.id === "string") {
-          const text = typeof item.text === "string" ? item.text.trim() : "";
+        if (item && typeof item === "object") {
+          const rawId = (item as any).id;
+          const text = typeof (item as any).text === "string" ? (item as any).text.trim() : "";
+          const normId = normalizeBlockId(rawId);
+          // Collision Guard: Do not overwrite an existing ID with a collision
+          if (normId && text.length > 0 && !result[normId]) {
+            result[normId] = text;
+          }
           if (text.length > 0) {
-            result[item.id] = text;
+            itemsWithText.push({ id: normId, text });
+          }
+        }
+      }
+
+      // STRICT POSITIONAL FALLBACK (Guarded against misalignments):
+      // Only when expectedBlockIds is passed AND items count matches expectedBlockIds exactly 1:1,
+      // and some IDs were missing or misformatted, map the missing ones strictly by ordinal position.
+      if (
+        expectedBlockIds &&
+        expectedBlockIds.length > 0 &&
+        itemsWithText.length === expectedBlockIds.length
+      ) {
+        const hasMissing = expectedBlockIds.some((bId) => !result[bId]);
+        if (hasMissing) {
+          for (let i = 0; i < expectedBlockIds.length; i++) {
+            const expId = expectedBlockIds[i];
+            if (!result[expId] && itemsWithText[i]?.text) {
+              result[expId] = itemsWithText[i].text;
+            }
           }
         }
       }
@@ -137,18 +191,42 @@ export function parseTranslationResponse(rawOutput: string): Record<string, stri
     console.warn("Could not parse LLM output as strict JSON array, attempting regex recovery:", err);
 
     // Fallback regex parser for malformed JSON elements: {"id": "p_0", "text": "..."}
-    const itemRegex = /"id"\s*:\s*"([^"]+)"\s*,\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/g;
+    const itemRegex = /"id"\s*:\s*(?:"([^"]+)"|(\d+))\s*,\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/g;
     let match: RegExpExecArray | null;
+    const itemsWithText: Array<{ id: string; text: string }> = [];
+
     while ((match = itemRegex.exec(clean)) !== null) {
-      const id = match[1];
-      const rawText = match[2];
+      const rawId = match[1] || match[2];
+      const rawText = match[3];
+      const normId = normalizeBlockId(rawId);
       try {
         const text = JSON.parse(`"${rawText}"`);
-        if (id && text) {
-          result[id] = text;
+        if (normId && text) {
+          if (!result[normId]) {
+            result[normId] = text;
+          }
+          itemsWithText.push({ id: normId, text });
         }
       } catch {
-        result[id] = rawText;
+        if (normId && rawText) {
+          if (!result[normId]) {
+            result[normId] = rawText;
+          }
+          itemsWithText.push({ id: normId, text: rawText });
+        }
+      }
+    }
+
+    if (
+      expectedBlockIds &&
+      expectedBlockIds.length > 0 &&
+      itemsWithText.length === expectedBlockIds.length
+    ) {
+      for (let i = 0; i < expectedBlockIds.length; i++) {
+        const expId = expectedBlockIds[i];
+        if (!result[expId] && itemsWithText[i]?.text) {
+          result[expId] = itemsWithText[i].text;
+        }
       }
     }
   }

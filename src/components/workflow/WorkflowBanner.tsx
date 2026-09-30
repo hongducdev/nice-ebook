@@ -1,4 +1,6 @@
 import { ChevronDown, Sparkles, X } from "lucide-react";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
 import { useAppStore } from "../../stores/useAppStore";
 import {
   type BookProfile,
@@ -55,19 +57,21 @@ export function WorkflowBannerView({
 
       <div className="workflow-banner__body">
         <div className="workflow-banner__chips">
-          <span className="workflow-banner__chip workflow-banner__chip--lang">
+          <Badge variant="outline" className="workflow-banner__chip workflow-banner__chip--lang gap-1.5">
             <span aria-hidden="true">{profile.languageFlag}</span>
             <span>{profile.languageName}</span>
-            <span className="workflow-banner__chip-meta">{confidence}%</span>
-          </span>
-          <span className="workflow-banner__chip workflow-banner__chip--workflow">{label}</span>
-          <span className="workflow-banner__chip workflow-banner__chip--source">
+            <span className="workflow-banner__chip-meta font-mono opacity-70">{confidence}%</span>
+          </Badge>
+          <Badge variant="outline" className="workflow-banner__chip workflow-banner__chip--workflow border-primary/40 text-primary">
+            {label}
+          </Badge>
+          <Badge variant="secondary" className="workflow-banner__chip workflow-banner__chip--source text-muted-foreground">
             {SOURCE_LABELS[profile.detectionSource] ?? profile.detectionSource}
-          </span>
+          </Badge>
           {profile.hasWatermarks && (
-            <span className="workflow-banner__chip workflow-banner__chip--warn">
+            <Badge variant="secondary" className="workflow-banner__chip workflow-banner__chip--warn bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30">
               Watermark {profile.watermarkChapters} chương
-            </span>
+            </Badge>
           )}
         </div>
 
@@ -102,24 +106,27 @@ export function WorkflowBannerView({
       </div>
 
       <div className="workflow-banner__actions">
-        <button
+        <Button
           type="button"
-          className="app-button app-button--primary text-xs"
+          size="sm"
+          className="text-xs"
           onClick={onStart}
           title={`Mở tab phù hợp cho quy trình: ${label}`}
         >
           {allDone ? "Mở lại quy trình" : `Bắt đầu: ${label}`}
-        </button>
+        </Button>
 
-        <button
+        <Button
           type="button"
-          className="workflow-banner__dismiss"
+          variant="ghost"
+          size="icon"
+          className="workflow-banner__dismiss size-7 text-muted-foreground hover:text-foreground"
           onClick={onDismiss}
           aria-label="Bỏ qua gợi ý quy trình cho cuốn sách này"
           title="Bỏ qua gợi ý cho cuốn sách này"
         >
           <X size={14} />
-        </button>
+        </Button>
       </div>
     </section>
   );

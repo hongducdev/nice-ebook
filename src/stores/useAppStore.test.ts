@@ -650,6 +650,237 @@ describe("useAppStore - Book Loading & Drag-and-Drop", () => {
       expect(updatedProj?.author).toBe("Dale Carnegie");
       expect(updatedProj?.coverDataUrl).toBe("data:image/jpeg;base64,mock");
     });
+
+    it("auto-saves metadata to project storage, preserves all fields and hydrates on reopen", async () => {
+      const initialBook = {
+        title: "Tựa Cũ Trên Đĩa",
+        author: "Tác Giả Cũ",
+        language: "en",
+        description: "Mô tả cũ",
+        cover_data_url: null,
+        chapter_count: 1,
+        file_size_bytes: 5000,
+        chapters: [{ id: "c1", href: "c1.xhtml", title: "C1", preview_text: "" }],
+        sample_text: "",
+      };
+
+      const projId = "proj-meta-autosave";
+      useAppStore.setState({
+        currentBook: initialBook,
+        currentFilePath: "C:\\books\\book.epub",
+        activeProjectId: projId,
+        projects: [
+          {
+            id: projId,
+            name: "Tựa Cũ Trên Đĩa",
+            author: "Tác Giả Cũ",
+            filePath: "C:\\books\\book.epub",
+            coverDataUrl: null,
+            chapterCount: 1,
+            fileSizeBytes: 5000,
+            activePresetId: "classic-hardcover",
+            customCss: "",
+            fontFamily: "serif",
+            fontSize: 16,
+            textAlign: "justify",
+            dropCaps: true,
+            lineHeight: 1.75,
+            firstLineIndent: "2em",
+            sceneDivider: "♦ ♦ ♦",
+            modifiedChapters: {},
+            chapterEnhanceReports: {},
+            createdAt: 100,
+            lastOpenedAt: 100,
+          },
+        ],
+      });
+
+      // Update metadata
+      useAppStore.getState().updateBookMetadata({
+        title: "Tiếng Chim Hót Trong Bụi Mận Gai",
+        author: "Colleen McCullough",
+        publisher: "NXB Văn Học",
+        published_year: "1977",
+        isbn: "978-604-001",
+        genre: "Kinh Điển, Lãng Mạn",
+        description: "Thiên tình sử nước Úc",
+        language: "vi",
+      });
+
+      // Verify project in storage was updated
+      const projectInStore = useAppStore.getState().projects.find((p) => p.id === projId);
+      expect(projectInStore?.name).toBe("Tiếng Chim Hót Trong Bụi Mận Gai");
+      expect(projectInStore?.author).toBe("Colleen McCullough");
+      expect(projectInStore?.publisher).toBe("NXB Văn Học");
+      expect(projectInStore?.publishedYear).toBe("1977");
+      expect(projectInStore?.isbn).toBe("978-604-001");
+      expect(projectInStore?.genre).toBe("Kinh Điển, Lãng Mạn");
+      expect(projectInStore?.description).toBe("Thiên tình sử nước Úc");
+      expect(projectInStore?.language).toBe("vi");
+
+      // Mock invoke for read_epub returning original raw disk data
+      (invoke as any).mockImplementation((cmd: string) => {
+        if (cmd === "read_epub") {
+          return Promise.resolve(initialBook);
+        }
+        return Promise.resolve({});
+      });
+
+      // Reopen project: should hydrate the auto-saved metadata overrides
+      const reopened = await useAppStore.getState().openProject(projId);
+      expect(reopened).toBe(true);
+
+      const stateAfterReopen = useAppStore.getState();
+      expect(stateAfterReopen.currentBook?.title).toBe("Tiếng Chim Hót Trong Bụi Mận Gai");
+      expect(stateAfterReopen.currentBook?.author).toBe("Colleen McCullough");
+      expect(stateAfterReopen.currentBook?.publisher).toBe("NXB Văn Học");
+      expect(stateAfterReopen.currentBook?.published_year).toBe("1977");
+      expect(stateAfterReopen.currentBook?.isbn).toBe("978-604-001");
+      expect(stateAfterReopen.currentBook?.genre).toBe("Kinh Điển, Lãng Mạn");
+      expect(stateAfterReopen.currentBook?.description).toBe("Thiên tình sử nước Úc");
+      expect(stateAfterReopen.currentBook?.language).toBe("vi");
+    });
+
+    it("auto-saves metadata directly to file on disk via autoSaveMetadataToFile", async () => {
+      useAppStore.setState({
+        currentBook: {
+          title: "Sách Mới",
+          author: "Tác Giả Mới",
+          language: "vi",
+          description: "Mô tả sách",
+          cover_data_url: null,
+          chapter_count: 1,
+          file_size_bytes: 1000,
+          chapters: [],
+          sample_text: "",
+        },
+        currentFilePath: "C:\\books\\target.epub",
+        modifiedChapters: {},
+      });
+
+      (invoke as any).mockImplementation((cmd: string) => {
+        if (cmd === "export_epub") {
+          return Promise.resolve(2000);
+        }
+        return Promise.resolve({});
+      });
+
+      const saved = await useAppStore.getState().autoSaveMetadataToFile();
+      expect(saved).toBe(true);
+
+      expect(invoke).toHaveBeenCalledWith(
+        "export_epub",
+        expect.objectContaining({
+          inputPath: "C:\\books\\target.epub",
+          outputPath: "C:\\books\\target.epub",
+          metadataOverrides: expect.objectContaining({
+            title: "Sách Mới",
+            author: "Tác Giả Mới",
+            language: "vi",
+            description: "Mô tả sách",
+          }),
+        })
+      );
+    });
+
+    it("auto-saves metadata and project when executed through chat agent action confirmation", async () => {
+      const projId = "proj-agent-test";
+      useAppStore.setState({
+        currentBook: {
+          title: "Tựa Cũ",
+          author: "Tác Giả Cũ",
+          language: "vi",
+          description: null,
+          cover_data_url: null,
+          chapter_count: 1,
+          file_size_bytes: 1000,
+          chapters: [],
+          sample_text: "",
+        },
+        currentFilePath: "C:\\books\\agent_book.epub",
+        activeProjectId: projId,
+        projects: [
+          {
+            id: projId,
+            name: "Tựa Cũ",
+            filePath: "C:\\books\\agent_book.epub",
+            coverDataUrl: null,
+            chapterCount: 1,
+            fileSizeBytes: 1000,
+            activePresetId: "classic-hardcover",
+            customCss: "",
+            fontFamily: "serif",
+            fontSize: 16,
+            textAlign: "justify",
+            dropCaps: true,
+            lineHeight: 1.75,
+            firstLineIndent: "2em",
+            sceneDivider: "♦ ♦ ♦",
+            modifiedChapters: {},
+            chapterEnhanceReports: {},
+            createdAt: 100,
+            lastOpenedAt: 100,
+          },
+        ],
+        agentMessages: [
+          {
+            id: "msg-prop-1",
+            role: "assistant",
+            content: "Đề xuất đổi tên sách",
+            timestamp: 100,
+            actionProposal: {
+              id: "prop-1",
+              toolName: "update_metadata",
+              title: "Cập nhật metadata sách",
+              description: "Đổi tên sách thành Nhà Giả Kim",
+              parameters: {
+                title: "Nhà Giả Kim",
+                author: "Paulo Coelho",
+              },
+              createdAt: 100,
+            },
+            actionStatus: "pending",
+          },
+        ],
+      });
+
+      (invoke as any).mockImplementation((cmd: string) => {
+        if (cmd === "export_epub") {
+          return Promise.resolve(3000);
+        }
+        return Promise.resolve({});
+      });
+
+      // Confirm action via chat agent
+      await useAppStore.getState().confirmAgentAction("msg-prop-1", true);
+
+      // In-memory state updated
+      const state = useAppStore.getState();
+      expect(state.currentBook?.title).toBe("Nhà Giả Kim");
+      expect(state.currentBook?.author).toBe("Paulo Coelho");
+
+      // Project in storage auto-saved
+      const updatedProj = state.projects.find((p) => p.id === projId);
+      expect(updatedProj?.name).toBe("Nhà Giả Kim");
+      expect(updatedProj?.author).toBe("Paulo Coelho");
+
+      // Chat agent status marked as executed
+      const updatedMsg = state.agentMessages.find((m) => m.id === "msg-prop-1");
+      expect(updatedMsg?.actionStatus).toBe("executed");
+
+      // Auto-saved to physical file
+      expect(invoke).toHaveBeenCalledWith(
+        "export_epub",
+        expect.objectContaining({
+          inputPath: "C:\\books\\agent_book.epub",
+          outputPath: "C:\\books\\agent_book.epub",
+          metadataOverrides: expect.objectContaining({
+            title: "Nhà Giả Kim",
+            author: "Paulo Coelho",
+          }),
+        })
+      );
+    });
   });
 
   describe("cleanWatermarksInBook & Auto-Save", () => {

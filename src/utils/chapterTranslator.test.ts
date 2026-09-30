@@ -187,4 +187,76 @@ describe("ChapterTranslator", () => {
     );
     expect(result).toContain('Tom &amp; Jerry &#8212; "Bạn tốt nhất"');
   });
+
+  it("extracts standalone leaf <div> chapter titles without breaking container divs", () => {
+    const htmlWithDivTitle = `<?xml version="1.0" encoding="utf-8"?>
+<html>
+<head><title>Original Old Title</title></head>
+<body>
+  <div class="chapter-wrapper">
+    <div class="chapter-title">第1章 陨落的天才</div>
+    <div class="content-body">
+      <p>Nội dung đoạn 1...</p>
+      <div class="author-note">Ghi chú tác giả ở cuối chương</div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const blocks = ChapterTranslator.extractTranslatableBlocks(htmlWithDivTitle);
+    expect(blocks.length).toBe(3);
+
+    // Block 0: <div class="chapter-title">
+    expect(blocks[0].tag).toBe("div");
+    expect(blocks[0].originalText).toBe("第1章 陨落的天才");
+
+    // Block 1: <p>
+    expect(blocks[1].tag).toBe("p");
+    expect(blocks[1].originalText).toBe("Nội dung đoạn 1...");
+
+    // Block 2: <div class="author-note">
+    expect(blocks[2].tag).toBe("div");
+    expect(blocks[2].originalText).toBe("Ghi chú tác giả ở cuối chương");
+
+    // Apply translations and sync <title> in <head>
+    const translated = ChapterTranslator.applyTranslations(
+      htmlWithDivTitle,
+      {
+        p_0: "Chương 1: Thiên tài sa sút",
+        p_1: "Nội dung đoạn 1 đã dịch.",
+        p_2: "Ghi chú tác giả đã dịch.",
+      },
+      {
+        mode: "replace",
+        translatedTitle: "Chương 1: Thiên tài sa sút",
+      }
+    );
+
+    expect(translated).toContain('<div class="chapter-title">Chương 1: Thiên tài sa sút</div>');
+    expect(translated).toContain("<title>Chương 1: Thiên tài sa sút</title>");
+    expect(translated).toContain("<p>Nội dung đoạn 1 đã dịch.</p>");
+    expect(translated).toContain('<div class="author-note">Ghi chú tác giả đã dịch.</div>');
+  });
+
+  it("syncs <head><title> with XML entity encoding", () => {
+    const rawHtml = `<html><head><title>Old</title></head><body><p>Text</p></body></html>`;
+    const synced = ChapterTranslator.syncHeadTitle(rawHtml, "Chương 1: Romeo & Juliet <Bi kịch>");
+    expect(synced).toContain("<title>Chương 1: Romeo &amp; Juliet &lt;Bi kịch&gt;</title>");
+  });
+
+  it("never double-emits text nodes across nested container divs", () => {
+    const complexNestedHtml = `<html><body>
+      <div class="grandparent">
+        <div class="parent">
+          <div class="leaf-title">Tiêu Đề Duy Nhất</div>
+          <div class="leaf-content">Nội Dung Duy Nhất</div>
+        </div>
+      </div>
+    </body></html>`;
+
+    const blocks = ChapterTranslator.extractTranslatableBlocks(complexNestedHtml);
+    expect(blocks.length).toBe(2);
+    expect(blocks[0].originalText).toBe("Tiêu Đề Duy Nhất");
+    expect(blocks[1].originalText).toBe("Nội Dung Duy Nhất");
+  });
 });

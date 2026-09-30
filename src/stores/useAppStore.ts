@@ -1,10 +1,10 @@
-import { create } from "zustand";
+﻿import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { STYLE_PRESETS, StylePreset } from "../presets/styles";
 import { AiService } from "../services/aiService";
 import { detectIsVietnameseBook } from "../utils/vietnameseHelper";
 import { cleanChapterHtmlWatermarks } from "../utils/watermarkCleaner";
-import { saveChaptersToDb, loadChaptersFromDb, deleteChaptersFromDb } from "../utils/chapterStorage";
+import { saveChaptersToDb, loadChaptersFromDb, deleteChaptersFromDb, saveCoverToDb, loadCoverFromDb, deleteCoverFromDb } from "../utils/chapterStorage";
 import { generateEpubCss } from "../utils/cssGenerator";
 import {
   MIN_NATIVE_STYLE_CONFIDENCE,
@@ -18,9 +18,11 @@ import {
 import { injectWordWiseRuby, stripWordWiseRuby } from "../services/kindle/wordWiseService";
 import { extractXRayHeuristic, generateXRayAppendixHtml, XRayBookData, ChapterTextSource } from "../services/kindle/xrayService";
 import { TranslationService } from "../services/translation/translationService";
+import { ChapterTranslator } from "../utils/chapterTranslator";
 import { TranslationTone, TONE_DESCRIPTIONS } from "../services/prompts/bookTranslator";
 import { LanguageDetector, LanguageDetectionResult } from "../utils/languageDetector";
 import type { ActiveTab } from "../types/navigation";
+import type { WorkflowJob } from "../types/workflow";
 import {
   type BookProfile,
   type BookWorkflow,
@@ -114,6 +116,7 @@ export interface EbookProject {
   isbn?: string;
   genre?: string;
   description?: string | null;
+  language?: string;
   filePath: string | null;
   coverDataUrl: string | null;
   chapterCount: number;
@@ -131,6 +134,7 @@ export interface EbookProject {
   chapterEnhanceReports: Record<string, ChapterEnhanceReport>;
   createdAt: number;
   lastOpenedAt: number;
+  agentMessages?: AgentChatMessage[];
 
   // --- Ingest workflow state (optional: projects saved before this feature
   // simply lack these fields and are read back with `??` defaults) ---
@@ -359,6 +363,7 @@ export interface AppState {
     isbn?: string;
     genre?: string;
   }) => void;
+  autoSaveMetadataToFile: () => Promise<boolean>;
   runJevClassification: () => Promise<void>;
   scanGateways: () => Promise<void>;
   selectPreset: (presetId: string) => void;
@@ -432,16 +437,28 @@ export interface AppState {
   generateBookResearchBrief: () => Promise<string>;
   isAutoConfiguringAll: boolean;
   autoConfigureAllTranslationSettings: () => Promise<AutoTranslationConfigResult | null>;
+  // Unified Workflow Jobs
+  workflowJobs: Record<string, WorkflowJob>;
+  addWorkflowJob: (job: WorkflowJob) => void;
+  updateWorkflowJob: (id: string, updates: Partial<WorkflowJob>) => void;
+  removeWorkflowJob: (id: string) => void;
+  clearCompletedWorkflowJobs: () => void;
+  setChapterHtml: (chapterHref: string, html: string) => void;
 
   // AI Chat Agent State & Actions
   agentMessages: AgentChatMessage[];
   isAgentDrawerOpen: boolean;
   isAgentThinking: boolean;
+  agentThinkingStatus: string | null;
   toggleAgentDrawer: () => void;
   setAgentDrawerOpen: (open: boolean) => void;
   sendAgentMessage: (content: string) => Promise<void>;
   confirmAgentAction: (messageId: string, approved: boolean) => Promise<void>;
   clearAgentChat: () => void;
+
+  // Global Export Modal State & Actions
+  isExportOpen: boolean;
+  setIsExportOpen: (open: boolean) => void;
 }
 
 const initialTheme = (typeof window !== "undefined" && (window.localStorage.getItem("lg-theme-mode") as "dark" | "light" | "system")) || "dark";
@@ -549,6 +566,10 @@ function nativeStylePatch(
     sceneDivider: preset.sceneDivider,
   };
 }
+
+let metadataFileDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let isAutoSavingFile = false;
+let hasPendingAutoSave = false;
 
 export const useAppStore = create<AppState>((set, get) => ({
   activeTab: "books",
@@ -1650,7 +1671,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeProjectId: null,
 
   updateBookMetadata: (updates) => {
-    const { currentBook, activeProjectId, projects } = get();
+    const { currentBook, activeProjectId, projects, currentFilePath } = get();
     if (!currentBook) return;
 
     const updatedBook: EpubMetadata = {
@@ -1682,10 +1703,14 @@ export const useAppStore = create<AppState>((set, get) => ({
           isbn: updates.isbn !== undefined ? updates.isbn : p.isbn,
           genre: updates.genre !== undefined ? updates.genre : p.genre,
           description: updates.description !== undefined ? updates.description : p.description,
+          language: updates.language !== undefined ? updates.language : p.language,
           coverDataUrl: updates.cover_data_url !== undefined ? updates.cover_data_url : p.coverDataUrl,
           lastOpenedAt: Date.now(),
         };
       });
+      if (updates.cover_data_url) {
+        saveCoverToDb(activeProjectId, updates.cover_data_url);
+      }
       saveProjectsToStorage(updatedProjects);
     }
 
@@ -1698,6 +1723,86 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Refresh the detected language facts. This never changes the active tab:
     // editing metadata must not move the user out of their current workflow.
     get().recomputeProfileLanguage();
+
+    // Auto-save to physical EPUB file if opened from disk
+    if (currentFilePath) {
+      if (metadataFileDebounceTimer) {
+        clearTimeout(metadataFileDebounceTimer);
+      }
+      metadataFileDebounceTimer = setTimeout(() => {
+        void get().autoSaveMetadataToFile();
+      }, 500);
+    }
+  },
+
+  autoSaveMetadataToFile: async () => {
+    if (isAutoSavingFile) {
+      hasPendingAutoSave = true;
+      return true;
+    }
+
+    isAutoSavingFile = true;
+    try {
+      let savedAtLeastOnce = false;
+      do {
+        hasPendingAutoSave = false;
+        const {
+          currentBook,
+          currentFilePath,
+          isVietnameseBook,
+          activePreset,
+          fontSize,
+          lineHeight,
+          firstLineIndent,
+          dropCaps,
+          textAlign,
+          sceneDivider,
+          customCss,
+          fontFamily,
+          bookStyleSignature,
+          modifiedChapters,
+        } = get();
+
+        if (!currentFilePath || !currentBook) break;
+
+        const fullCss = generateEpubCss({
+          preset: activePreset,
+          fontSize,
+          lineHeight,
+          firstLineIndent,
+          dropCaps,
+          textAlign,
+          sceneDivider,
+          customOverrides: customCss,
+          isVietnamese: isVietnameseBook,
+          fontFamily,
+          signature: bookStyleSignature,
+        });
+
+        await invoke<number>("export_epub", {
+          inputPath: currentFilePath,
+          inputBytes: null,
+          outputPath: currentFilePath,
+          customCss: fullCss,
+          chapterOverrides: modifiedChapters,
+          metadataOverrides: {
+            title: currentBook.title,
+            author: currentBook.author,
+            language: currentBook.language,
+            description: currentBook.description,
+            cover_data_url: currentBook.cover_data_url,
+          },
+        });
+        savedAtLeastOnce = true;
+      } while (hasPendingAutoSave);
+
+      return savedAtLeastOnce;
+    } catch (err) {
+      console.error("Could not auto-save metadata directly to file on disk:", err);
+      return false;
+    } finally {
+      isAutoSavingFile = false;
+    }
   },
 
   // Kindle Companion Actions Implementation
@@ -1874,6 +1979,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const newProject: EbookProject = {
       id,
       name: meta.title || "Sách Chưa Đặt Tên",
+      author: meta.author,
+      publisher: meta.publisher,
+      publishedYear: meta.published_year,
+      isbn: meta.isbn,
+      genre: meta.genre,
+      description: meta.description,
+      language: meta.language,
       filePath: source.filePath || null,
       coverDataUrl: meta.cover_data_url || null,
       chapterCount: meta.chapter_count || 0,
@@ -1896,6 +2008,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const updated = [newProject, ...get().projects];
     set({ projects: updated, activeProjectId: id });
     saveProjectsToStorage(updated);
+    if (meta.cover_data_url) {
+      saveCoverToDb(id, meta.cover_data_url);
+    }
     return id;
   },
 
@@ -1914,15 +2029,35 @@ export const useAppStore = create<AppState>((set, get) => ({
         // Fallback for projects without stored filePath
         meta = {
           title: project.name,
-          author: "Dự án đã lưu",
-          language: "vi",
-          description: null,
+          author: project.author || "Dự án đã lưu",
+          language: project.language || "vi",
+          description: project.description ?? null,
+          publisher: project.publisher,
+          published_year: project.publishedYear,
+          isbn: project.isbn,
+          genre: project.genre,
           cover_data_url: project.coverDataUrl,
           chapter_count: project.chapterCount,
           file_size_bytes: project.fileSizeBytes,
           chapters: [],
           sample_text: "",
         };
+      }
+      // Apply saved project metadata overrides over raw read_epub
+      if (project.name && project.name.trim()) meta.title = project.name;
+      if (project.author && project.author.trim()) meta.author = project.author;
+      if (project.publisher && project.publisher.trim()) meta.publisher = project.publisher;
+      if (project.publishedYear && project.publishedYear.trim()) meta.published_year = project.publishedYear;
+      if (project.isbn && project.isbn.trim()) meta.isbn = project.isbn;
+      if (project.genre && project.genre.trim()) meta.genre = project.genre;
+      if (project.description !== undefined && project.description !== null && project.description.trim()) meta.description = project.description;
+      if (project.language && project.language.trim()) meta.language = project.language;
+      // Hydrate cover from IndexedDB if project cover was stripped from localStorage
+      const dbCover = await loadCoverFromDb(project.id);
+      if (dbCover) {
+        meta.cover_data_url = dbCover;
+      } else if (project.coverDataUrl) {
+        meta.cover_data_url = project.coverDataUrl;
       }
 
       const profile = detectBookProfile(meta);
@@ -1988,6 +2123,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         sceneDivider: project.sceneDivider || "♦ ♦ ♦",
         modifiedChapters: activeModified,
         chapterEnhanceReports: project.chapterEnhanceReports || {},
+        agentMessages: project.agentMessages || [],
         isLoadingBook: false,
         activeChapterIndex: 0,
         activeTab: "books",
@@ -2017,21 +2153,33 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().closeActiveProject();
     }
     deleteChaptersFromDb(projectId);
+    deleteCoverFromDb(projectId);
     const updated = get().projects.filter((p) => p.id !== projectId);
     set({ projects: updated });
     saveProjectsToStorage(updated);
   },
 
   saveActiveProject: () => {
-    const { activeProjectId, projects, modifiedChapters, chapterEnhanceReports, activePresetId, customCss, fontFamily, fontSize, textAlign, dropCaps, lineHeight, firstLineIndent, sceneDivider, bookProfile, workflowSource, workflowCompletedSteps, translatedChapters } = get();
+    const { activeProjectId, projects, currentBook, modifiedChapters, chapterEnhanceReports, activePresetId, customCss, fontFamily, fontSize, textAlign, dropCaps, lineHeight, firstLineIndent, sceneDivider, bookProfile, workflowSource, workflowCompletedSteps, translatedChapters } = get();
     if (!activeProjectId) return;
 
     saveChaptersToDb(activeProjectId, modifiedChapters);
+    if (currentBook?.cover_data_url) {
+      saveCoverToDb(activeProjectId, currentBook.cover_data_url);
+    }
 
     const updated = projects.map((p) => {
       if (p.id !== activeProjectId) return p;
       return {
         ...p,
+        name: currentBook?.title ?? p.name,
+        author: currentBook?.author ?? p.author,
+        publisher: currentBook?.publisher ?? p.publisher,
+        publishedYear: currentBook?.published_year ?? p.publishedYear,
+        isbn: currentBook?.isbn ?? p.isbn,
+        genre: currentBook?.genre ?? p.genre,
+        description: currentBook?.description ?? p.description,
+        language: currentBook?.language ?? p.language,
         activePresetId,
         customCss,
         fontFamily,
@@ -2043,6 +2191,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         sceneDivider,
         modifiedChapters,
         chapterEnhanceReports,
+        agentMessages: get().agentMessages,
         workflowId: bookProfile?.workflow ?? p.workflowId ?? null,
         workflowSource: workflowSource ?? p.workflowSource ?? null,
         workflowCompletedSteps,
@@ -2057,6 +2206,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   closeActiveProject: () => {
+    if (metadataFileDebounceTimer) {
+      clearTimeout(metadataFileDebounceTimer);
+      metadataFileDebounceTimer = null;
+    }
     get().saveActiveProject();
     get().stopBatchEnhance();
     get().stopTranslation();
@@ -2162,6 +2315,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         model,
         fallbackModels,
         maxBlocksPerChunk: translationConfig.maxBlocksPerChunk,
+        translateChapterTitle: translationConfig.translateTitles !== false,
         abortSignal: translationAbortController.signal,
         onProgress: (p) => {
           set({
@@ -2333,12 +2487,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
+    const failedChapters: Array<{ index: number; title: string; href: string }> = [];
+
     for (let pIdx = 0; pIdx < pending.length; pIdx++) {
       if (translationAbortController?.signal.aborted) {
         break;
       }
       const chIdx = pending[pIdx];
-      const ch = currentBook.chapters[chIdx];
+      const liveBook = get().currentBook || currentBook;
+      const ch = liveBook.chapters[chIdx];
       if (!ch) continue;
 
       set({
@@ -2353,16 +2510,41 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
       });
 
-      const ok = await get().translateSingleChapter(chIdx);
-      if (!ok && translationAbortController?.signal.aborted) {
-        break;
+      let ok = await get().translateSingleChapter(chIdx);
+      // Auto-retry once on transient failure (timeout/rate-limit) before skipping
+      if (!ok && !translationAbortController?.signal.aborted) {
+        get().addTerminalLog({
+          type: "warning",
+          text: `⚠️ Chương ${chIdx + 1}: "${ch.title}" gặp sự cố, tự động thử dịch lại lần 2...`,
+        });
+        ok = await get().translateSingleChapter(chIdx);
       }
+
+      if (!ok) {
+        if (translationAbortController?.signal.aborted) {
+          break;
+        }
+        failedChapters.push({ index: chIdx, title: ch.title, href: ch.href });
+        get().addTerminalLog({
+          type: "warning",
+          text: `❌ Bỏ qua chương ${chIdx + 1}: "${ch.title}" sau 2 lượt thử không thành công.`,
+        });
+      }
+    }
+
+    if (failedChapters.length > 0 && !translationAbortController?.signal.aborted) {
+      get().addTerminalLog({
+        type: "warning",
+        text: `⚠️ [Kết thúc lượt dịch]: Có ${failedChapters.length}/${pending.length} chương chưa dịch được:\n` +
+          failedChapters.map((f) => `  • Chương ${f.index + 1}: "${f.title}"`).join("\n") +
+          `\n👉 Bạn hãy chọn phạm vi "Chưa dịch" để thử dịch lại các chương trên.`,
+      });
     }
 
     // Only mark the workflow step done when the WHOLE book is translated.
     const aborted = translationAbortController?.signal.aborted === true;
     const coverage = get().getTranslationCoverage();
-    if (!aborted && coverage.total > 0 && coverage.translated >= coverage.total) {
+    if (!aborted && coverage.total > 0 && coverage.translated >= coverage.total && failedChapters.length === 0) {
       get().markWorkflowStepComplete("translate");
     }
 
@@ -2441,20 +2623,27 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   extractBookEntities: async () => {
     const { currentBook, currentFilePath, currentFileBytes, activeGateway, selectedModel, translationConfig } = get();
-    if (!currentBook) return [];
+    if (!currentBook || currentBook.chapters.length === 0) return [];
 
     set({ isExtractingEntities: true });
     get().addTerminalLog({
       type: "info",
-      text: `🔎 Bắt đầu quét tự động thực thể, tên riêng & thuật ngữ trong các chương mở đầu...`,
+      text: "⚡ Bắt đầu quét tự động thực thể, tên riêng & thuật ngữ trong các chương mở đầu...",
     });
 
     try {
-      // Gather chapter sources from first 5 chapters
+      // Smart Chapter Selection: filter out empty cover/titlepage/toc/nav/copyright files
+      // to extract entities strictly from chapters that contain actual literary narrative.
       const chapterSources: ChapterTextSource[] = [];
-      const sampleChapters = currentBook.chapters.slice(0, 5);
+      const boilerplateRegex = /(?:cover|titlepage|nav|toc|copyright|dedication|license|mục\s*lục|bìa)/i;
 
-      for (const ch of sampleChapters) {
+      // First pass: locate chapters with narrative body text (>= 250 plain text characters)
+      for (const ch of currentBook.chapters) {
+        if (chapterSources.length >= 4) break;
+        if (boilerplateRegex.test(ch.href) || boilerplateRegex.test(ch.title)) {
+          continue;
+        }
+
         let html = "";
         try {
           if (currentFilePath) {
@@ -2465,49 +2654,127 @@ export const useAppStore = create<AppState>((set, get) => ({
         } catch (readErr) {
           console.warn("Could not read chapter for entity extraction:", readErr);
         }
+
         if (html) {
-          chapterSources.push({ href: ch.href, title: ch.title, html });
+          const plain = ChapterTranslator.stripHtmlToPlainText(html);
+          if (plain.length >= 250) {
+            chapterSources.push({ href: ch.href, title: ch.title, html });
+          }
         }
       }
 
-      // Step 1: Heuristic extraction
-      const rawCandidates = EntityExtractor.extractCandidates(
-        chapterSources,
-        translationConfig.glossary,
-        25
-      );
+      // Fallback pass: if book has short chapters or unconventional names, read the first 3 readable chapters
+      if (chapterSources.length === 0) {
+        for (const ch of currentBook.chapters.slice(0, 3)) {
+          let html = "";
+          try {
+            if (currentFilePath) {
+              html = await invoke<string>("read_chapter", { path: currentFilePath, href: ch.href });
+            } else if (currentFileBytes) {
+              html = await invoke<string>("read_chapter_bytes", { bytes: currentFileBytes, href: ch.href });
+            }
+          } catch {
+            // ignore
+          }
+          if (html) {
+            chapterSources.push({ href: ch.href, title: ch.title, html });
+          }
+        }
+      }
 
-      get().addTerminalLog({
-        type: "detail",
-        text: `Đã tìm thấy ${rawCandidates.length} thực thể và thuật ngữ tiềm năng. Đang gửi AI đề xuất bản dịch...`,
-      });
-
-      // Step 2: AI Proposal
       const baseUrl = activeGateway ? activeGateway.base_url : "http://localhost:11434";
       const apiKey = activeGateway?.api_key;
       const model = selectedModel || activeGateway?.models?.[0] || "gpt-4o";
 
-      const enriched = await EntityExtractor.proposeTranslationsWithAi(rawCandidates, {
-        bookTitle: currentBook.title,
-        author: currentBook.author,
-        sourceLang: translationConfig.sourceLang,
-        targetLang: translationConfig.targetLang,
-        baseUrl,
-        apiKey,
-        model,
-      });
+      // Step 1: Heuristic extraction (fast regex scanning)
+      const rawCandidates = EntityExtractor.extractCandidates(
+        chapterSources,
+        translationConfig.glossary,
+        30
+      );
+
+      // Step 2: Direct AI extraction from combined narrative sample for high semantic accuracy
+      let directAiCandidates: ExtractedEntityCandidate[] = [];
+      const sampleText = chapterSources
+        .map((c) => ChapterTranslator.stripHtmlToPlainText(c.html))
+        .join("\n\n")
+        .slice(0, 3500);
+
+      if (sampleText.length > 100) {
+        get().addTerminalLog({
+          type: "detail",
+          text: `Đang gửi mẫu văn bản (${sampleText.length} ký tự) tới AI để nhận diện thực thể & dịch danh xưng chuẩn...`,
+        });
+        directAiCandidates = await EntityExtractor.extractDirectWithAi(sampleText, {
+          bookTitle: currentBook.title,
+          author: currentBook.author,
+          sourceLang: translationConfig.sourceLang,
+          targetLang: translationConfig.targetLang,
+          baseUrl,
+          apiKey,
+          model,
+          maxCandidates: 25,
+        });
+      }
+
+      // Step 3: Propose translations for any remaining heuristic candidates that weren't covered by Direct AI
+      const candidateMap = new Map<string, ExtractedEntityCandidate>();
+
+      // Put heuristic candidates first
+      for (const hc of rawCandidates) {
+        candidateMap.set(hc.name.toLowerCase().trim(), hc);
+      }
+
+      // Merge direct AI candidates (which already have proposed translations)
+      for (const ac of directAiCandidates) {
+        const key = ac.name.toLowerCase().trim();
+        const existingGlossaryTrans = translationConfig.glossary?.[ac.name];
+        candidateMap.set(key, {
+          ...ac,
+          suggestedTranslation: existingGlossaryTrans || ac.suggestedTranslation,
+          isExistingInGlossary: Boolean(existingGlossaryTrans),
+        });
+      }
+
+      const mergedList = Array.from(candidateMap.values());
+
+      // If any candidate still needs a proposed translation, run batch proposal
+      const needsAiProposal = mergedList.filter(
+        (c) => !c.isExistingInGlossary && (!c.suggestedTranslation || c.suggestedTranslation === c.name)
+      );
+
+      let finalCandidates = mergedList;
+      if (needsAiProposal.length > 0) {
+        const proposed = await EntityExtractor.proposeTranslationsWithAi(needsAiProposal, {
+          bookTitle: currentBook.title,
+          author: currentBook.author,
+          sourceLang: translationConfig.sourceLang,
+          targetLang: translationConfig.targetLang,
+          baseUrl,
+          apiKey,
+          model,
+        });
+        const propMap = new Map(proposed.map((p) => [p.name.toLowerCase().trim(), p.suggestedTranslation]));
+        finalCandidates = mergedList.map((c) => {
+          const aiTrans = propMap.get(c.name.toLowerCase().trim());
+          if (aiTrans) {
+            return { ...c, suggestedTranslation: aiTrans };
+          }
+          return c;
+        });
+      }
 
       set({
-        extractedCandidates: enriched,
+        extractedCandidates: finalCandidates,
         isExtractingEntities: false,
       });
 
       get().addTerminalLog({
         type: "success",
-        text: `✅ Hoàn tất trích xuất ${enriched.length} thuật ngữ & tên riêng cho sách!`,
+        text: `✅ Hoàn tất trích xuất ${finalCandidates.length} thuật ngữ & tên riêng cho sách!`,
       });
 
-      return enriched;
+      return finalCandidates;
     } catch (err: unknown) {
       set({ isExtractingEntities: false });
       const msg = err instanceof Error ? err.message : String(err);
@@ -2518,7 +2785,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       return [];
     }
   },
-
   applyApprovedEntitiesToGlossary: (approved) => {
     const { translationConfig, activeProjectId } = get();
     const updatedGlossary = EntityExtractor.mergeApprovedEntitiesIntoGlossary(
@@ -2852,10 +3118,69 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
   },
 
+  // Unified Workflow Jobs Implementation
+  workflowJobs: {},
+  addWorkflowJob: (job) => {
+    set((state) => ({
+      workflowJobs: {
+        ...state.workflowJobs,
+        [job.id]: job,
+      },
+    }));
+  },
+  updateWorkflowJob: (id, updates) => {
+    set((state) => {
+      const existing = state.workflowJobs[id];
+      if (!existing) return state;
+      return {
+        workflowJobs: {
+          ...state.workflowJobs,
+          [id]: {
+            ...existing,
+            ...updates,
+            updatedAt: Date.now(),
+          },
+        },
+      };
+    });
+  },
+  removeWorkflowJob: (id) => {
+    set((state) => {
+      const updated = { ...state.workflowJobs };
+      delete updated[id];
+      return { workflowJobs: updated };
+    });
+  },
+  clearCompletedWorkflowJobs: () => {
+    set((state) => {
+      const remaining: Record<string, WorkflowJob> = {};
+      for (const [id, job] of Object.entries(state.workflowJobs)) {
+        if (job.status === "running") {
+          remaining[id] = job;
+        }
+      }
+      return { workflowJobs: remaining };
+    });
+  },
+  setChapterHtml: (chapterHref, html) => {
+    const { modifiedChapters, activeProjectId } = get();
+    const updated = {
+      ...modifiedChapters,
+      [chapterHref]: html,
+    };
+    set({ modifiedChapters: updated });
+    if (activeProjectId) {
+      saveChaptersToDb(activeProjectId, updated);
+      get().saveActiveProject();
+    }
+  },
   // AI Chat Agent Implementation
   agentMessages: [],
   isAgentDrawerOpen: false,
   isAgentThinking: false,
+  agentThinkingStatus: null,
+  isExportOpen: false,
+  setIsExportOpen: (open) => set({ isExportOpen: open }),
 
   toggleAgentDrawer: () => set({ isAgentDrawerOpen: !get().isAgentDrawerOpen }),
   setAgentDrawerOpen: (open) => set({ isAgentDrawerOpen: open }),
@@ -2875,16 +3200,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       agentMessages: currentHistory,
       isAgentThinking: true,
+      agentThinkingStatus: "Trợ lý đang suy nghĩ và kiểm tra dự án...",
     });
 
     const {
       currentBook,
-      currentFilePath,
-      currentFileBytes,
       activePresetId,
       fontSize,
       lineHeight,
       dropCaps,
+      fontFamily,
+      textAlign,
+      xrayData,
       activeChapterIndex,
       activeTab,
       modifiedChapters,
@@ -2899,27 +3226,61 @@ export const useAppStore = create<AppState>((set, get) => ({
       fontSize,
       lineHeight,
       dropCaps,
+      fontFamily,
+      textAlign,
+      xrayData,
       activeChapterIndex,
       activeTab,
       modifiedChapters,
       translationConfig,
-      readChapterText: async (chIdx: number) => {
-        if (!currentBook || !currentBook.chapters[chIdx]) return "";
-        const ch = currentBook.chapters[chIdx];
-        if (modifiedChapters[ch.href]) return modifiedChapters[ch.href];
-        if (currentFilePath) {
-          return await invoke<string>("read_chapter", { path: currentFilePath, href: ch.href });
-        }
-        if (currentFileBytes) {
-          return await invoke<string>("read_chapter_bytes", { bytes: currentFileBytes, href: ch.href });
-        }
-        return "";
+      workflowJobs: get().workflowJobs,
+      openExportModal: () => set({ isExportOpen: true }),
+      readChapterText: (chIdx: number) => {
+        const { currentBook: book, modifiedChapters: mods, currentFilePath: fp, currentFileBytes: fb } = get();
+        if (!book || !book.chapters[chIdx]) return Promise.resolve("");
+        const ch = book.chapters[chIdx];
+        if (mods[ch.href]) return Promise.resolve(mods[ch.href]);
+        if (fp) return invoke<string>("read_chapter", { path: fp, href: ch.href });
+        if (fb) return invoke<string>("read_chapter_bytes", { bytes: fb, href: ch.href });
+        return Promise.resolve("");
       },
       setActiveTab: (tab) => get().setActiveTab(tab),
       setActiveChapterIndex: (idx) => get().setActiveChapterIndex(idx),
     };
 
-    const baseUrl = activeGateway ? activeGateway.base_url : "http://localhost:11434";
+    // If no online gateway is active, check offline fallback first
+    const hasOnlineGateway = Boolean(activeGateway && activeGateway.is_online);
+    if (!hasOnlineGateway) {
+      const offlineMsg = AgentService.tryOfflineFallback(trimmed, readOnlyCtx);
+      if (offlineMsg) {
+        set({
+          agentMessages: [...currentHistory, offlineMsg],
+          isAgentThinking: false,
+        });
+        return;
+      }
+
+      // If user typed a custom query and no online gateway is active
+      set({
+        agentMessages: [
+          ...currentHistory,
+          {
+            id: `msg_off_${Date.now()}`,
+            role: "assistant",
+            content: `💡 Trợ lý hiện đang hoạt động ở chế độ **Lõi Offline (Cục bộ)**.
+
+Để trò chuyện tự do bằng AI hoặc hỏi đáp nội dung sâu, bạn vui lòng:
+1. Mở tab **Cổng AI & Mô hình** và kết nối AI Gateway (Ollama, 9Router, Cockpit).
+2. Hoặc bấm vào các **Gợi ý thao tác nhanh** có sẵn bên dưới để trợ lý thực thi trực tiếp trên dự án sách.`,
+            timestamp: Date.now(),
+          },
+        ],
+        isAgentThinking: false,
+      });
+      return;
+    }
+
+    const baseUrl = activeGateway?.base_url || "http://localhost:11434";
     const apiKey = activeGateway?.api_key;
     const model = selectedModel || activeGateway?.models?.[0] || "gpt-4o";
 
@@ -2928,13 +3289,33 @@ export const useAppStore = create<AppState>((set, get) => ({
         baseUrl,
         apiKey,
         model,
+        onProgress: (status) => set({ agentThinkingStatus: status }),
       });
 
       set({
         agentMessages: updatedMessages,
         isAgentThinking: false,
+        agentThinkingStatus: null,
       });
+
+      if (get().activeProjectId) {
+        get().saveActiveProject();
+      }
     } catch (err: unknown) {
+      // Check offline fallback before reporting error
+      const offlineFallback = AgentService.tryOfflineFallback(trimmed, readOnlyCtx);
+      if (offlineFallback) {
+        set({
+          agentMessages: [...currentHistory, offlineFallback],
+          isAgentThinking: false,
+          agentThinkingStatus: null,
+        });
+        if (get().activeProjectId) {
+          get().saveActiveProject();
+        }
+        return;
+      }
+
       const errMsg = err instanceof Error ? err.message : String(err);
       set({
         agentMessages: [
@@ -2947,6 +3328,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
         ],
         isAgentThinking: false,
+        agentThinkingStatus: null,
       });
     }
   },
@@ -2984,8 +3366,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectPreset,
       updateTypography,
       setTranslationConfig,
+      setChapterHtml: get().setChapterHtml,
+      translateSingleChapter: get().translateSingleChapter,
+      enhanceSingleChapter: get().enhanceSingleChapter,
+      runXRayExtraction: get().runXRayExtraction,
+      embedXRayAppendixToBook: get().embedXRayAppendixToBook,
+      cleanWatermarksInBook: get().cleanWatermarksInBook,
+      openExportModal: () => set({ isExportOpen: true }),
+      setActiveTab: (t) => get().setActiveTab(t),
+      currentBook: get().currentBook,
+      readChapterText: (chIdx: number) => {
+        const { currentBook: book, modifiedChapters: mods, currentFilePath: fp, currentFileBytes: fb } = get();
+        if (!book || !book.chapters[chIdx]) return Promise.resolve("");
+        const ch = book.chapters[chIdx];
+        if (mods[ch.href]) return Promise.resolve(mods[ch.href]);
+        if (fp) return invoke<string>("read_chapter", { path: fp, href: ch.href });
+        if (fb) return invoke<string>("read_chapter_bytes", { bytes: fb, href: ch.href });
+        return Promise.resolve("");
+      },
     };
-
     try {
       const resultText = await AgentToolDispatcher.executeApprovedAction(proposal, mutatingCtx);
 
@@ -3005,6 +3404,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       if (activeProjectId) {
         get().saveActiveProject();
+      }
+      if (get().currentFilePath) {
+        void get().autoSaveMetadataToFile();
       }
     } catch (execErr: unknown) {
       const msg = execErr instanceof Error ? execErr.message : String(execErr);

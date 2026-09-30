@@ -1,8 +1,19 @@
 import { useState } from "react";
-import { X, CheckCircle2, AlertCircle, Zap, Shield, Cpu } from "lucide-react";
+import { CheckCircle2, AlertCircle, Zap, Shield, Cpu } from "lucide-react";
 import { ConfiguredProviderInfo, useAppStore } from "../../stores/useAppStore";
 import { toast } from "sonner";
-
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "../ui/dialog";
+import { Input } from "../ui/input";
+import { Button } from "../ui/button";
+import { Alert, AlertDescription } from "../ui/alert";
+import { Label } from "../ui/label";
 export function GatewaySettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { activeGateway, selectedModel, setSelectedModel, selectGateway } = useAppStore();
 
@@ -127,119 +138,122 @@ export function GatewaySettingsModal({ isOpen, onClose }: { isOpen: boolean; onC
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 select-none">
-      <div className="bg-[#141418] border border-[#27272a] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden">
         {/* Header */}
-        <div className="h-14 px-6 border-b border-[#27272a] flex items-center justify-between bg-[#101013]">
+        <DialogHeader className="px-5 py-3.5 border-b border-border bg-muted/30 shrink-0">
           <div className="flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-indigo-400" />
-            <span className="font-bold text-sm text-zinc-100">Cấu Hình AI Provider / 9Router</span>
+            <Cpu className="size-4 text-primary" />
+            <DialogTitle className="text-sm font-semibold">Cấu Hình AI Provider / 9Router</DialogTitle>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-[#1f1f26] transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+          <DialogDescription className="text-xs text-muted-foreground">
+            Thiết lập endpoint API tương thích OpenAI, khóa truy cập và định danh mô hình.
+          </DialogDescription>
+        </DialogHeader>
 
         {/* Body */}
-        <div className="p-6 space-y-4">
+        <div className="p-5 flex flex-col gap-4">
           {/* Base URL */}
-          <div>
-            <label className="text-xs font-medium text-zinc-300 block mb-1.5">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="gateway-base-url" className="text-xs font-medium">
               API Base URL (Tương thích OpenAI)
-            </label>
-            <input
+            </Label>
+            <Input
+              id="gateway-base-url"
               type="text"
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
               placeholder="http://100.118.3.52:20128/v1 hoặc http://127.0.0.1:20128/v1"
-              className="w-full bg-[#1c1c22] border border-[#2e2e38] rounded-xl px-3.5 py-2 text-xs text-zinc-200 font-mono focus:outline-none focus:border-indigo-500"
+              className="text-xs font-mono"
             />
-            <span className="text-[10px] text-[#71717a] mt-1 block">
-              Mặc định 9Router Server là <code className="text-indigo-400">http://100.118.3.52:20128/v1</code>, Local là <code className="text-indigo-400">http://127.0.0.1:20128/v1</code>
+            <span className="text-[11px] text-muted-foreground">
+              Mặc định 9Router Server là <code className="text-primary font-mono font-medium">http://100.118.3.52:20128/v1</code>, Local là <code className="text-primary font-mono font-medium">http://127.0.0.1:20128/v1</code>
             </span>
           </div>
 
           {/* API Key */}
-          <div>
-            <label className="text-xs font-medium text-zinc-300 block mb-1.5 flex items-center justify-between">
-              <span>API Key (Tùy chọn)</span>
-              <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-normal">
-                <Shield className="w-3 h-3" />
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="gateway-api-key" className="text-xs font-medium">
+                API Key (Tùy chọn)
+              </Label>
+              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-normal">
+                <Shield className="size-3" />
                 <span>9Router / Cockpit cục bộ không cần key</span>
               </span>
-            </label>
-            <input
+            </div>
+            <Input
+              id="gateway-api-key"
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder="sk-... (để trống nếu dùng 9Router cục bộ)"
-              className="w-full bg-[#1c1c22] border border-[#2e2e38] rounded-xl px-3.5 py-2 text-xs text-zinc-200 font-mono focus:outline-none focus:border-indigo-500"
+              className="text-xs font-mono"
             />
           </div>
 
           {/* Model Name */}
-          <div>
-            <label className="text-xs font-medium text-zinc-300 block mb-1.5">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="gateway-model-id" className="text-xs font-medium">
               Model ID
-            </label>
-            <input
+            </Label>
+            <Input
+              id="gateway-model-id"
               type="text"
               value={customModel}
               onChange={(e) => setCustomModel(e.target.value)}
               placeholder="claude-3-5-sonnet, gpt-4o, gemini-1.5-pro, qwen2.5-coder..."
-              className="w-full bg-[#1c1c22] border border-[#2e2e38] rounded-xl px-3.5 py-2 text-xs text-zinc-200 font-mono focus:outline-none focus:border-indigo-500"
+              className="text-xs font-mono"
             />
           </div>
 
           {/* Connection Test Result */}
           {testStatus !== "none" && (
-            <div
-              className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
-                testStatus === "success"
-                  ? "bg-emerald-950/20 border-emerald-500/30 text-emerald-300"
-                  : "bg-red-950/20 border-red-500/30 text-red-300"
-              }`}
-            >
+            <Alert className={testStatus === "success" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 py-2.5" : "border-destructive/30 bg-destructive/10 text-destructive py-2.5"}>
               {testStatus === "success" ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
               ) : (
-                <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                <AlertCircle className="size-4 text-destructive" />
               )}
-              <span className="truncate">{testMessage}</span>
-            </div>
+              <AlertDescription className="text-xs font-medium truncate">
+                {testMessage}
+              </AlertDescription>
+            </Alert>
           )}
         </div>
 
         {/* Footer */}
-        <div className="h-14 px-6 border-t border-[#27272a] bg-[#101013] flex items-center justify-between">
-          <button
+        <DialogFooter className="m-0 px-5 py-3 border-t border-border bg-muted/30 flex items-center justify-between shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleTestConnection}
             disabled={isTesting}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1c1c22] hover:bg-[#22222a] border border-[#2e2e38] text-xs font-medium text-zinc-300 transition-colors disabled:opacity-50"
+            className="text-xs h-8 gap-1.5"
           >
-            <Zap className="w-3.5 h-3.5 text-indigo-400" />
+            <Zap className="size-3.5 text-primary" />
             <span>{isTesting ? "Đang kiểm tra..." : "Test Kết Nối"}</span>
-          </button>
+          </Button>
 
           <div className="flex items-center gap-2">
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={onClose}
-              className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-[#a1a1aa] hover:text-zinc-200 hover:bg-[#18181f] transition-colors"
+              className="text-xs h-8"
             >
               Hủy
-            </button>
-            <button
+            </Button>
+            <Button
+              size="sm"
               onClick={handleSave}
-              className="px-4 py-1.5 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30 transition-all"
+              className="text-xs h-8"
             >
               Lưu & Áp Dụng
-            </button>
+            </Button>
           </div>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

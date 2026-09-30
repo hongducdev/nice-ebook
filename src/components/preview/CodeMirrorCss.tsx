@@ -4,6 +4,7 @@ import { Copy, RefreshCw, Check } from "lucide-react";
 import { useState } from "react";
 import { useAppStore } from "../../stores/useAppStore";
 import { toast } from "sonner";
+import { Button } from "../ui/button";
 
 export function CodeMirrorCss() {
   const { customCss, updateTypography, activePreset } = useAppStore();
@@ -22,31 +23,34 @@ export function CodeMirrorCss() {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-[#141418] border border-[#27272a] rounded-2xl overflow-hidden shadow-xl select-none">
+    <div className="flex-1 flex flex-col bg-card border border-border rounded-2xl overflow-hidden shadow-xl select-none">
       {/* Editor Toolbar */}
-      <div className="h-10 px-4 border-b border-[#27272a] bg-[#101013] flex items-center justify-between text-xs text-[#71717a]">
+      <div className="h-10 px-4 border-b border-border bg-muted/30 flex items-center justify-between text-xs text-muted-foreground">
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-indigo-500" />
-          <span className="font-semibold text-zinc-300">Biên Tập CSS Trực Tiếp (CodeMirror 6)</span>
-          <span className="text-[10px] font-mono text-[#52525b]">style.css</span>
+          <span className="size-2 rounded-full bg-primary" />
+          <span className="font-semibold text-foreground">Biên Tập CSS Trực Tiếp (CodeMirror 6)</span>
+          <span className="text-[10px] font-mono text-muted-foreground">style.css</span>
         </div>
 
         <div className="flex items-center gap-2">
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleReset}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#18181b] hover:bg-[#222228] text-zinc-400 hover:text-zinc-200 border border-[#27272a] transition-colors text-[11px]"
+            className="h-6 text-[11px] px-2.5 gap-1 text-muted-foreground hover:text-foreground"
             title="Khôi phục về mẫu gốc"
           >
-            <RefreshCw className="w-3 h-3" />
+            <RefreshCw className="size-3" />
             <span>Reset</span>
-          </button>
-          <button
+          </Button>
+          <Button
+            size="sm"
             onClick={handleCopy}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors text-[11px]"
+            className="h-6 text-[11px] px-2.5 gap-1 font-medium"
           >
-            {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+            {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
             <span>{copied ? "Đã chép" : "Copy CSS"}</span>
-          </button>
+          </Button>
         </div>
       </div>
 

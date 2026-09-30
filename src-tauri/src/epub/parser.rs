@@ -181,23 +181,56 @@ impl EpubParser {
         let (mut meta, manifest, spine_ids, cover_id) = Self::parse_opf(&opf_content)?;
         meta.file_size_bytes = file_size;
 
-        // 4. Resolve cover image
-        if let Some(c_id) = cover_id {
-            if let Some(href) = manifest.get(&c_id) {
-                let full_cover_path = format!("{}{}", opf_base_dir, href);
-                if let Ok(mut c_file) = archive.by_name(&full_cover_path) {
-                    let mut img_bytes = Vec::new();
-                    if c_file.read_to_end(&mut img_bytes).is_ok() {
-                        let mime = if href.ends_with(".png") {
-                            "image/png"
-                        } else if href.ends_with(".webp") {
-                            "image/webp"
-                        } else {
-                            "image/jpeg"
-                        };
-                        let b64 = Self::base64_encode(&img_bytes);
-                        meta.cover_data_url = Some(format!("data:{};base64,{}", mime, b64));
+        // 4. Resolve cover image with robust multi-standard heuristics
+        let resolved_cover_href = cover_id
+            .as_ref()
+            .and_then(|c_id| manifest.get(c_id).cloned())
+            .or_else(|| {
+                // Heuristic 1: manifest item id is standard cover id
+                manifest.iter().find_map(|(id, href)| {
+                    let id_low = id.to_lowercase();
+                    let h_low = href.to_lowercase();
+                    let is_img = h_low.ends_with(".jpg") || h_low.ends_with(".jpeg") || h_low.ends_with(".png") || h_low.ends_with(".webp");
+                    if (id_low == "cover" || id_low == "cover-image" || id_low == "cover_image" || id_low == "coverimage") && is_img {
+                        Some(href.clone())
+                    } else {
+                        None
                     }
+                })
+            })
+            .or_else(|| {
+                // Heuristic 2: href contains "cover" and is an image file
+                manifest.iter().find_map(|(_id, href)| {
+                    let h_low = href.to_lowercase();
+                    let is_img = h_low.ends_with(".jpg") || h_low.ends_with(".jpeg") || h_low.ends_with(".png") || h_low.ends_with(".webp");
+                    if (h_low.contains("cover") || h_low.contains("bia")) && is_img {
+                        Some(href.clone())
+                    } else {
+                        None
+                    }
+                })
+            });
+
+        if let Some(href) = resolved_cover_href {
+            let full_cover_path = format!("{}{}", opf_base_dir, href);
+            let target_path = if archive.by_name(&full_cover_path).is_ok() {
+                full_cover_path
+            } else {
+                href.clone()
+            };
+
+            if let Ok(mut c_file) = archive.by_name(&target_path) {
+                let mut img_bytes = Vec::new();
+                if c_file.read_to_end(&mut img_bytes).is_ok() {
+                    let mime = if href.ends_with(".png") {
+                        "image/png"
+                    } else if href.ends_with(".webp") {
+                        "image/webp"
+                    } else {
+                        "image/jpeg"
+                    };
+                    let b64 = Self::base64_encode(&img_bytes);
+                    meta.cover_data_url = Some(format!("data:{};base64,{}", mime, b64));
                 }
             }
         }
@@ -535,6 +568,68 @@ mod tests {
         assert_eq!(meta.language, "vi");
         assert_eq!(meta.chapter_count, 1);
         assert_eq!(meta.chapters[0].title, "Chương 1");
+    }
+    #[test]
+    fn test_parse_bytes_heuristic_cover_detection() {
+        let mut buffer = Cursor::new(Vec::new());
+        {
+            let mut writer = ZipWriter::new(&mut buffer);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            writer.start_file("mimetype", opts).unwrap();
+            writer.write_all(b"application/epub+zip").unwrap();
+
+            let def_opts =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            writer
+                .start_file("META-INF/container.xml", def_opts)
+                .unwrap();
+            writer
+                .write_all(
+                    br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#,
+                )
+                .unwrap();
+
+            // OPF without properties="cover-image" or meta name="cover", only id="cover-image" and href="images/cover.jpg"
+            writer.start_file("OEBPS/content.opf", def_opts).unwrap();
+            writer
+                .write_all(
+                    br#"<?xml version="1.0"?>
+<package version="2.0" xmlns="http://www.idpf.org/2007/opf">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Legacy EPUB</dc:title>
+    <dc:creator>Author</dc:creator>
+  </metadata>
+  <manifest>
+    <item id="my-cover-img" href="images/book_cover.jpg" media-type="image/jpeg"/>
+    <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="ch1"/>
+  </spine>
+</package>"#,
+                )
+                .unwrap();
+
+            writer.start_file("OEBPS/images/book_cover.jpg", def_opts).unwrap();
+            writer.write_all(b"fake jpeg bytes").unwrap();
+
+            writer.start_file("OEBPS/ch1.xhtml", def_opts).unwrap();
+            writer
+                .write_all(br#"<html><body><p>Chapter 1</p></body></html>"#)
+                .unwrap();
+
+            writer.finish().unwrap();
+        }
+
+        let bytes = buffer.into_inner();
+        let meta = EpubParser::parse_bytes(&bytes).expect("Failed to parse bytes");
+        assert!(meta.cover_data_url.is_some(), "Cover must be detected via heuristic");
+        assert!(meta.cover_data_url.unwrap().starts_with("data:image/jpeg;base64,"));
     }
 
     #[test]

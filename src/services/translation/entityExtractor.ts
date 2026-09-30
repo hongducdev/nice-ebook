@@ -73,8 +73,8 @@ export class EntityExtractor {
       });
     }
 
-    // Additional CJK compound scanning (for Wuxia/Light Novel 2-4 character recurring terms)
-    for (const ch of chapters.slice(0, 5)) {
+    // Additional CJK compound scanning (for Wuxia/Light Novel recurring terms and names)
+    for (const ch of chapters) {
       const cleanText = ch.html.replace(/<[^>]+>/g, " ");
       const cjkMatches = cleanText.match(/[\u4E00-\u9FFF]{2,4}/g);
       if (cjkMatches) {
@@ -83,13 +83,16 @@ export class EntityExtractor {
           freq[m] = (freq[m] || 0) + 1;
         }
         for (const [term, cnt] of Object.entries(freq)) {
-          if (cnt >= 3 && !candidateMap.has(term.toLowerCase())) {
+          // Recurring >= 2 times, or single occurrence if matching key Wuxia/Xianxia titles/sects
+          const isKeyTerm = /(?:宗|门|殿|阁|谷|城|帝|皇|王|仙|魔|剑|刀|丹|圣|尊|堂|堡|庄|帮|派)$/.test(term);
+          if ((cnt >= 2 || isKeyTerm) && !candidateMap.has(term.toLowerCase())) {
             const existingTrans = existingGlossary[term];
+            const isPlaceOrOrg = /(?:宗|门|殿|阁|谷|城|堂|堡|庄|帮|派)$/.test(term);
             candidateMap.set(term.toLowerCase(), {
               id: `ent_${term}`,
               name: term,
               count: cnt,
-              category: "term",
+              category: isPlaceOrOrg ? "place" : "term",
               suggestedTranslation: existingTrans || term,
               isExistingInGlossary: Boolean(existingTrans),
             });
@@ -102,6 +105,99 @@ export class EntityExtractor {
     return Array.from(candidateMap.values())
       .sort((a, b) => b.count - a.count)
       .slice(0, maxCandidates);
+  }
+
+  /**
+   * Directly asks AI to extract prominent character names, locations, and special terms
+   * from an excerpt/sample of the book. Essential for non-English works or novels where
+   * regex-based heuristic extraction might miss nuanced single-word or CJK names.
+   */
+  public static async extractDirectWithAi(
+    sampleText: string,
+    options: ProposeEntityOptions
+  ): Promise<ExtractedEntityCandidate[]> {
+    const {
+      bookTitle,
+      author,
+      sourceLang,
+      targetLang,
+      baseUrl,
+      apiKey,
+      model,
+      maxCandidates = 20,
+    } = options;
+
+    if (!sampleText || sampleText.trim().length === 0) {
+      return [];
+    }
+
+    const boundedSample = sampleText.slice(0, 3500);
+
+    const systemPrompt = `Bạn là chuyên gia thẩm định và dịch thuật sách từ ${sourceLang} sang ${targetLang}.
+Nhiệm vụ: Trích xuất danh sách các nhân vật chính, địa danh và thuật ngữ quan trọng nhất từ đoạn trích của tác phẩm "${bookTitle || "Sách"}"${author ? ` (tác giả: ${author})` : ""}.
+Đề xuất bản dịch / phiên âm Hán-Việt hoặc tên chuẩn sang ${targetLang}.
+
+BẮT BUỘC TRẢ VỀ DUY NHẤT MẢNG JSON CÓ ĐỊNH DẠNG:
+[
+  { "name": "<tên gốc trong tác phẩm>", "translated": "<tên dịch sang ${targetLang}>", "category": "person" | "place" | "term" }
+]
+Tối đa ${maxCandidates} mục quan trọng nhất. Tuyệt đối không thêm lời chào, giải thích hoặc markdown.`;
+
+    try {
+      const rawOutput = await invoke<string>("call_ai_completion", {
+        options: {
+          base_url: baseUrl,
+          api_key: apiKey,
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: `Đoạn trích mở đầu tác phẩm:\n${boundedSample}` },
+          ],
+          temperature: 0.2,
+          timeout_secs: 35,
+        },
+      });
+
+      let clean = rawOutput.trim();
+      if (clean.startsWith("```json")) clean = clean.slice(7);
+      if (clean.startsWith("```")) clean = clean.slice(3);
+      if (clean.endsWith("```")) clean = clean.slice(0, -3);
+      clean = clean.trim();
+
+      const firstBracket = clean.indexOf("[");
+      const lastBracket = clean.lastIndexOf("]");
+      if (firstBracket !== -1 && lastBracket !== -1) {
+        clean = clean.slice(firstBracket, lastBracket + 1);
+      }
+
+      const parsed: Array<{ name: string; translated: string; category?: string }> = JSON.parse(clean);
+      const candidates: ExtractedEntityCandidate[] = [];
+
+      for (const item of parsed) {
+        if (item && item.name && item.translated) {
+          const cleanName = item.name.trim();
+          const cleanTrans = item.translated.trim();
+          const validCat = item.category === "person" || item.category === "place" || item.category === "term"
+            ? item.category
+            : "term";
+          if (cleanName.length > 0 && cleanTrans.length > 0) {
+            candidates.push({
+              id: `ai_${cleanName}`,
+              name: cleanName,
+              count: 1,
+              category: validCat,
+              suggestedTranslation: cleanTrans,
+              isExistingInGlossary: false,
+            });
+          }
+        }
+      }
+
+      return candidates;
+    } catch (err) {
+      console.warn("Direct AI entity extraction failed:", err);
+      return [];
+    }
   }
 
   /**

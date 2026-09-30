@@ -59,6 +59,32 @@ import { createNewEpub } from "../../services/converter/epubBuilder";
 import { ProgressModal, ProgressStage, ProgressStepItem } from "./ProgressModal";
 import { MetadataModal } from "../metadata/MetadataModal";
 import { notifyIngestRoute } from "../workflow/ingestRouteToast";
+import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "../ui/empty";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import { Progress } from "../ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+import { Separator } from "../ui/separator";
+import { Textarea } from "../ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group";
 
 export function ConverterView() {
   const { 
@@ -1040,7 +1066,7 @@ export function ConverterView() {
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[var(--background)]">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
       {/* Hidden file selector input */}
       <input
         ref={fileInputRef}
@@ -1051,61 +1077,66 @@ export function ConverterView() {
       />
 
       {/* Top Header Bar */}
-      <div className="flex items-center justify-between px-6 py-3.5 border-b border-[var(--border)] bg-[var(--card)]/50 backdrop-blur-sm">
+      <div className="flex items-center justify-between px-6 py-3.5 border-b border-border bg-card/50 backdrop-blur-sm">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-[color-mix(in_srgb,var(--primary)_15%,var(--card))] border border-[var(--primary)] text-[var(--primary)] shadow-sm">
+          <div className="size-9 rounded-lg flex items-center justify-center bg-primary/10 border border-primary/40 text-primary shadow-sm">
             <RefreshCw size={18} className="animate-in spin-in-180 duration-500" />
           </div>
-          <div>
+          <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
-              <h1 className="text-base font-semibold text-[var(--foreground)]">Bước 1: Nạp &amp; Chuyển Đổi Sách</h1>
-              <span className="app-badge app-badge--brand text-[10px] font-mono">PDF &bull; OCR &bull; TXT &bull; MD</span>
+              <h1 className="text-base font-semibold text-foreground">Bước 1: Nạp &amp; Chuyển Đổi Sách</h1>
+              <Badge variant="outline" className="text-[10px] font-mono border-primary/40 text-primary">
+                PDF &bull; OCR &bull; TXT &bull; MD
+              </Badge>
             </div>
-            <p className="text-xs text-[var(--muted-foreground)]">
+            <p className="text-xs text-muted-foreground">
               Chuyển đổi PDF (văn bản số &amp; PDF scan), TXT, Markdown sang định dạng EPUB 3 chuẩn hoá.
             </p>
           </div>
         </div>
 
         {/* Step Navigation Tabs */}
-        <div className="segmented-toggle">
-          <button
-            type="button"
-            data-active={activeStep === "upload" ? "true" : undefined}
-            data-variant="primary"
-            onClick={() => setActiveStep("upload")}
-            className="segmented-toggle__item flex items-center gap-1.5"
+        <ToggleGroup
+          type="single"
+          value={activeStep}
+          onValueChange={(val) => {
+            if (val === "upload" || val === "ocr" || val === "export") {
+              setActiveStep(val);
+            }
+          }}
+          size="sm"
+        >
+          <ToggleGroupItem
+            value="upload"
+            size="sm"
+            className="h-7 text-xs px-2.5 gap-1.5 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs"
           >
             <Upload size={14} />
             <span>1. Nạp &amp; Phân Tích</span>
-          </button>
-          <button
-            type="button"
-            data-active={activeStep === "ocr" ? "true" : undefined}
-            data-variant="primary"
-            onClick={() => setActiveStep("ocr")}
-            className="segmented-toggle__item flex items-center gap-1.5 relative"
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            value="ocr"
+            size="sm"
+            className="h-7 text-xs px-2.5 gap-1.5 relative data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs"
           >
             <Eye size={14} />
             <span>2. Công Cụ OCR PDF Scan</span>
             {extractedPdfData?.scanInfo.isScanned && (
-              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              <span className="size-2 rounded-full bg-amber-500 animate-pulse" />
             )}
-          </button>
-          <button
-            type="button"
-            data-active={activeStep === "export" ? "true" : undefined}
-            data-variant="primary"
-            onClick={() => setActiveStep("export")}
-            className="segmented-toggle__item flex items-center gap-1.5"
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            value="export"
+            size="sm"
+            className="h-7 text-xs px-2.5 gap-1.5 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs"
           >
             <Sparkles size={14} />
             <span>3. Xem Trước &amp; Tạo EPUB</span>
             {chapters.length > 0 && (
               <span className="text-[10px] opacity-75 font-mono">({chapters.length})</span>
             )}
-          </button>
-        </div>
+          </ToggleGroupItem>
+        </ToggleGroup>
       </div>
 
       {/* Main Content Area */}
@@ -1115,273 +1146,291 @@ export function ConverterView() {
           <div className="flex flex-col gap-6 animate-in fade-in duration-200">
             {/* Dropzone Hero */}
             {!loadedFileName ? (
-              <div
+              <Empty
                 onClick={handlePickFile}
-                className="border-2 border-dashed border-[var(--border)] hover:border-[var(--primary)] bg-[var(--card)] hover:bg-[color-mix(in_srgb,var(--primary)_5%,var(--card))] transition-all duration-200 rounded-xl p-12 flex flex-col items-center justify-center text-center cursor-pointer group shadow-sm"
+                className="cursor-pointer group border-2 border-dashed border-border bg-card p-12 shadow-sm transition-all duration-200 hover:border-primary hover:bg-muted/40"
               >
-                <div className="w-16 h-16 rounded-2xl bg-[var(--secondary)] border border-[var(--border)] group-hover:scale-105 group-hover:border-[var(--primary)] flex items-center justify-center text-[var(--primary)] mb-4 transition-transform">
-                  <FileText size={32} />
-                </div>
-                <h3 className="text-base font-semibold text-[var(--foreground)] mb-1">
-                  Chọn hoặc kéo thả file sách vào đây
-                </h3>
-                <p className="text-xs text-[var(--muted-foreground)] max-w-md mb-4">
-                  Hỗ trợ file PDF (văn bản số &amp; PDF scan ảnh), TXT (tiểu thuyết/truyện chữ) và Markdown (.md).
-                </p>
-                <button
-                  type="button"
-                  className="app-button app-button--primary text-xs"
+                <EmptyMedia
+                  variant="icon"
+                  className="size-16 rounded-2xl border border-border bg-secondary text-primary transition-transform group-hover:scale-105 group-hover:border-primary [&_svg:not([class*='size-'])]:size-8"
                 >
-                  <FolderOpen size={14} />
-                  <span>Duyệt File Từ Máy Tính...</span>
-                </button>
-              </div>
+                  <FileText size={32} />
+                </EmptyMedia>
+                <EmptyHeader>
+                  <EmptyTitle className="text-base font-semibold text-foreground">
+                    Chọn hoặc kéo thả file sách vào đây
+                  </EmptyTitle>
+                  <EmptyDescription className="max-w-md text-xs text-muted-foreground">
+                    Hỗ trợ file PDF (văn bản số &amp; PDF scan ảnh), TXT (tiểu thuyết/truyện chữ) và Markdown (.md).
+                  </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Button type="button" size="sm" className="text-xs">
+                    <FolderOpen size={14} />
+                    <span>Duyệt File Từ Máy Tính...</span>
+                  </Button>
+                </EmptyContent>
+              </Empty>
             ) : (
               /* Loaded Document Card */
-              <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 shadow-sm">
-                <div className="flex items-start justify-between pb-4 border-b border-[var(--border)]">
+              <Card className="shadow-sm">
+                <CardHeader className="border-b">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-lg bg-[color-mix(in_srgb,var(--primary)_12%,var(--card))] border border-[var(--primary)] flex items-center justify-center text-[var(--primary)]">
+                    <div className="size-12 rounded-lg border border-primary/40 bg-primary/10 flex items-center justify-center text-primary">
                       {fileType === "pdf" ? <FileText size={24} /> : <FileCode size={24} />}
                     </div>
-                    <div>
+                    <div className="flex flex-col gap-0.5">
                       <div className="flex items-center gap-2">
-                        <h2 className="text-base font-semibold text-[var(--foreground)]">{loadedFileName}</h2>
-                        <span className="app-badge app-badge--neutral text-[10px] font-mono uppercase">
+                        <CardTitle className="text-base font-semibold">{loadedFileName}</CardTitle>
+                        <Badge variant="secondary" className="text-[10px] font-mono uppercase">
                           {fileType} &bull; {formatSize(fileSizeBytes)}
-                        </span>
+                        </Badge>
                       </div>
-                      <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+                      <CardDescription className="text-xs">
                         {fileType === "pdf"
                           ? `Tài liệu PDF gồm ${pdfDoc?.numPages || 0} trang.`
                           : `Tệp văn bản gồm ${chapters.length} chương được nhận diện.`}
-                      </p>
+                      </CardDescription>
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handlePickFile}
-                    className="app-button app-button--secondary text-xs"
-                  >
-                    <FolderOpen size={14} />
-                    <span>Đổi File Khác...</span>
-                  </button>
-                </div>
+                  <CardAction>
+                    <Button type="button" variant="secondary" size="sm" onClick={handlePickFile} className="text-xs">
+                      <FolderOpen size={14} />
+                      <span>Đổi File Khác...</span>
+                    </Button>
+                  </CardAction>
+                </CardHeader>
+
+                <CardContent className="flex flex-col gap-4">
 
                 {/* Scanned vs Digital Alert for PDF */}
                 {fileType === "pdf" && (extractedPdfData || pdfSummary) && (
-                  <div className="mt-4">
+                  <div className="flex flex-col gap-3">
                     {(extractedPdfData?.scanInfo.isScanned ?? pdfSummary?.scanInfo.isScanned) ? (
-                      <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 flex items-start gap-3 text-amber-600 dark:text-amber-400">
-                        <AlertTriangle size={20} className="shrink-0 mt-0.5" />
-                        <div className="flex-1 text-xs">
-                          <div className="font-semibold text-sm mb-1 flex items-center gap-2">
-                            <span>Phát hiện PDF dạng SCAN (ảnh chụp)</span>
-                            <span className="app-badge bg-amber-500/20 text-amber-600 dark:text-amber-300 border-amber-500/40 text-[10px]">
-                              Cần OCR
-                            </span>
-                          </div>
-                          <p className="text-[var(--foreground)] opacity-90 mb-2">
-                            Tài liệu này hầu như không chứa lớp chữ số (trung bình chỉ khoảng {(extractedPdfData || pdfSummary)?.scanInfo.avgCharsPerPage} ký tự/trang). 
+                      <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                        <AlertTriangle className="size-5" />
+                        <AlertTitle className="flex items-center gap-2 text-sm font-semibold">
+                          <span>Phát hiện PDF dạng SCAN (ảnh chụp)</span>
+                          <Badge
+                            variant="outline"
+                            className="border-amber-500/40 bg-amber-500/20 text-[10px] text-amber-600 dark:text-amber-300"
+                          >
+                            Cần OCR
+                          </Badge>
+                        </AlertTitle>
+                        <AlertDescription className="flex flex-col gap-2 text-xs">
+                          <p className="text-foreground/90">
+                            Tài liệu này hầu như không chứa lớp chữ số (trung bình chỉ khoảng {(extractedPdfData || pdfSummary)?.scanInfo.avgCharsPerPage} ký tự/trang).{" "}
                             Để tạo ebook rõ đẹp, bạn có thể sử dụng công cụ OCR bóc tách chữ từ ảnh.
                           </p>
-                          <button
+                          <Button
                             type="button"
+                            size="sm"
                             onClick={() => setActiveStep("ocr")}
-                            className="app-button app-button--primary text-xs"
+                            className="self-start text-xs"
                           >
                             <Eye size={14} />
                             <span>Mở Công Cụ OCR PDF Scan Ngay</span>
                             <ArrowRight size={14} />
-                          </button>
-                        </div>
-                      </div>
+                          </Button>
+                        </AlertDescription>
+                      </Alert>
                     ) : (
-                      <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 flex flex-col gap-3 text-emerald-600 dark:text-emerald-400">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            <CheckCircle2 size={20} className="shrink-0" />
-                            <div className="text-xs">
-                              <span className="font-semibold text-sm block text-emerald-600 dark:text-emerald-300">
-                                PDF Văn Bản Số Chuẩn (Digital Text)
-                              </span>
-                              <span className="text-[var(--foreground)] opacity-90">
-                                {chapters.length > 0
-                                  ? `Đã trích xuất hoàn tất ${chapters.length} chương. Đã sẵn sàng tạo EPUB!`
-                                  : `Tài liệu có lớp văn bản số (${pdfDoc?.numPages} trang). Nhấn 'Trích xuất' để bóc tách toàn bộ sách.`}
-                              </span>
-                            </div>
-                          </div>
+                      <Alert className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                        <CheckCircle2 className="size-5" />
+                        <AlertTitle className="text-sm font-semibold text-emerald-600 dark:text-emerald-300">
+                          PDF Văn Bản Số Chuẩn (Digital Text)
+                        </AlertTitle>
+                        <AlertDescription className="flex flex-col gap-3 text-xs">
+                          <span className="text-foreground/90">
+                            {chapters.length > 0
+                              ? `Đã trích xuất hoàn tất ${chapters.length} chương. Đã sẵn sàng tạo EPUB!`
+                              : `Tài liệu có lớp văn bản số (${pdfDoc?.numPages} trang). Nhấn 'Trích xuất' để bóc tách toàn bộ sách.`}
+                          </span>
 
                           <div className="flex items-center gap-2 shrink-0">
                             {chapters.length === 0 && !isExtractingDigital && (
-                              <button
+                              <Button
                                 type="button"
+                                size="sm"
                                 onClick={() => triggerExtractDigitalPdf()}
-                                className="app-button app-button--primary text-xs"
+                                className="text-xs"
                               >
                                 <Play size={14} />
                                 <span>Trích Xuất Toàn Bộ ({pdfDoc?.numPages} trang)</span>
-                              </button>
+                              </Button>
                             )}
 
                             {isExtractingDigital && (
-                              <button
+                              <Button
                                 type="button"
+                                variant="destructive"
+                                size="sm"
                                 onClick={handleCancelDigitalExtract}
-                                className="app-button app-button--destructive text-xs"
+                                className="text-xs"
                               >
                                 <Square size={14} />
                                 <span>Hủy</span>
-                              </button>
+                              </Button>
                             )}
 
                             {chapters.length > 0 && (
-                              <button
+                              <Button
                                 type="button"
+                                size="sm"
                                 onClick={() => setActiveStep("export")}
-                                className="app-button app-button--primary text-xs"
+                                className="text-xs"
                               >
                                 <span>Xem Trước &amp; Tạo EPUB ({chapters.length} chương)</span>
                                 <ArrowRight size={14} />
-                              </button>
+                              </Button>
                             )}
                           </div>
-                        </div>
 
-                        {/* Progress Bar when extracting */}
-                        {isExtractingDigital && digitalExtractProgress && (
-                          <div className="bg-[var(--background)]/60 rounded p-2.5 border border-emerald-500/20 flex flex-col gap-1.5">
-                            <div className="flex items-center justify-between text-[11px]">
-                              <span className="text-[var(--foreground)]">{digitalExtractProgress.message}</span>
-                              <span className="font-mono text-emerald-500">
-                                {Math.round((digitalExtractProgress.current / digitalExtractProgress.total) * 100)}%
-                              </span>
-                            </div>
-                            <div className="w-full bg-[var(--border)] h-1.5 rounded-full overflow-hidden">
-                              <div
-                                className="bg-emerald-500 h-full transition-all duration-150"
-                                style={{
-                                  width: `${Math.round((digitalExtractProgress.current / digitalExtractProgress.total) * 100)}%`,
-                                }}
+                          {/* Progress Bar when extracting */}
+                          {isExtractingDigital && digitalExtractProgress && (
+                            <div className="flex flex-col gap-1.5 rounded border border-emerald-500/20 bg-background/60 p-2.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="text-foreground">{digitalExtractProgress.message}</span>
+                                <span className="font-mono text-emerald-500">
+                                  {Math.round((digitalExtractProgress.current / digitalExtractProgress.total) * 100)}%
+                                </span>
+                              </div>
+                              <Progress
+                                value={Math.round((digitalExtractProgress.current / digitalExtractProgress.total) * 100)}
+                                className="h-1.5 [&_[data-slot=progress-indicator]]:bg-emerald-500"
                               />
                             </div>
-                          </div>
-                        )}
-                      </div>
+                          )}
+                        </AlertDescription>
+                      </Alert>
                     )}
                   </div>
                 )}
 
+                <Separator />
+
                 {/* Metadata Header & Action */}
-                <div className="mt-5 flex items-center justify-between pb-2 border-b border-[var(--border)]">
-                  <div>
-                    <h3 className="text-xs font-bold text-[var(--foreground)]">Thông tin &amp; Bìa sách (Metadata)</h3>
-                    <p className="text-[11px] text-[var(--muted-foreground)]">Thiết lập tựa đề, tác giả, ngôn ngữ và ảnh bìa</p>
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col gap-0.5">
+                    <h3 className="text-xs font-bold text-foreground">Thông tin &amp; Bìa sách (Metadata)</h3>
+                    <p className="text-[11px] text-muted-foreground">Thiết lập tựa đề, tác giả, ngôn ngữ và ảnh bìa</p>
                   </div>
-                  <button
+                  <Button
                     type="button"
+                    variant="secondary"
+                    size="sm"
                     onClick={() => setIsMetadataModalOpen(true)}
-                    className="lg-button lg-button--secondary text-xs h-7 px-2.5 gap-1.5 text-[var(--primary)] font-medium"
+                    className="gap-1.5 text-xs font-medium text-primary"
                     title="Tự động tra cứu Google Books &amp; Open Library, chọn ảnh bìa đẹp"
                   >
                     <Sparkles size={12} />
                     <span>⚡ Bổ sung Metadata &amp; Tìm Bìa</span>
-                  </button>
+                  </Button>
                 </div>
 
                 {/* Metadata Fields */}
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-semibold text-[var(--foreground)] block mb-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="converter-book-title" className="text-xs font-semibold">
                       Tên sách (Title)
-                    </label>
-                    <input
+                    </Label>
+                    <Input
+                      id="converter-book-title"
                       type="text"
                       value={bookTitle}
                       onChange={(e) => setBookTitle(e.target.value)}
                       placeholder="Nhập tiêu đề sách..."
-                      className="w-full text-xs px-3 py-2 bg-[var(--background)] border border-[var(--border)] rounded focus:outline-none focus:border-[var(--primary)] text-[var(--foreground)]"
+                      className="h-8 text-xs"
                     />
                   </div>
 
-                  <div>
-                    <label className="text-xs font-semibold text-[var(--foreground)] block mb-1">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="converter-book-author" className="text-xs font-semibold">
                       Tác giả (Author)
-                    </label>
-                    <input
+                    </Label>
+                    <Input
+                      id="converter-book-author"
                       type="text"
                       value={bookAuthor}
                       onChange={(e) => setBookAuthor(e.target.value)}
                       placeholder="Nhập tên tác giả..."
-                      className="w-full text-xs px-3 py-2 bg-[var(--background)] border border-[var(--border)] rounded focus:outline-none focus:border-[var(--primary)] text-[var(--foreground)]"
+                      className="h-8 text-xs"
                     />
                   </div>
 
-                  <div>
-                    <label className="text-xs font-semibold text-[var(--foreground)] block mb-1">
-                      Ngôn ngữ (Language)
-                    </label>
-                    <select
-                      value={bookLanguage}
-                      onChange={(e) => setBookLanguage(e.target.value)}
-                      className="w-full text-xs px-3 py-2 bg-[var(--background)] border border-[var(--border)] rounded focus:outline-none focus:border-[var(--primary)] text-[var(--foreground)]"
-                    >
-                      <option value="vi">Tiếng Việt (vi)</option>
-                      <option value="en">English (en)</option>
-                      <option value="zh">Trung văn / Hán ngữ (zh)</option>
-                      <option value="ja">Tiếng Nhật (ja)</option>
-                      <option value="fr">Tiếng Pháp (fr)</option>
-                    </select>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs font-semibold">Ngôn ngữ (Language)</Label>
+                    <Select value={bookLanguage} onValueChange={setBookLanguage}>
+                      <SelectTrigger size="sm" className="w-full text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="vi">Tiếng Việt (vi)</SelectItem>
+                          <SelectItem value="en">English (en)</SelectItem>
+                          <SelectItem value="zh">Trung văn / Hán ngữ (zh)</SelectItem>
+                          <SelectItem value="ja">Tiếng Nhật (ja)</SelectItem>
+                          <SelectItem value="fr">Tiếng Pháp (fr)</SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
                   </div>
 
-                  <div>
-                    <label className="text-xs font-semibold text-[var(--foreground)] block mb-1">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="converter-book-description" className="text-xs font-semibold">
                       Mô tả ngắn (Description)
-                    </label>
-                    <input
+                    </Label>
+                    <Input
+                      id="converter-book-description"
                       type="text"
                       value={bookDescription}
                       onChange={(e) => setBookDescription(e.target.value)}
                       placeholder="Mô tả tóm tắt nội dung sách..."
-                      className="w-full text-xs px-3 py-2 bg-[var(--background)] border border-[var(--border)] rounded focus:outline-none focus:border-[var(--primary)] text-[var(--foreground)]"
+                      className="h-8 text-xs"
                     />
                   </div>
                 </div>
 
                 {/* Jev Core Decision Plane Badge & Card */}
                 {activeJev && (
-                  <div className="mt-4 bg-[color-mix(in_srgb,var(--primary)_8%,var(--card))] border border-[var(--primary)]/30 rounded-lg p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center font-bold text-sm shrink-0 shadow-xs">
-                        ⚡
-                      </div>
-                      <div className="text-xs">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-[var(--foreground)]">Phân loại nội dung:</span>
-                          <span className="app-badge app-badge--brand text-[10px] font-mono">
-                            {activeJev.genre_label}
-                          </span>
-                          <span className="text-[11px] text-[var(--muted-foreground)]">
-                            Tỉ lệ thoại: <strong className="text-[var(--foreground)]">{Math.round(activeJev.dialogue_ratio * 100)}%</strong>
-                          </span>
+                  <Card className="border border-primary/30 bg-primary/5 shadow-2xs">
+                    <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="size-8 rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm shrink-0 shadow-xs">
+                          ⚡
                         </div>
-                        <p className="text-[11px] text-[var(--muted-foreground)] mt-0.5">
-                          Tự động đề xuất phong cách:{" "}
-                          <span className="text-[var(--primary)] font-semibold uppercase">{activeJev.recommended_preset}</span> &bull; {activeJev.explanation}
-                        </p>
+                        <div className="flex flex-col gap-0.5 text-xs">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-foreground">Phân loại nội dung:</span>
+                            <Badge variant="outline" className="text-[10px] font-mono border-primary/40 text-primary">
+                              {activeJev.genre_label}
+                            </Badge>
+                            <span className="text-[11px] text-muted-foreground">
+                              Tỉ lệ thoại: <strong className="text-foreground">{Math.round(activeJev.dialogue_ratio * 100)}%</strong>
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground">
+                            Tự động đề xuất phong cách:{" "}
+                            <span className="text-primary font-semibold uppercase">{activeJev.recommended_preset}</span> &bull; {activeJev.explanation}
+                          </p>
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
-                      <span className="app-badge app-badge--success text-[10px] font-mono">
-                        Xử lý cục bộ &lt; 2ms
-                      </span>
-                    </div>
-                  </div>
+                      <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                        >
+                          Xử lý cục bộ &lt; 2ms
+                        </Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
                 )}
-              </div>
+                </CardContent>
+              </Card>
             )}
           </div>
         )}
@@ -1390,46 +1439,51 @@ export function ConverterView() {
         {activeStep === "ocr" && (
           <div className="flex flex-col gap-5 animate-in fade-in duration-200">
             {!pdfDoc ? (
-              <div className="text-center p-12 bg-[var(--card)] border border-[var(--border)] rounded-xl">
-                <AlertTriangle size={32} className="mx-auto text-amber-500 mb-2" />
-                <h3 className="text-base font-semibold text-[var(--foreground)]">Chưa có tài liệu PDF nào được nạp</h3>
-                <p className="text-xs text-[var(--muted-foreground)] mb-4">
-                  Vui lòng chuyển qua bước 1 để nạp file PDF cần quét OCR.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setActiveStep("upload")}
-                  className="app-button app-button--primary text-xs"
-                >
-                  <ArrowLeft size={14} />
-                  <span>Quay Lại Bước 1 (Nạp File)</span>
-                </button>
-              </div>
+              <Empty className="border border-dashed border-border bg-card p-12">
+                <EmptyMedia variant="icon" className="bg-transparent">
+                  <AlertTriangle size={32} className="text-amber-500" />
+                </EmptyMedia>
+                <EmptyHeader>
+                  <EmptyTitle className="text-base font-semibold text-foreground">
+                    Chưa có tài liệu PDF nào được nạp
+                  </EmptyTitle>
+                  <EmptyDescription className="text-xs text-muted-foreground">
+                    Vui lòng chuyển qua bước 1 để nạp file PDF cần quét OCR.
+                  </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Button type="button" size="sm" onClick={() => setActiveStep("upload")} className="text-xs">
+                    <ArrowLeft size={14} />
+                    <span>Quay Lại Bước 1 (Nạp File)</span>
+                  </Button>
+                </EmptyContent>
+              </Empty>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
                 {/* Left Panel: Preview Canvas & OCR Controls (5 cols) */}
                 <div className="lg:col-span-5 flex flex-col gap-4">
                   {/* Visual Page Canvas */}
-                  <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 shadow-sm flex flex-col items-center">
-                    <div className="w-full flex items-center justify-between mb-3 pb-2 border-b border-[var(--border)]">
+                  <Card className="shadow-sm">
+                    <CardHeader className="border-b">
                       <div className="flex items-center gap-1.5">
-                        <Eye size={15} className="text-[var(--primary)]" />
-                        <span className="text-xs font-semibold text-[var(--foreground)]">
+                        <Eye size={15} className="text-primary" />
+                        <CardTitle className="text-xs font-semibold">
                           Trang {previewPageNumber} / {pdfDoc.numPages}
-                        </span>
+                        </CardTitle>
                       </div>
 
                       {/* Pagination Controls */}
-                      <div className="flex items-center gap-1">
-                        <button
+                      <CardAction className="flex items-center gap-1">
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="icon-sm"
                           disabled={previewPageNumber <= 1 || isRenderingPreview}
                           onClick={() => setPreviewPageNumber((p) => Math.max(1, p - 1))}
-                          className="p-1 rounded hover:bg-[var(--secondary)] text-[var(--foreground)] disabled:opacity-40"
                         >
                           <ArrowLeft size={14} />
-                        </button>
-                        <input
+                        </Button>
+                        <Input
                           type="number"
                           min={1}
                           max={pdfDoc.numPages}
@@ -1440,256 +1494,295 @@ export function ConverterView() {
                               setPreviewPageNumber(val);
                             }
                           }}
-                          className="w-12 text-center text-xs py-0.5 px-1 bg-[var(--background)] border border-[var(--border)] rounded"
+                          className="h-7 w-12 px-1 text-center text-xs"
                         />
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="icon-sm"
                           disabled={previewPageNumber >= pdfDoc.numPages || isRenderingPreview}
                           onClick={() => setPreviewPageNumber((p) => Math.min(pdfDoc.numPages, p + 1))}
-                          className="p-1 rounded hover:bg-[var(--secondary)] text-[var(--foreground)] disabled:opacity-40"
                         >
                           <ArrowRight size={14} />
-                        </button>
-                      </div>
-                    </div>
+                        </Button>
+                      </CardAction>
+                    </CardHeader>
 
                     {/* Canvas Container */}
-                    <div className="relative w-full max-h-[460px] overflow-auto flex items-center justify-center bg-black/5 dark:bg-black/30 rounded border border-[var(--border)] p-2">
-                      <canvas ref={previewCanvasRef} className="shadow-md max-w-full h-auto object-contain rounded" />
-                      {isRenderingPreview && (
-                        <div className="absolute inset-0 bg-[var(--background)]/60 backdrop-blur-xs flex items-center justify-center text-xs font-medium">
-                          Đang tải trang...
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                    <CardContent>
+                      <div className="relative w-full max-h-[460px] overflow-auto flex items-center justify-center bg-black/5 dark:bg-black/30 rounded border border-border p-2">
+                        <canvas ref={previewCanvasRef} className="shadow-md max-w-full h-auto object-contain rounded" />
+                        {isRenderingPreview && (
+                          <div className="absolute inset-0 bg-background/60 backdrop-blur-xs flex items-center justify-center text-xs font-medium">
+                            Đang tải trang...
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
 
                   {/* OCR Settings Card */}
-                  <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 shadow-sm flex flex-col gap-3">
-                    <h3 className="text-xs font-semibold text-[var(--foreground)] flex items-center gap-2">
-                      <Sliders size={14} className="text-[var(--primary)]" />
-                      <span>Cấu Hình Nhận Diện OCR</span>
-                    </h3>
+                  <Card className="shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="text-xs font-semibold flex items-center gap-2">
+                        <Sliders size={14} className="text-primary" />
+                        <span>Cấu Hình Nhận Diện OCR</span>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="flex flex-col gap-3">
 
                     {/* Engine Picker */}
-                    <div>
-                      <label className="text-[11px] text-[var(--muted-foreground)] block mb-1">
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-[11px] text-muted-foreground">
                         Công cụ nhận diện (OCR Engine)
-                      </label>
-                      <div className="segmented-toggle w-full">
-                        <button
-                          type="button"
-                          data-active={ocrEngine === "tesseract" ? "true" : undefined}
-                          data-variant="primary"
-                          onClick={() => setOcrEngine("tesseract")}
-                          className="segmented-toggle__item flex-1 text-xs"
+                      </Label>
+                      <ToggleGroup
+                        type="single"
+                        value={ocrEngine}
+                        onValueChange={(val) => {
+                          if (val === "tesseract" || val === "vision") {
+                            setOcrEngine(val);
+                          }
+                        }}
+                        size="sm"
+                        className="w-full"
+                      >
+                        <ToggleGroupItem
+                          value="tesseract"
+                          size="sm"
+                          className="flex-1 text-xs data-[state=on]:bg-background data-[state=on]:text-primary"
                         >
                           Tesseract (Cục bộ/Offline)
-                        </button>
-                        <button
-                          type="button"
-                          data-active={ocrEngine === "vision" ? "true" : undefined}
-                          data-variant="primary"
-                          onClick={() => setOcrEngine("vision")}
-                          className="segmented-toggle__item flex-1 text-xs"
+                        </ToggleGroupItem>
+                        <ToggleGroupItem
+                          value="vision"
+                          size="sm"
+                          className="flex-1 text-xs data-[state=on]:bg-background data-[state=on]:text-primary"
                         >
                           AI Vision (Gateway/LLM)
-                        </button>
-                      </div>
+                        </ToggleGroupItem>
+                      </ToggleGroup>
                     </div>
 
                     {/* Language & Resolution */}
                     <div className="grid grid-cols-2 gap-2.5">
-                      <div>
-                        <label className="text-[11px] text-[var(--muted-foreground)] block mb-1">
-                          Ngôn ngữ OCR
-                        </label>
-                        <select
+                      <div className="flex flex-col gap-1.5">
+                        <Label className="text-[11px] text-muted-foreground">Ngôn ngữ OCR</Label>
+                        <Select
                           value={ocrLanguage}
-                          onChange={(e) => setOcrLanguage(e.target.value as OcrLanguage)}
-                          className="w-full text-xs px-2.5 py-1.5 bg-[var(--background)] border border-[var(--border)] rounded text-[var(--foreground)]"
+                          onValueChange={(val) => setOcrLanguage(val as OcrLanguage)}
                         >
-                          <option value="vie+eng">Tiếng Việt &amp; English</option>
-                          <option value="vie">Chỉ Tiếng Việt (vie)</option>
-                          <option value="eng">Chỉ English (eng)</option>
-                          <option value="chi_sim">Trung văn (Hán giản)</option>
-                          <option value="jpn">Tiếng Nhật (jpn)</option>
-                        </select>
+                          <SelectTrigger size="sm" className="w-full text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectItem value="vie+eng">Tiếng Việt &amp; English</SelectItem>
+                              <SelectItem value="vie">Chỉ Tiếng Việt (vie)</SelectItem>
+                              <SelectItem value="eng">Chỉ English (eng)</SelectItem>
+                              <SelectItem value="chi_sim">Trung văn (Hán giản)</SelectItem>
+                              <SelectItem value="jpn">Tiếng Nhật (jpn)</SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
                       </div>
 
-                      <div>
-                        <label className="text-[11px] text-[var(--muted-foreground)] block mb-1">
-                          Độ sắc nét (DPI Scale)
-                        </label>
-                        <select
-                          value={ocrScale}
-                          onChange={(e) => setOcrScale(parseFloat(e.target.value))}
-                          className="w-full text-xs px-2.5 py-1.5 bg-[var(--background)] border border-[var(--border)] rounded text-[var(--foreground)]"
-                        >
-                          <option value={1.5}>1.5x (Nhanh hơn)</option>
-                          <option value={2.0}>2.0x (Chuẩn ~200 DPI)</option>
-                          <option value={2.5}>2.5x (Chi tiết ~250 DPI)</option>
-                        </select>
+                      <div className="flex flex-col gap-1.5">
+                        <Label className="text-[11px] text-muted-foreground">Độ sắc nét (DPI Scale)</Label>
+                        <Select value={String(ocrScale)} onValueChange={(val) => setOcrScale(parseFloat(val))}>
+                          <SelectTrigger size="sm" className="w-full text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectItem value="1.5">1.5x (Nhanh hơn)</SelectItem>
+                              <SelectItem value="2">2.0x (Chuẩn ~200 DPI)</SelectItem>
+                              <SelectItem value="2.5">2.5x (Chi tiết ~250 DPI)</SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
 
                     {/* Page Range Picker */}
-                    <div>
-                      <label className="text-[11px] text-[var(--muted-foreground)] block mb-1">
-                        Khoảng trang quét OCR
-                      </label>
+                    <div className="flex flex-col gap-1">
+                      <Label className="text-[11px] text-muted-foreground">Khoảng trang quét OCR</Label>
                       <div className="flex items-center gap-2">
-                        <select
+                        <Select
                           value={ocrPageRangeMode}
-                          onChange={(e) => setOcrPageRangeMode(e.target.value as any)}
-                          className="text-xs px-2.5 py-1.5 bg-[var(--background)] border border-[var(--border)] rounded text-[var(--foreground)] shrink-0"
+                          onValueChange={(val) => {
+                            if (val === "all" || val === "custom" || val === "current") {
+                              setOcrPageRangeMode(val);
+                            }
+                          }}
                         >
-                          <option value="all">Tất cả trang ({pdfDoc.numPages})</option>
-                          <option value="custom">Khoảng trang...</option>
-                          <option value="current">Chỉ trang hiện tại ({previewPageNumber})</option>
-                        </select>
+                          <SelectTrigger size="sm" className="shrink-0 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectItem value="all">Tất cả trang ({pdfDoc.numPages})</SelectItem>
+                              <SelectItem value="custom">Khoảng trang...</SelectItem>
+                              <SelectItem value="current">Chỉ trang hiện tại ({previewPageNumber})</SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
 
                         {ocrPageRangeMode === "custom" && (
-                          <input
+                          <Input
                             type="text"
                             value={customPageRange}
                             onChange={(e) => setCustomPageRange(e.target.value)}
                             placeholder="vd: 1-10, 15-20"
-                            className="flex-1 text-xs px-2.5 py-1.5 bg-[var(--background)] border border-[var(--border)] rounded text-[var(--foreground)]"
+                            className="h-8 flex-1 text-xs"
                           />
                         )}
                       </div>
-                      <span className="text-[10px] text-[var(--muted-foreground)] mt-1 block">
+                      <span className="text-[10px] text-muted-foreground">
                         Số trang sẽ quét: {targetOcrPages.length} trang
                       </span>
                     </div>
 
                     {/* Progress Bar (if running) */}
                     {isOcrRunning && ocrProgress && (
-                      <div className="bg-[var(--secondary)]/60 rounded p-2.5 border border-[var(--border)] flex flex-col gap-1.5">
+                      <div className="flex flex-col gap-1.5 rounded border border-border bg-secondary/60 p-2.5">
                         <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-medium text-[var(--foreground)]">{ocrProgress.statusText}</span>
-                          <span className="font-mono text-[var(--primary)]">{ocrProgress.overallPercent}%</span>
+                          <span className="font-medium text-foreground">{ocrProgress.statusText}</span>
+                          <span className="font-mono text-primary">{ocrProgress.overallPercent}%</span>
                         </div>
-                        <div className="w-full bg-[var(--border)] h-1.5 rounded-full overflow-hidden">
-                          <div
-                            className="bg-[var(--primary)] h-full transition-all duration-200"
-                            style={{ width: `${ocrProgress.overallPercent}%` }}
-                          />
-                        </div>
+                        <Progress value={ocrProgress.overallPercent} className="h-1.5" />
                       </div>
                     )}
 
                     {/* Action Buttons */}
                     <div className="flex items-center gap-2 pt-1">
                       {!isOcrRunning ? (
-                        <button
+                        <Button
                           type="button"
+                          size="sm"
                           onClick={handleStartOcr}
-                          className="app-button app-button--primary flex-1 text-xs justify-center"
+                          className="flex-1 justify-center text-xs"
                         >
                           <Play size={14} />
                           <span>Bắt Đầu Quét OCR ({targetOcrPages.length} trang)</span>
-                        </button>
+                        </Button>
                       ) : (
-                        <button
+                        <Button
                           type="button"
+                          variant="destructive"
+                          size="sm"
                           onClick={handleCancelOcr}
-                          className="app-button app-button--destructive flex-1 text-xs justify-center"
+                          className="flex-1 justify-center text-xs"
                         >
                           <Square size={14} />
                           <span>Dừng Quét</span>
-                        </button>
+                        </Button>
                       )}
                     </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 </div>
 
                 {/* Right Panel: Recognized Text & Editor (7 cols) */}
                 <div className="lg:col-span-7 flex flex-col gap-3">
-                  <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 shadow-sm flex flex-col gap-3">
-                    <div className="flex items-center justify-between pb-2 border-b border-[var(--border)]">
+                  <Card className="shadow-sm">
+                    <CardHeader className="border-b">
                       <div className="flex items-center gap-2">
-                        <FileText size={15} className="text-[var(--primary)]" />
-                        <h3 className="text-xs font-semibold text-[var(--foreground)]">
+                        <FileText size={15} className="text-primary" />
+                        <CardTitle className="text-xs font-semibold">
                           Văn Bản Nhận Diện (Trang {previewPageNumber})
-                        </h3>
+                        </CardTitle>
                         {ocrRecognizedPages[previewPageNumber] && (
-                          <span className="app-badge app-badge--success text-[10px]">Đã OCR</span>
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                          >
+                            Đã OCR
+                          </Badge>
                         )}
                       </div>
 
                       {/* Quick Polish Tools */}
-                      <div className="flex items-center gap-1.5">
-                        <button
+                      <CardAction className="flex items-center gap-1.5">
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="sm"
                           title="Làm sạch lỗi scan & dấu tiếng Việt"
                           onClick={() => {
                             const cleaned = cleanOcrText(activePageEditorText);
                             handleSaveCurrentPageText(cleaned);
                             toast.success("Đã làm sạch văn bản trang hiện tại!");
                           }}
-                          className="app-button app-button--ghost text-[11px] h-7 px-2"
+                          className="text-[11px]"
                         >
                           <Wand2 size={13} />
                           <span>Làm sạch</span>
-                        </button>
+                        </Button>
 
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="sm"
                           title="Gộp dòng mềm (De-hyphenate)"
                           onClick={() => {
                             const merged = dehyphenateAndMergeLines(activePageEditorText);
                             handleSaveCurrentPageText(merged);
                             toast.success("Đã gộp dòng mềm trang hiện tại!");
                           }}
-                          className="app-button app-button--ghost text-[11px] h-7 px-2"
+                          className="text-[11px]"
                         >
                           <FileCode size={13} />
                           <span>Gộp dòng</span>
-                        </button>
+                        </Button>
 
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="sm"
                           onClick={() => {
                             navigator.clipboard.writeText(activePageEditorText);
                             setIsCopied(true);
                             setTimeout(() => setIsCopied(false), 2000);
                             toast.success("Đã chép nội dung vào bộ nhớ tạm!");
                           }}
-                          className="app-button app-button--ghost text-[11px] h-7 px-2"
+                          className="text-[11px]"
                         >
                           {isCopied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
                           <span>{isCopied ? "Đã chép" : "Chép"}</span>
-                        </button>
+                        </Button>
+                      </CardAction>
+                    </CardHeader>
+
+                    <CardContent className="flex flex-col gap-3">
+                      {/* Textarea Editor */}
+                      <Textarea
+                        rows={18}
+                        value={activePageEditorText}
+                        onChange={(e) => handleSaveCurrentPageText(e.target.value)}
+                        placeholder="Nội dung chữ sau khi quét OCR sẽ hiển thị ở đây. Bạn có thể tự do đọc lại và chỉnh sửa trực tiếp..."
+                        className="resize-y font-mono text-xs leading-relaxed"
+                      />
+
+                      {/* Footer Info */}
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span>
+                          Ký tự trang này: {activePageEditorText.length} &bull; Tổng trang đã OCR:{" "}
+                          {Object.keys(ocrRecognizedPages).length} / {pdfDoc.numPages}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="link"
+                          size="sm"
+                          onClick={() => setActiveStep("export")}
+                          className="gap-1 text-[11px] font-medium"
+                        >
+                          <span>Tiếp tục: Xem trước &amp; Tạo EPUB</span>
+                          <ArrowRight size={13} />
+                        </Button>
                       </div>
-                    </div>
-
-                    {/* Textarea Editor */}
-                    <textarea
-                      rows={18}
-                      value={activePageEditorText}
-                      onChange={(e) => handleSaveCurrentPageText(e.target.value)}
-                      placeholder="Nội dung chữ sau khi quét OCR sẽ hiển thị ở đây. Bạn có thể tự do đọc lại và chỉnh sửa trực tiếp..."
-                      className="w-full text-xs font-mono p-3 bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:outline-none focus:border-[var(--primary)] resize-y leading-relaxed"
-                    />
-
-                    {/* Footer Info */}
-                    <div className="flex items-center justify-between text-[11px] text-[var(--muted-foreground)] pt-1">
-                      <span>
-                        Ký tự trang này: {activePageEditorText.length} &bull; Tổng trang đã OCR:{" "}
-                        {Object.keys(ocrRecognizedPages).length} / {pdfDoc.numPages}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setActiveStep("export")}
-                        className="text-[var(--primary)] hover:underline font-medium flex items-center gap-1"
-                      >
-                        <span>Tiếp tục: Xem trước &amp; Tạo EPUB</span>
-                        <ArrowRight size={13} />
-                      </button>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 </div>
               </div>
             )}
@@ -1701,161 +1794,167 @@ export function ConverterView() {
           <div className="flex flex-col gap-6 animate-in fade-in duration-200">
             {/* File-scoped detection: what this source file needs next */}
             {sourceProfile && (
-              <div className="ingest-detect-strip" role="status" aria-live="polite">
-                <span className="ingest-detect-strip__label">Nhận diện nguồn:</span>
-                <span className="workflow-banner__chip workflow-banner__chip--lang">
+              <div
+                className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs"
+                role="status"
+                aria-live="polite"
+              >
+                <span className="font-medium text-muted-foreground">Nhận diện nguồn:</span>
+                <Badge variant="secondary" className="gap-1.5 text-[10px]">
                   <span aria-hidden="true">{sourceProfile.languageFlag}</span>
                   <span>{sourceProfile.languageName}</span>
-                  <span className="workflow-banner__chip-meta">
+                  <span className="font-mono text-muted-foreground">
                     {Math.round(sourceProfile.languageConfidence * 100)}%
                   </span>
-                </span>
-                <span className="workflow-banner__chip workflow-banner__chip--workflow">
+                </Badge>
+                <Badge variant="outline" className="text-[10px] border-primary/40 text-primary">
                   {workflowLabel(sourceProfile)}
-                </span>
-                <span className="ingest-detect-strip__steps">
+                </Badge>
+                <span className="font-mono text-[10px] text-muted-foreground">
                   {sourceSteps.join(" → ")}
                 </span>
               </div>
             )}
 
             {/* Summary Banner */}
-            <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-lg bg-[color-mix(in_srgb,var(--primary)_12%,var(--card))] border border-[var(--primary)] flex items-center justify-center text-[var(--primary)]">
-                  <BookCheck size={24} />
+            <Card className="shadow-sm">
+              <CardContent className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="size-12 rounded-lg bg-primary/10 border border-primary/40 flex items-center justify-center text-primary">
+                    <BookCheck size={24} />
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <h2 className="text-base font-semibold text-foreground">
+                      {bookTitle || "Ebook Chuyển Đổi"}
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      Tác giả: <span className="text-foreground">{bookAuthor || "Khuyết Danh"}</span> &bull; Ngôn ngữ:{" "}
+                      <span className="text-foreground uppercase">{bookLanguage}</span> &bull; Số chương:{" "}
+                      <span className="font-semibold text-primary">{chapters.length} chương</span>
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-base font-semibold text-[var(--foreground)]">
-                    {bookTitle || "Ebook Chuyển Đổi"}
-                  </h2>
-                  <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-                    Tác giả: <span className="text-[var(--foreground)]">{bookAuthor || "Khuyết Danh"}</span> &bull; Ngôn ngữ:{" "}
-                    <span className="text-[var(--foreground)] uppercase">{bookLanguage}</span> &bull; Số chương:{" "}
-                    <span className="font-semibold text-[var(--primary)]">{chapters.length} chương</span>
-                  </p>
+
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2.5 w-full md:w-auto">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={isGeneratingEpub || chapters.length === 0}
+                    onClick={handleLoadIntoStudio}
+                    className="flex-1 md:flex-initial text-xs shadow-md"
+                  >
+                    <Sparkles size={14} />
+                    <span>
+                      {sourceNeedsTranslation
+                        ? "Nạp Vào Studio & Dịch Thuật"
+                        : "Nạp Vào Studio Làm Đẹp"}
+                    </span>
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={isGeneratingEpub || chapters.length === 0}
+                    onClick={handleExportEpubFile}
+                    className="text-xs"
+                  >
+                    <Download size={14} />
+                    <span>Lưu File EPUB...</span>
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={chapters.length === 0}
+                    onClick={() => handleExportTextFile("md")}
+                    className="text-xs"
+                  >
+                    <span>Xuất .MD</span>
+                  </Button>
                 </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2.5 w-full md:w-auto">
-                <button
-                  type="button"
-                  disabled={isGeneratingEpub || chapters.length === 0}
-                  onClick={handleLoadIntoStudio}
-                  className="app-button app-button--primary flex-1 md:flex-initial text-xs shadow-md"
-                >
-                  <Sparkles size={14} />
-                  <span>
-                    {sourceNeedsTranslation
-                      ? "Nạp Vào Studio & Dịch Thuật"
-                      : "Nạp Vào Studio Làm Đẹp"}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={isGeneratingEpub || chapters.length === 0}
-                  onClick={handleExportEpubFile}
-                  className="app-button app-button--secondary text-xs"
-                >
-                  <Download size={14} />
-                  <span>Lưu File EPUB...</span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={chapters.length === 0}
-                  onClick={() => handleExportTextFile("md")}
-                  className="app-button app-button--ghost text-xs"
-                >
-                  <span>Xuất .MD</span>
-                </button>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
 
             {/* Chapter Split Configuration */}
-            <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 shadow-sm flex flex-col gap-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-[var(--border)] gap-2">
-                <h3 className="text-xs font-semibold text-[var(--foreground)] flex items-center gap-2">
-                  <Sliders size={14} className="text-[var(--primary)]" />
+            <Card className="shadow-sm">
+              <CardHeader className="border-b">
+                <CardTitle className="text-xs font-semibold flex items-center gap-2">
+                  <Sliders size={14} className="text-primary" />
                   <span>Cấu Hình Phân Chia Chương (Chapter Splitting)</span>
-                </h3>
+                </CardTitle>
 
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
+                <CardAction className="flex items-center gap-2 flex-wrap">
+                  <Button
                     type="button"
+                    variant="secondary"
+                    size="sm"
                     disabled={isEnhancingJev || chapters.length === 0}
                     onClick={handleRunJevVerdictOnChapters}
-                    className="app-button app-button--secondary text-xs flex items-center gap-1.5"
+                    className="gap-1.5 text-xs"
                     title="Chuẩn hóa tiêu đề H1, dọn rác đầu chương và sửa lỗi chính tả tự động"
                   >
                     <Sparkles size={13} className="text-amber-500" />
                     <span>{isEnhancingJev ? "Đang tối ưu..." : "⚡ Tối Ưu Cấu Trúc Nhanh (< 5ms)"}</span>
-                  </button>
+                  </Button>
 
-                  <button
+                  <Button
                     type="button"
+                    variant="secondary"
+                    size="sm"
                     disabled={chapters.length === 0}
                     onClick={handleCleanConverterWatermarks}
-                    className="app-button app-button--secondary text-xs flex items-center gap-1.5"
+                    className="gap-1.5 text-xs"
                     title="Xóa sạch các đoạn watermark dtv-ebook, tve-4u, truyenfull và header/footer rác"
                   >
                     <Trash2 size={13} className="text-amber-500" />
                     <span>🧹 Xóa Watermark DTV / Web</span>
-                  </button>
+                  </Button>
 
-                  <div className="segmented-toggle">
-                    <button
-                      type="button"
-                      data-active={chapterSplitMode === "auto" ? "true" : undefined}
-                      data-variant="primary"
-                      onClick={() => {
-                        setChapterSplitMode("auto");
-                        if (ocrRecognizedPages && Object.keys(ocrRecognizedPages).length > 0) {
-                          reconstructChaptersFromOcr(ocrRecognizedPages);
-                        }
-                      }}
-                      className="segmented-toggle__item text-xs"
+                  <ToggleGroup
+                    type="single"
+                    value={chapterSplitMode}
+                    onValueChange={(val) => {
+                      setChapterSplitMode(
+                        val === "auto" || val === "pages" || val === "single" ? val : chapterSplitMode
+                      );
+                      if (ocrRecognizedPages && Object.keys(ocrRecognizedPages).length > 0) {
+                        reconstructChaptersFromOcr(ocrRecognizedPages);
+                      }
+                    }}
+                    size="sm"
+                  >
+                    <ToggleGroupItem
+                      value="auto"
+                      size="sm"
+                      className="text-xs data-[state=on]:bg-background data-[state=on]:text-primary"
                     >
                       Tự động
-                    </button>
-                    <button
-                      type="button"
-                      data-active={chapterSplitMode === "pages" ? "true" : undefined}
-                      data-variant="primary"
-                      onClick={() => {
-                        setChapterSplitMode("pages");
-                        if (ocrRecognizedPages && Object.keys(ocrRecognizedPages).length > 0) {
-                          reconstructChaptersFromOcr(ocrRecognizedPages);
-                        }
-                      }}
-                      className="segmented-toggle__item text-xs"
+                    </ToggleGroupItem>
+                    <ToggleGroupItem
+                      value="pages"
+                      size="sm"
+                      className="text-xs data-[state=on]:bg-background data-[state=on]:text-primary"
                     >
                       Theo số trang
-                    </button>
-                    <button
-                      type="button"
-                      data-active={chapterSplitMode === "single" ? "true" : undefined}
-                      data-variant="primary"
-                      onClick={() => {
-                        setChapterSplitMode("single");
-                        if (ocrRecognizedPages && Object.keys(ocrRecognizedPages).length > 0) {
-                          reconstructChaptersFromOcr(ocrRecognizedPages);
-                        }
-                      }}
-                      className="segmented-toggle__item text-xs"
+                    </ToggleGroupItem>
+                    <ToggleGroupItem
+                      value="single"
+                      size="sm"
+                      className="text-xs data-[state=on]:bg-background data-[state=on]:text-primary"
                     >
                       1 Chương
-                    </button>
-                  </div>
-                </div>
-              </div>
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </CardAction>
+              </CardHeader>
 
               {chapterSplitMode === "pages" && (
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="text-[var(--muted-foreground)]">Số trang mỗi chương:</span>
-                  <input
+                <CardContent className="flex items-center gap-2 text-xs">
+                  <Label className="font-normal text-muted-foreground">Số trang mỗi chương:</Label>
+                  <Input
                     type="number"
                     min={1}
                     max={100}
@@ -1869,47 +1968,52 @@ export function ConverterView() {
                         }
                       }
                     }}
-                    className="w-16 px-2 py-1 bg-[var(--background)] border border-[var(--border)] rounded text-center"
+                    className="h-7 w-16 text-center text-xs"
                   />
-                </div>
+                </CardContent>
               )}
-            </div>
+            </Card>
 
             {/* Chapters Preview List */}
             <div className="flex flex-col gap-3">
-              <h3 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 Danh Sách Chương ({chapters.length})
               </h3>
 
               {chapters.length === 0 ? (
-                <div className="p-8 text-center bg-[var(--card)] border border-[var(--border)] rounded-xl text-xs text-[var(--muted-foreground)]">
-                  Chưa có chương nào. Hãy nạp file hoặc chạy quét OCR ở bước 2.
-                </div>
+                <Empty className="border border-dashed border-border bg-card p-8">
+                  <EmptyDescription className="text-xs text-muted-foreground">
+                    Chưa có chương nào. Hãy nạp file hoặc chạy quét OCR ở bước 2.
+                  </EmptyDescription>
+                </Empty>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {chapters.map((ch, idx) => (
-                    <div
+                    <Card
                       key={idx}
-                      className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-3.5 hover:border-[var(--primary)] transition-colors shadow-2xs flex flex-col justify-between gap-2"
+                      size="sm"
+                      className="border border-border hover:border-primary transition-colors shadow-2xs"
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="w-5 h-5 rounded bg-[var(--secondary)] flex items-center justify-center text-[10px] font-mono text-[var(--muted-foreground)]">
-                            {idx + 1}
-                          </span>
-                          <span className="text-xs font-semibold text-[var(--foreground)] line-clamp-1">
-                            {ch.title}
+                      <CardContent className="flex flex-col justify-between gap-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="size-5 rounded bg-secondary flex items-center justify-center text-[10px] font-mono text-muted-foreground">
+                              {idx + 1}
+                            </span>
+                            <span className="text-xs font-semibold text-foreground line-clamp-1">
+                              {ch.title}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+                            {ch.content.split(/\s+/).length} từ
                           </span>
                         </div>
-                        <span className="text-[10px] text-[var(--muted-foreground)] font-mono shrink-0">
-                          {ch.content.split(/\s+/).length} từ
-                        </span>
-                      </div>
 
-                      <p className="text-[11px] text-[var(--muted-foreground)] line-clamp-2 italic leading-relaxed">
-                        {ch.content.slice(0, 140)}...
-                      </p>
-                    </div>
+                        <p className="text-[11px] text-muted-foreground line-clamp-2 italic leading-relaxed">
+                          {ch.content.slice(0, 140)}...
+                        </p>
+                      </CardContent>
+                    </Card>
                   ))}
                 </div>
               )}

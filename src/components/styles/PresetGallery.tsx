@@ -1,4 +1,7 @@
 import { Check, Sparkles, SlidersHorizontal, Palette, Wand2, RefreshCw, Loader2, AlertTriangle } from "lucide-react";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
+import { Card } from "../ui/card";
 import { STYLE_PRESETS, StylePreset } from "../../presets/styles";
 import {
   MIN_NATIVE_STYLE_CONFIDENCE,
@@ -71,68 +74,70 @@ export function PresetGallery() {
       {/* Header bar */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-[var(--foreground)] tracking-tight flex items-center gap-2">
-            <Palette size={18} className="text-[var(--primary)]" />
+          <h2 className="text-base font-semibold text-foreground tracking-tight flex items-center gap-2">
+            <Palette size={18} className="text-primary" />
             <span>Bước 4: Thư Viện Phong Cách EPUB</span>
           </h2>
-          <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+          <p className="text-xs text-muted-foreground mt-0.5">
             Các gói giao diện và định dạng CSS được thiết kế chuẩn quốc tế cho Apple Books, Kindle và Kobo.
           </p>
         </div>
 
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => setActiveTab("editor")}
-          className="lg-button lg-button--secondary h-7 text-xs px-2.5"
+          className="h-7 text-xs px-2.5 gap-1.5"
         >
-          <SlidersHorizontal size={13} />
+          <SlidersHorizontal className="size-3.5" />
           <span>Tùy Chỉnh Thông Số</span>
-        </button>
+        </Button>
       </div>
 
       {/* Chế độ "theo sách hiện tại" */}
-      <div
+      <Card
         onClick={handleSelectNative}
-        className={`card-surface p-4 cursor-pointer relative transition-all ${
-          isNativeActive ? "ring-2 ring-[var(--primary)] shadow-md" : ""
+        className={`shrink-0 p-4 cursor-pointer relative transition-all bg-card ${
+          isNativeActive ? "ring-2 ring-primary shadow-md" : "hover:border-primary/50"
         }`}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <Wand2 size={15} className="text-[var(--primary)]" />
-              <h3 className="text-sm font-semibold text-[var(--foreground)]">
+              <Wand2 size={15} className="text-primary" />
+              <h3 className="text-sm font-semibold text-foreground">
                 Theo sách hiện tại
               </h3>
-              <span className="app-badge app-badge--brand text-[10px] h-[18px] px-1.5">
+              <Badge variant="outline" className="text-[10px] h-4.5 px-1.5 border-primary/40 text-primary">
                 {autoStyleFromBook ? "Tự động" : "Thủ công"}
-              </span>
+              </Badge>
               {signature && (
-                <span className="app-badge app-badge--neutral text-[10px] h-[18px] px-1.5 font-mono">
+                <Badge variant="secondary" className="text-[10px] h-4.5 px-1.5 font-mono">
                   khớp {Math.round(signature.confidence * 100)}%
-                </span>
+                </Badge>
               )}
             </div>
-            <p className="text-xs text-[var(--muted-foreground)] mt-1 leading-relaxed">
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
               Đọc CSS gốc của sách rồi chỉ <strong>phủ thêm</strong> những gì sách đã khai báo — font,
               cỡ chữ, giãn dòng, canh lề, bảng màu. Phần còn lại vẫn do CSS gốc của nhà xuất bản
               quyết định, không bị thay thế toàn bộ như các preset bên dưới.
             </p>
-            <p className="text-[11px] text-[var(--muted-foreground)] mt-1 leading-relaxed">
+            <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
               Token nào sách không khai báo (ví dụ font hoặc màu) sẽ dùng thông số trong tab{" "}
               <strong>Kiểu chữ (Typography)</strong> — màu sắc không bao giờ bị bịa thêm.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              type="button"
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
               onClick={(e) => {
                 e.stopPropagation();
                 void handleReanalyze();
               }}
               disabled={isAnalyzingBookStyle || !currentBook}
-              className="lg-button lg-button--secondary h-6 text-xs px-2 gap-1 disabled:opacity-50"
+              className="h-6 text-xs px-2 gap-1 disabled:opacity-50"
               title="Đọc lại CSS gốc của sách"
             >
               {isAnalyzingBookStyle ? (
@@ -141,23 +146,24 @@ export function PresetGallery() {
                 <RefreshCw size={12} />
               )}
               <span>Phân tích lại</span>
-            </button>
+            </Button>
             {isNativeActive ? (
-              <span className="flex items-center gap-1 text-[var(--primary)] font-medium text-xs">
+              <span className="flex items-center gap-1 text-primary font-medium text-xs">
                 <Check size={13} />
                 <span>Đang sử dụng</span>
               </span>
             ) : (
-              <button
-                type="button"
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleSelectNative();
                 }}
-                className="lg-button lg-button--secondary h-6 text-xs px-2"
+                className="h-6 text-xs px-2"
               >
                 Áp dụng
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -166,18 +172,19 @@ export function PresetGallery() {
         {signature && signature.evidence.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-2.5">
             {signature.evidence.map((item) => (
-              <span
+              <Badge
                 key={item}
-                className="app-badge app-badge--neutral text-[10px] h-[18px] px-1.5"
+                variant="secondary"
+                className="text-[10px] h-4.5 px-1.5 font-normal"
               >
                 {item}
-              </span>
+              </Badge>
             ))}
           </div>
         )}
 
         {!currentBook && (
-          <p className="text-[11px] text-[var(--muted-foreground)] mt-2.5">
+          <p className="text-[11px] text-muted-foreground mt-2.5">
             Chưa có sách nào được nạp.
           </p>
         )}
@@ -192,10 +199,10 @@ export function PresetGallery() {
           </p>
         )}
 
-        <div className="flex items-center justify-between gap-3 pt-2.5 mt-2.5 border-t border-[var(--border)]">
+        <div className="flex items-center justify-between gap-3 pt-2.5 mt-2.5 border-t border-border">
           {nativeColors.length > 0 ? (
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-[var(--muted-foreground)]">Bảng màu gốc:</span>
+              <span className="text-[11px] text-muted-foreground">Bảng màu gốc:</span>
               <div className="flex items-center -space-x-1">
                 {nativeColors.map((c) => (
                   <span
@@ -208,25 +215,25 @@ export function PresetGallery() {
               </div>
             </div>
           ) : (
-            <span className="text-[11px] text-[var(--muted-foreground)]">
+            <span className="text-[11px] text-muted-foreground">
               {signature?.fontFamily ? `Font gốc: ${shortFontName(signature.fontFamily)}` : "Chưa đọc được định dạng gốc"}
             </span>
           )}
 
           <label
-            className="flex items-center gap-1.5 text-[11px] text-[var(--muted-foreground)] cursor-pointer"
+            className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer"
             onClick={(e) => e.stopPropagation()}
           >
             <input
               type="checkbox"
               checked={autoStyleFromBook}
               onChange={(e) => setAutoStyleFromBook(e.target.checked)}
-              className="accent-[var(--primary)] cursor-pointer"
+              className="accent-primary cursor-pointer"
             />
             <span>Tự động cho sách mới</span>
           </label>
         </div>
-      </div>
+      </Card>
 
       {/* Presets Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
@@ -235,22 +242,22 @@ export function PresetGallery() {
           const isJevRecommended = jevDecision?.recommended_preset === preset.id;
 
           return (
-            <div
+            <Card
               key={preset.id}
               onClick={() => handleSelect(preset)}
-              className={`card-surface p-4 cursor-pointer relative transition-all flex flex-col justify-between ${
+              className={`p-4 cursor-pointer relative transition-all flex flex-col justify-between bg-card ${
                 isSelected 
-                  ? "ring-2 ring-[var(--primary)] shadow-md" 
-                  : ""
+                  ? "ring-2 ring-primary shadow-md" 
+                  : "hover:border-primary/50"
               }`}
             >
               {/* Smart Recommendation Badge */}
               {isJevRecommended && (
                 <div className="absolute top-2 right-2">
-                  <span className="app-badge app-badge--brand text-[10px] h-[18px] px-1.5 font-mono">
+                  <Badge variant="outline" className="text-[10px] h-4.5 px-1.5 font-mono border-primary/40 text-primary gap-1">
                     <Sparkles size={10} />
                     <span>Gợi ý phù hợp</span>
-                  </span>
+                  </Badge>
                 </div>
               )}
 
@@ -258,14 +265,14 @@ export function PresetGallery() {
                 <div className="flex items-start justify-between mb-2">
                   <div className="pr-16">
                     <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-semibold text-[var(--foreground)]">
+                      <h3 className="text-sm font-semibold text-foreground">
                         {preset.name}
                       </h3>
-                      <span className="app-badge app-badge--neutral text-[10px] h-[18px]">
+                      <Badge variant="secondary" className="text-[10px] h-4.5">
                         {preset.genreLabel}
-                      </span>
+                      </Badge>
                     </div>
-                    <p className="text-xs text-[var(--muted-foreground)] mt-1 leading-relaxed">
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
                       {preset.description}
                     </p>
                   </div>
@@ -278,7 +285,7 @@ export function PresetGallery() {
                     color: preset.colors.text,
                     fontFamily: preset.fontFamily,
                   }}
-                  className="p-3.5 rounded border border-[var(--border)] my-2.5 text-xs leading-relaxed shadow-sm"
+                  className="p-3.5 rounded-lg border border-border my-2.5 text-xs leading-relaxed shadow-xs"
                 >
                   <div
                     style={{ color: preset.colors.accent }}
@@ -296,22 +303,22 @@ export function PresetGallery() {
               </div>
 
               {/* Card Footer: Metadata & Colors */}
-              <div className="flex items-center justify-between pt-2.5 border-t border-[var(--border)] text-xs text-[var(--muted-foreground)]">
+              <div className="flex items-center justify-between pt-2.5 border-t border-border text-xs text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <span className="text-[11px]">Bảng màu:</span>
                   <div className="flex items-center -space-x-1">
                     <span
-                      className="w-3.5 h-3.5 rounded-full border border-black/30 shadow-xs"
+                      className="size-3.5 rounded-full border border-black/30 shadow-xs"
                       style={{ backgroundColor: preset.colors.bg }}
                       title="Nền"
                     />
                     <span
-                      className="w-3.5 h-3.5 rounded-full border border-black/30 shadow-xs"
+                      className="size-3.5 rounded-full border border-black/30 shadow-xs"
                       style={{ backgroundColor: preset.colors.text }}
                       title="Chữ"
                     />
                     <span
-                      className="w-3.5 h-3.5 rounded-full border border-black/30 shadow-xs"
+                      className="size-3.5 rounded-full border border-black/30 shadow-xs"
                       style={{ backgroundColor: preset.colors.accent }}
                       title="Điểm nhấn"
                     />
@@ -320,25 +327,26 @@ export function PresetGallery() {
 
                 <div className="flex items-center gap-2">
                   {isSelected ? (
-                    <span className="flex items-center gap-1 text-[var(--primary)] font-medium text-xs">
+                    <span className="flex items-center gap-1 text-primary font-medium text-xs">
                       <Check size={13} />
                       <span>Đang sử dụng</span>
                     </span>
                   ) : (
-                    <button
-                      type="button"
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleSelect(preset);
                       }}
-                      className="lg-button lg-button--secondary h-6 text-xs px-2"
+                      className="h-6 text-xs px-2"
                     >
                       Áp dụng
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
-            </div>
+            </Card>
           );
         })}
       </div>

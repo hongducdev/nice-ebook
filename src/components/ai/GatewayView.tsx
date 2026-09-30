@@ -9,6 +9,11 @@ import {
   Search,
   ShieldCheck 
 } from "lucide-react";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
+import { Card } from "../ui/card";
+import { Input } from "../ui/input";
+import { Empty, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from "../ui/empty";
 import { useAppStore } from "../../stores/useAppStore";
 import { GatewaySettingsModal } from "../settings/GatewaySettingsModal";
 import { invoke } from "@tauri-apps/api/core";
@@ -125,36 +130,37 @@ export function GatewayView() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-base font-semibold text-[var(--foreground)] tracking-tight flex items-center flex-wrap gap-2">
-            <Boxes size={18} className="text-[var(--primary)]" />
+          <h2 className="text-base font-semibold text-foreground tracking-tight flex items-center flex-wrap gap-2">
+            <Boxes size={18} className="text-primary" />
             <span>AI Gateway & Điều Phối Mô Hình</span>
             {activeGateway ? (
-              <span className="app-badge app-badge--brand text-[10px] h-[18px]">
+              <Badge variant="outline" className="text-[10px] h-4.5 border-primary/40 text-primary">
                 {activeGateway.name} ({activeGateway.latency_ms}ms)
-              </span>
+              </Badge>
             ) : (
-              <span className="app-badge app-badge--neutral text-[10px] h-[18px]">
+              <Badge variant="secondary" className="text-[10px] h-4.5">
                 Lõi Offline (Cục bộ)
-              </span>
+              </Badge>
             )}
           </h2>
-          <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+          <p className="text-xs text-muted-foreground mt-0.5">
             Tự động phát hiện các cổng AI Proxy cục bộ (9Router, Cockpit, Ollama) và phân loại mô hình theo từng nhà cung cấp.
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setIsModalOpen(true)}
-            className="lg-button lg-button--secondary h-7 text-xs px-2.5"
+            className="h-7 text-xs px-2.5 gap-1.5"
           >
-            <SlidersHorizontal size={13} />
+            <SlidersHorizontal className="size-3.5" />
             <span>Tùy Biến Endpoint</span>
-          </button>
+          </Button>
 
-          <button
-            type="button"
+          <Button
+            size="sm"
             onClick={() => {
               toast.loading("Đang quét các cổng loopback...", { id: "rescan" });
               scanGateways().then(() => {
@@ -162,81 +168,82 @@ export function GatewayView() {
               });
             }}
             disabled={isScanningGateways}
-            className="lg-button lg-button--primary h-7 text-xs px-2.5"
+            className="h-7 text-xs px-2.5 gap-1.5"
           >
-            <RefreshCw size={13} className={isScanningGateways ? "animate-spin" : ""} />
+            <RefreshCw className={`size-3.5 ${isScanningGateways ? "animate-spin" : ""}`} />
             <span>{isScanningGateways ? "Đang quét..." : "Quét lại Gateway"}</span>
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Jev Core Highlight Card (Offline 100%, 0 Key) with Test Feature */}
-      <div className="card-surface p-4 flex-shrink-0 h-auto">
+      <Card className="p-4 shrink-0 bg-card border-border">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0 flex-1">
-            <div className="w-1 h-8 rounded-full bg-[var(--primary)] flex-shrink-0 mt-0.5" />
+            <div className="w-1 h-8 rounded-full bg-primary shrink-0 mt-0.5" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center flex-wrap gap-2">
-                <h3 className="text-sm font-semibold text-[var(--foreground)]">
+                <h3 className="text-sm font-semibold text-foreground">
                   Lõi Xử Lý Cục Bộ (Tự động 100% Offline)
                 </h3>
-                <span className="app-badge app-badge--success text-[10px] h-[18px]">
+                <Badge variant="secondary" className="text-[10px] h-4.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                   100% Offline
-                </span>
-                <span className="app-badge app-badge--neutral text-[10px] h-[18px]">
+                </Badge>
+                <Badge variant="outline" className="text-[10px] h-4.5">
                   Zero API Key
-                </span>
+                </Badge>
               </div>
-              <p className="text-xs text-[var(--muted-foreground)] mt-1.5 leading-relaxed">
+              <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
                 Cơ chế phân loại heuristic siêu tốc nhúng trực tiếp trong lõi Rust. Tự động nhận diện thể loại sách, đo tỷ lệ hội thoại và đề xuất phong cách typography chuẩn mực mà không cần Internet hay API key.
               </p>
               {jevDecision && (
-                <div className="mt-2 text-xs text-[var(--foreground)] flex items-start gap-2 bg-[var(--secondary)]/60 p-2 rounded border border-[var(--border)]">
-                  <span className="text-[var(--muted-foreground)] font-medium flex-shrink-0">Nhận định:</span>
-                  <span className="font-normal text-[var(--foreground)]">{jevDecision.explanation}</span>
+                <div className="mt-2 text-xs text-foreground flex items-start gap-2 bg-secondary/60 p-2 rounded border border-border">
+                  <span className="text-muted-foreground font-medium shrink-0">Nhận định:</span>
+                  <span className="font-normal text-foreground">{jevDecision.explanation}</span>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="flex items-center justify-between lg:justify-end gap-3 flex-shrink-0 lg:pl-4 lg:border-l border-[var(--border)] pt-2 lg:pt-0 border-t lg:border-t-0">
+          <div className="flex items-center justify-between lg:justify-end gap-3 shrink-0 lg:pl-4 lg:border-l border-border pt-2 lg:pt-0 border-t lg:border-t-0">
             <div className="text-left lg:text-right">
               {jevDecision ? (
                 <>
-                  <span className="text-[10px] text-[var(--muted-foreground)] block">Phân loại sách</span>
-                  <span className="text-xs font-semibold text-[var(--primary)]">{jevDecision.genre_label}</span>
-                  <span className="text-[10px] font-mono text-[var(--muted-foreground)] block mt-0.5">
+                  <span className="text-[10px] text-muted-foreground block">Phân loại sách</span>
+                  <span className="text-xs font-semibold text-primary">{jevDecision.genre_label}</span>
+                  <span className="text-[10px] font-mono text-muted-foreground block mt-0.5">
                     {(jevDecision.confidence * 100).toFixed(0)}% độ tin cậy
                   </span>
                 </>
               ) : (
                 <>
-                  <span className="text-[10px] text-[var(--muted-foreground)] block">Trạng thái</span>
-                  <span className="text-xs text-[var(--ui-success)] font-medium">Lõi Sẵn Sàng</span>
+                  <span className="text-[10px] text-muted-foreground block">Trạng thái</span>
+                  <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Lõi Sẵn Sàng</span>
                 </>
               )}
             </div>
 
-            <button
-              type="button"
+            <Button
+              variant="outline"
+              size="sm"
               onClick={handleTestJev}
               disabled={isTestingJev}
-              className="lg-button lg-button--secondary h-7 text-xs px-3 gap-1.5 flex-shrink-0"
+              className="h-7 text-xs px-3 gap-1.5 shrink-0"
               title="Kiểm tra thời gian phản hồi của lõi cục bộ"
             >
-              <Activity size={13} className={isTestingJev ? "animate-spin text-[var(--primary)]" : "text-emerald-500"} />
+              <Activity className={`size-3.5 ${isTestingJev ? "animate-spin text-primary" : "text-emerald-500"}`} />
               <span>{isTestingJev ? "Đang đo..." : jevTestResult ? `${jevTestResult.latencyMs}ms` : "Đo độ trễ"}</span>
-            </button>
+            </Button>
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Section 1: Detected Gateways (Compact View without massive chip overflow) */}
       <div className="flex items-center justify-between flex-shrink-0">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Danh Sách AI Gateway Cục Bộ (Localhost)
         </h3>
-        <span className="text-xs text-[var(--muted-foreground)] font-mono">
+        <span className="text-xs text-muted-foreground font-mono">
           {gateways.filter((g) => g.is_online).length} / {gateways.length || 7} cổng trực tuyến
         </span>
       </div>
@@ -246,7 +253,7 @@ export function GatewayView() {
           const isSelected = activeGateway?.name === gw.name;
 
           return (
-            <div
+            <Card
               key={gw.name}
               onClick={() => {
                 if (gw.is_online) {
@@ -256,79 +263,79 @@ export function GatewayView() {
                   );
                 }
               }}
-              className={`card-surface p-3 transition-all ${
+              className={`p-3 transition-all bg-card ${
                 gw.is_online ? "cursor-pointer" : "opacity-50 cursor-not-allowed"
-              } ${isSelected ? "ring-2 ring-[var(--primary)]" : ""}`}
+              } ${isSelected ? "ring-2 ring-primary shadow-xs" : "hover:border-primary/50"}`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div
-                    className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                    className={`size-2 rounded-full shrink-0 ${
                       gw.is_online
-                        ? "bg-[var(--ui-success)] shadow-xs animate-pulse"
-                        : "bg-[var(--muted-foreground)]"
+                        ? "bg-emerald-500 shadow-xs animate-pulse"
+                        : "bg-muted-foreground"
                     }`}
                   />
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-[var(--foreground)] truncate max-w-[160px]">
+                      <span className="text-xs font-semibold text-foreground truncate max-w-[160px]">
                         {gw.name}
                       </span>
-                      <span className="text-[10px] font-mono text-[var(--muted-foreground)]">
+                      <span className="text-[10px] font-mono text-muted-foreground">
                         :{gw.port}
                       </span>
                     </div>
-                    <span className="text-[10px] font-mono text-[var(--muted-foreground)] truncate block max-w-[200px]">
+                    <span className="text-[10px] font-mono text-muted-foreground truncate block max-w-[200px]">
                       {gw.base_url}
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
                   {gw.is_online && (
                     <>
-                      <span className="app-badge app-badge--neutral text-[10px] h-[18px] px-1.5 font-mono">
+                      <Badge variant="secondary" className="text-[10px] h-4.5 px-1.5 font-mono">
                         {gw.models.length} models
-                      </span>
-                      <span className="text-[11px] font-mono text-[var(--ui-success)]">
+                      </Badge>
+                      <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400">
                         {gw.latency_ms}ms
                       </span>
                     </>
                   )}
 
                   {isSelected && (
-                    <span className="app-badge app-badge--brand text-[10px] h-[18px] px-1.5 gap-1">
-                      <Check size={11} />
+                    <Badge variant="outline" className="text-[10px] h-4.5 px-1.5 gap-1 border-primary/40 text-primary">
+                      <Check className="size-3" />
                       <span>Đang chọn</span>
-                    </span>
+                    </Badge>
                   )}
                 </div>
               </div>
-            </div>
+            </Card>
           );
         })}
       </div>
 
       {/* Section 2: Categorized Models by Provider with Test Feature */}
-      <div className="flex items-center justify-between pt-2 border-t border-[var(--border)] flex-shrink-0">
+      <div className="flex items-center justify-between pt-2 border-t border-border shrink-0">
         <div className="flex items-center gap-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--foreground)]">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground">
             Phân Loại Mô Hình Theo Nhà Cung Cấp
           </h3>
-          <span className="app-badge app-badge--neutral text-[10px] h-[18px]">
+          <Badge variant="secondary" className="text-[10px] h-4.5">
             {categorizedModels.reduce((acc, c) => acc + c.models.length, 0)} mô hình
-          </span>
+          </Badge>
         </div>
 
         {/* Search bar to prevent chip clutter */}
         <div className="relative w-56">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
-          <input
+          <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
             type="text"
             placeholder="Tìm kiếm mô hình..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-7 pl-8 pr-2.5 text-xs rounded bg-[var(--secondary)] border border-[var(--border)] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none focus:border-[var(--primary)] font-mono"
+            className="w-full h-7 pl-8 pr-2.5 text-xs font-mono bg-card"
           />
         </div>
       </div>
@@ -337,7 +344,7 @@ export function GatewayView() {
       {categorizedModels.length > 0 ? (
         <div className="model-page flex-shrink-0">
           {categorizedModels.map((category) => (
-            <div key={category.id} className="card-surface model-page__category-card">
+            <Card key={category.id} className="model-page__category-card p-4 bg-card border-border">
               {/* Category Header */}
               <div className="model-page__category-header">
                 <div className="model-page__category-main">
@@ -350,13 +357,13 @@ export function GatewayView() {
                     <div className="flex items-center gap-2">
                       <h4 className="model-page__category-title">{category.name}</h4>
                       {category.accountBadge && (
-                        <span className="app-badge app-badge--brand text-[9px] h-[18px]">
+                        <Badge variant="outline" className="text-[9px] h-4.5 border-primary/40 text-primary">
                           {category.accountBadge}
-                        </span>
+                        </Badge>
                       )}
-                      <span className="app-badge app-badge--neutral text-[10px] h-[18px]">
+                      <Badge variant="secondary" className="text-[10px] h-4.5">
                         {category.models.length} mô hình
-                      </span>
+                      </Badge>
                     </div>
                     <p className="model-page__category-description">{category.description}</p>
                   </div>
@@ -364,16 +371,17 @@ export function GatewayView() {
 
                 {/* Quick test the first model of this provider */}
                 {category.models.length > 0 && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => handleTestModel(category.models[0])}
                     disabled={Boolean(testingModels[category.models[0]])}
-                    className="lg-button lg-button--secondary h-6 text-xs px-2 gap-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                    className="h-6 text-xs px-2 gap-1 text-muted-foreground hover:text-foreground"
                     title={`Kiểm tra kết nối mô hình đầu tiên (${category.models[0]})`}
                   >
-                    <Activity size={12} className={testingModels[category.models[0]] ? "animate-spin text-[var(--primary)]" : ""} />
+                    <Activity className={`size-3 ${testingModels[category.models[0]] ? "animate-spin text-primary" : ""}`} />
                     <span>Test nhanh</span>
-                  </button>
+                  </Button>
                 )}
               </div>
 
@@ -414,9 +422,9 @@ export function GatewayView() {
 
                       {/* Fallback badge */}
                       {isFallback && (
-                        <span className="app-badge app-badge--brand text-[8px] h-[16px] px-1 font-mono">
+                        <Badge variant="outline" className="text-[8px] h-4 px-1 font-mono border-primary/40 text-primary">
                           Fallback
-                        </span>
+                        </Badge>
                       )}
 
                       {/* Action buttons inside Chip */}
@@ -443,7 +451,7 @@ export function GatewayView() {
                           aria-label={`Test ${model}`}
                         >
                           {isTesting ? (
-                            <Activity size={11} className="animate-spin text-[var(--primary)]" />
+                            <Activity size={11} className="animate-spin text-primary" />
                           ) : (
                             <Play size={10} className="opacity-70 group-hover:opacity-100" />
                           )}
@@ -453,46 +461,50 @@ export function GatewayView() {
                   );
                 })}
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       ) : (
-        <div className="card-surface p-8 text-center flex flex-col items-center justify-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-[var(--primary)]/10 text-[var(--primary)] flex items-center justify-center">
-            <Boxes size={24} />
-          </div>
-          <div>
-            <h4 className="text-sm font-semibold text-[var(--foreground)]">
-              {activeGateway
-                ? `Chưa phát hiện mô hình hoặc Provider nào trong ${activeGateway.name}`
-                : "Chưa kích hoạt AI Gateway"}
-            </h4>
-            <p className="text-xs text-[var(--muted-foreground)] mt-1 max-w-md mx-auto leading-relaxed">
-              {activeGateway?.gateway_type === "9router"
-                ? "Chỉ các nhà cung cấp (Antigravity, Codex, Cline, Qoder...) đã được thiết lập và kết nối trong 9Router mới hiển thị tại đây. Vui lòng mở 9Router để cấu hình provider của bạn."
-                : "Vui lòng chọn hoặc quét lại Gateway ở danh sách trên để tải các mô hình của nhà cung cấp đã thiết lập."}
-            </p>
-          </div>
+        <Empty className="p-8 border border-border rounded-xl bg-card">
+          <EmptyMedia>
+            <Boxes className="size-10 text-primary opacity-80" />
+          </EmptyMedia>
+          <EmptyTitle className="text-sm font-semibold text-foreground">
+            {activeGateway
+              ? `Chưa phát hiện mô hình hoặc Provider nào trong ${activeGateway.name}`
+              : "Chưa kích hoạt AI Gateway"}
+          </EmptyTitle>
+          <EmptyDescription className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
+            {activeGateway?.gateway_type === "9router"
+              ? "Chỉ các nhà cung cấp (Antigravity, Codex, Cline, Qoder...) đã được thiết lập và kết nối trong 9Router mới hiển thị tại đây. Vui lòng mở 9Router để cấu hình provider của bạn."
+              : "Vui lòng chọn hoặc quét lại Gateway ở danh sách trên để tải các mô hình của nhà cung cấp đã thiết lập."}
+          </EmptyDescription>
           {activeGateway?.gateway_type === "9router" && (
-            <div className="flex items-center gap-2 mt-2">
-              <a
-                href={`${activeGateway.base_url.replace(/\/v1\/?$/, "")}/dashboard`}
-                target="_blank"
-                rel="noreferrer"
-                className="lg-button lg-button--secondary h-7 text-xs px-3"
+            <EmptyContent className="flex items-center gap-2 mt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                asChild
+                className="h-7 text-xs px-3"
               >
-                Mở 9Router Dashboard
-              </a>
-              <button
-                type="button"
+                <a
+                  href={`${activeGateway.base_url.replace(/\/v1\/?$/, "")}/dashboard`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Mở 9Router Dashboard
+                </a>
+              </Button>
+              <Button
+                size="sm"
                 onClick={() => scanGateways()}
-                className="lg-button lg-button--primary h-7 text-xs px-3"
+                className="h-7 text-xs px-3"
               >
                 Quét lại Gateway
-              </button>
-            </div>
+              </Button>
+            </EmptyContent>
           )}
-        </div>
+        </Empty>
       )}
 
       <GatewaySettingsModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />

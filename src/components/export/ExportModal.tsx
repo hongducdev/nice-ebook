@@ -1,7 +1,21 @@
 import { useState } from "react";
-import { Download, X, CheckCircle2, Sparkles, AlertTriangle, Info } from "lucide-react";
+import { Download, Sparkles, AlertTriangle, Info, CheckCircle2 } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "../ui/dialog";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
+import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
+import { Checkbox } from "../ui/checkbox";
+import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
+import { ScrollArea } from "../ui/scroll-area";
 import { useAppStore } from "../../stores/useAppStore";
 import { generateEpubCss } from "../../utils/cssGenerator";
 import {
@@ -81,8 +95,7 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
   const [applyWordWise, setApplyWordWise] = useState(true);
   const [appendXRayAppendix, setAppendXRayAppendix] = useState(true);
 
-  if (!isOpen || !currentBook) return null;
-
+  if (!currentBook) return null;
   const safeTitle = currentBook.title.replace(/[/\\?%*:|"<>]/g, "_");
 
   const metadataOverrides = {
@@ -301,311 +314,293 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
   });
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 select-none">
-      <div className="card-surface rounded-[var(--ui-radius-card)] w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="h-11 px-4 border-b border-[var(--border)] flex items-center justify-between bg-[var(--ui-titlebar-surface)] flex-shrink-0">
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+        <DialogHeader className="px-5 py-3.5 border-b border-border bg-muted/30 shrink-0">
           <div className="flex items-center gap-2">
-            <Download size={15} className="text-[var(--primary)]" />
-            <span className="font-semibold text-xs text-[var(--foreground)]">Xuất Bản File Sách</span>
+            <Download className="size-4 text-primary" />
+            <DialogTitle className="text-sm font-semibold">Xuất Bản File Sách</DialogTitle>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--accent)] transition-colors"
-          >
-            <X size={15} />
-          </button>
-        </div>
+          <DialogDescription className="text-xs text-muted-foreground">
+            Đóng gói EPUB chuẩn hoặc chuyển đổi sang định dạng Kindle (AZW3/MOBI/EPUB) tối ưu.
+          </DialogDescription>
+        </DialogHeader>
 
-        {/* Content */}
-        <div className="p-4 space-y-3 overflow-y-auto">
-          {/* Book summary */}
-          <div className="p-3 rounded bg-[var(--secondary)] border border-[var(--border)] space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-[var(--muted-foreground)]">Tựa sách:</span>
-              <span className="font-semibold text-[var(--foreground)] truncate max-w-[240px]">
-                {currentBook.title}
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-[var(--muted-foreground)]">Số chương:</span>
-              <span className="font-mono text-[var(--foreground)]">
-                {currentBook.chapter_count} chương
-              </span>
-            </div>
-          </div>
-
-          {/* Export mode selector */}
-          <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-semibold text-[var(--foreground)]">
-              Định dạng xuất
-            </span>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setExportMode("kindle")}
-                className={`p-2.5 rounded-[var(--ui-radius-button)] border text-left transition-all ${
-                  exportMode === "kindle"
-                    ? "border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_10%,var(--card))]"
-                    : "border-[var(--border)] hover:bg-[var(--secondary)]"
-                }`}
-              >
-                <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--foreground)]">
-                  <Sparkles size={12} className="text-[var(--primary)]" />
-                  Bản Kindle
-                </div>
-                <div className="text-[10px] text-[var(--muted-foreground)] mt-0.5 leading-relaxed">
-                  Có chú thích từ vựng &amp; phụ lục tra cứu. Chuyển đổi ngay trong ứng dụng.
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setExportMode("standard")}
-                className={`p-2.5 rounded-[var(--ui-radius-button)] border text-left transition-all ${
-                  exportMode === "standard"
-                    ? "border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_10%,var(--card))]"
-                    : "border-[var(--border)] hover:bg-[var(--secondary)]"
-                }`}
-              >
-                <div className="text-xs font-bold text-[var(--foreground)]">EPUB chuẩn</div>
-                <div className="text-[10px] text-[var(--muted-foreground)] mt-0.5 leading-relaxed">
-                  Chỉ định dạng và CSS, không thêm chú thích từ vựng.
-                </div>
-              </button>
-            </div>
-          </div>
-
-          {/* Kindle options */}
-          {exportMode === "kindle" && (
-            <>
-              <div className="flex flex-col gap-2">
-                <span className="text-[11px] font-semibold text-[var(--foreground)]">
-                  Định dạng tệp Kindle
+        <ScrollArea className="flex-1 min-h-0 p-5">
+          <div className="flex flex-col gap-4">
+            {/* Book summary */}
+            <div className="p-3 rounded-lg bg-secondary/60 border border-border flex flex-col gap-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Tựa sách:</span>
+                <span className="font-semibold text-foreground truncate max-w-[280px]">
+                  {currentBook.title}
                 </span>
-                <div className="flex flex-col gap-1.5">
-                  {(
-                    [
-                      {
-                        id: "azw3" as KindleTarget,
-                        title: "AZW3 (KF8) — khuyên dùng",
-                        desc: "Chép cáp USB vào thư mục documents/ của Kindle, hoặc dùng Send-to-Kindle.",
-                      },
-                      {
-                        id: "mobi" as KindleTarget,
-                        title: "MOBI (Dual) — máy rất cũ",
-                        desc: "Gồm bản KF8 và một phần tương thích KF7 cho thiết bị đời đầu.",
-                      },
-                      {
-                        id: "epub" as KindleTarget,
-                        title: "EPUB tối ưu (Send-to-Kindle)",
-                        desc: "Gửi qua email/web Amazon; Amazon sẽ tự chuyển sang định dạng Kindle.",
-                      },
-                    ] as const
-                  ).map((opt) => (
-                    <label
-                      key={opt.id}
-                      className={`flex items-start gap-2 p-2 rounded-[var(--ui-radius-button)] border cursor-pointer transition-all ${
-                        kindleTarget === opt.id
-                          ? "border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_8%,var(--card))]"
-                          : "border-[var(--border)] hover:bg-[var(--secondary)]"
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="kindle-target"
-                        checked={kindleTarget === opt.id}
-                        onChange={() => setKindleTarget(opt.id)}
-                        className="mt-0.5 accent-[var(--primary)]"
-                      />
-                      <span className="min-w-0">
-                        <span className="block text-[11px] font-semibold text-[var(--foreground)]">
-                          {opt.title}
-                        </span>
-                        <span className="block text-[10px] text-[var(--muted-foreground)] leading-relaxed">
-                          {opt.desc}
-                        </span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
               </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Số chương:</span>
+                <Badge variant="outline" className="font-mono text-[11px] h-5">
+                  {currentBook.chapter_count} chương
+                </Badge>
+              </div>
+            </div>
 
-              {/* Feature toggles */}
-              <div className="flex flex-col gap-2">
-                <span className="text-[11px] font-semibold text-[var(--foreground)]">
-                  Nội dung bổ sung
-                </span>
-                <label className="flex items-start gap-2 p-2 rounded-[var(--ui-radius-button)] border border-[var(--border)] cursor-pointer hover:bg-[var(--secondary)]">
-                  <input
-                    type="checkbox"
-                    checked={applyWordWise}
-                    onChange={(e) => setApplyWordWise(e.target.checked)}
-                    className="mt-0.5 accent-[var(--primary)]"
-                  />
-                  <span>
-                    <span className="block text-[11px] font-semibold text-[var(--foreground)]">
-                      Nhúng chú thích từ vựng (ruby)
-                    </span>
-                    <span className="block text-[10px] text-[var(--muted-foreground)] leading-relaxed">
-                      Nghĩa ngắn hiển thị nhỏ phía trên từ, theo mức {wordWiseSettings.maxDifficulty} và
-                      ngôn ngữ {wordWiseSettings.language === "vi" ? "Anh - Việt" : "Anh - Anh"}.
-                    </span>
-                  </span>
-                </label>
-
-                <label
-                  className={`flex items-start gap-2 p-2 rounded-[var(--ui-radius-button)] border cursor-pointer transition-all ${
-                    xrayData
-                      ? "border-[var(--border)] hover:bg-[var(--secondary)]"
-                      : "border-[var(--border)] opacity-60 cursor-not-allowed"
+            {/* Export mode selector */}
+            <div className="flex flex-col gap-2">
+              <span className="text-xs font-semibold text-foreground">
+                Định dạng xuất
+              </span>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setExportMode("kindle")}
+                  className={`p-3 rounded-lg border text-left transition-all cursor-pointer ${
+                    exportMode === "kindle"
+                      ? "border-primary bg-primary/10 shadow-xs"
+                      : "border-border hover:bg-secondary/50"
                   }`}
                 >
-                  <input
-                    type="checkbox"
-                    checked={appendXRayAppendix && Boolean(xrayData)}
-                    disabled={!xrayData}
-                    onChange={(e) => setAppendXRayAppendix(e.target.checked)}
-                    className="mt-0.5 accent-[var(--primary)]"
-                  />
-                  <span>
-                    <span className="block text-[11px] font-semibold text-[var(--foreground)]">
-                      Thêm phụ lục tra cứu nhân vật (kiểu X-Ray)
-                    </span>
-                    <span className="block text-[10px] text-[var(--muted-foreground)] leading-relaxed">
-                      {xrayData
-                        ? `Sẽ thêm chương "Dramatis Personae" với ${xrayData.people.length} nhân vật và ${xrayData.terms.length} thuật ngữ.`
-                        : "Chưa có dữ liệu. Hãy quét nhân vật ở mục Kindle X-Ray & Word Wise trước."}
-                    </span>
-                  </span>
-                </label>
-              </div>
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                    <Sparkles className="size-3.5 text-primary" />
+                    Bản Kindle
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                    Có chú thích từ vựng &amp; phụ lục tra cứu. Chuyển đổi ngay trong ứng dụng.
+                  </div>
+                </button>
 
-              {/* Readiness warnings */}
-              {readiness.warnings.length > 0 && (
-                <div className="p-2.5 rounded bg-[color-mix(in_srgb,var(--ui-warning)_10%,var(--card))] border border-[color-mix(in_srgb,var(--ui-warning)_30%,var(--border))] flex flex-col gap-1">
-                  {readiness.warnings.map((w, i) => (
-                    <div
-                      key={i}
-                      className="flex items-start gap-1.5 text-[10px] text-[var(--foreground)] leading-relaxed"
-                    >
-                      <AlertTriangle size={11} className="text-[var(--ui-warning)] mt-0.5 flex-shrink-0" />
-                      <span>{w}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Success banner */}
-          {exportedSize !== null && exportedPath && (
-            <div className="p-3 rounded bg-[color-mix(in_srgb,var(--ui-success)_12%,var(--card))] border border-[color-mix(in_srgb,var(--ui-success)_30%,var(--border))] text-xs space-y-1">
-              <div className="flex items-center gap-1.5 text-[var(--ui-success)] font-semibold">
-                <CheckCircle2 size={14} />
-                <span>Đã đóng gói hoàn tất!</span>
-              </div>
-              <p className="text-[11px] text-[var(--foreground)] font-mono break-all">
-                {exportedPath}
-              </p>
-              <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)] pt-1 border-t border-[var(--border)]">
-                <span>Dung lượng tệp:</span>
-                <span className="font-mono font-semibold text-[var(--foreground)]">
-                  {formatSize(exportedSize)}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Synthesized navigation — explains why a TOC may appear that the source lacked */}
-          {tocRepair && (
-            <div className="p-2.5 rounded bg-[var(--secondary)] border border-[var(--border)] flex flex-col gap-1">
-              <span className="text-[10px] font-semibold text-[var(--foreground)]">
-                Đã bổ sung mục lục cho bản Kindle:
-              </span>
-              <span className="text-[10px] text-[var(--muted-foreground)] leading-relaxed">
-                Sách gốc thiếu {tocRepair.addedNcx && tocRepair.addedNav
-                  ? "cả mục lục NCX và trang mục lục"
-                  : tocRepair.addedNcx
-                    ? "mục lục NCX"
-                    : "trang mục lục"}
-                . Đã tạo tự động {tocRepair.entries} mục theo thứ tự chương — nếu không có bước này, tệp
-                Kindle sẽ có mục lục hỏng và khó điều hướng.
-              </span>
-            </div>
-          )}
-
-          {/* Internal link repairs — surfaced so the user knows what changed */}
-          {linkRepair && (
-            <div className="p-2.5 rounded bg-[color-mix(in_srgb,var(--ui-warning)_10%,var(--card))] border border-[color-mix(in_srgb,var(--ui-warning)_30%,var(--border))] flex flex-col gap-1">
-              <span className="text-[10px] font-semibold text-[var(--foreground)]">
-                Đã sửa liên kết hỏng để bản Kindle dựng được:
-              </span>
-              {linkRepair.removed > 0 && (
-                <span className="text-[10px] text-[var(--foreground)] leading-relaxed">
-                  · {linkRepair.removed} liên kết trỏ tới tệp không tồn tại đã được chuyển thành chữ
-                  thường (nội dung vẫn giữ nguyên).
-                </span>
-              )}
-              {linkRepair.stripped > 0 && (
-                <span className="text-[10px] text-[var(--foreground)] leading-relaxed">
-                  · {linkRepair.stripped} liên kết có neo (#) không tồn tại đã được bỏ phần neo.
-                </span>
-              )}
-              {linkRepair.targets.slice(0, 3).map((t, i) => (
-                <span
-                  key={i}
-                  className="text-[10px] text-[var(--muted-foreground)] font-mono break-all"
+                <button
+                  type="button"
+                  onClick={() => setExportMode("standard")}
+                  className={`p-3 rounded-lg border text-left transition-all cursor-pointer ${
+                    exportMode === "standard"
+                      ? "border-primary bg-primary/10 shadow-xs"
+                      : "border-border hover:bg-secondary/50"
+                  }`}
                 >
-                  ↳ thiếu: {t}
-                </span>
-              ))}
-              {linkRepair.targets.length > 3 && (
-                <span className="text-[10px] text-[var(--muted-foreground)]">
-                  … và {linkRepair.targets.length - 3} đích khác.
-                </span>
-              )}
+                  <div className="text-xs font-bold text-foreground">EPUB chuẩn</div>
+                  <div className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                    Chỉ định dạng và CSS, không thêm chú thích từ vựng.
+                  </div>
+                </button>
+              </div>
             </div>
-          )}
 
-          {/* Converter warnings */}
-          {conversionWarnings.length > 0 && (
-            <div className="p-2.5 rounded bg-[var(--secondary)] border border-[var(--border)] flex flex-col gap-1">
-              <span className="text-[10px] font-semibold text-[var(--foreground)]">
-                Bộ chuyển đổi đã đơn giản hoá {conversionWarnings.length} thành phần không hỗ trợ:
-              </span>
-              {conversionWarnings.slice(0, 5).map((w, i) => (
-                <span key={i} className="text-[10px] text-[var(--muted-foreground)] leading-relaxed break-all">
-                  {w}
+            {/* Kindle options */}
+            {exportMode === "kindle" && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs font-semibold text-foreground">
+                    Định dạng tệp Kindle
+                  </span>
+                  <RadioGroup
+                    value={kindleTarget}
+                    onValueChange={(val) => setKindleTarget(val as KindleTarget)}
+                    className="flex flex-col gap-2"
+                  >
+                    {(
+                      [
+                        {
+                          id: "azw3" as KindleTarget,
+                          title: "AZW3 (KF8) — khuyên dùng",
+                          desc: "Chép cáp USB vào thư mục documents/ của Kindle, hoặc dùng Send-to-Kindle.",
+                        },
+                        {
+                          id: "mobi" as KindleTarget,
+                          title: "MOBI (Dual) — máy rất cũ",
+                          desc: "Gồm bản KF8 và một phần tương thích KF7 cho thiết bị đời đầu.",
+                        },
+                        {
+                          id: "epub" as KindleTarget,
+                          title: "EPUB tối ưu (Send-to-Kindle)",
+                          desc: "Gửi qua email/web Amazon; Amazon sẽ tự chuyển sang định dạng Kindle.",
+                        },
+                      ] as const
+                    ).map((opt) => (
+                      <label
+                        key={opt.id}
+                        htmlFor={`target-${opt.id}`}
+                        className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all ${
+                          kindleTarget === opt.id
+                            ? "border-primary bg-primary/5 shadow-xs"
+                            : "border-border hover:bg-secondary/40"
+                        }`}
+                      >
+                        <RadioGroupItem value={opt.id} id={`target-${opt.id}`} className="mt-0.5" />
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-xs font-semibold text-foreground">
+                            {opt.title}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground leading-relaxed">
+                            {opt.desc}
+                          </span>
+                        </div>
+                      </label>
+                    ))}
+                  </RadioGroup>
+                </div>
+
+                {/* Feature toggles */}
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs font-semibold text-foreground">
+                    Nội dung bổ sung
+                  </span>
+                  <label
+                    htmlFor="toggle-wordwise"
+                    className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border cursor-pointer hover:bg-secondary/40 transition-colors"
+                  >
+                    <Checkbox
+                      id="toggle-wordwise"
+                      checked={applyWordWise}
+                      onCheckedChange={(checked) => setApplyWordWise(Boolean(checked))}
+                      className="mt-0.5"
+                    />
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-xs font-semibold text-foreground">
+                        Nhúng chú thích từ vựng (ruby)
+                      </span>
+                      <span className="text-[11px] text-muted-foreground leading-relaxed">
+                        Nghĩa ngắn hiển thị nhỏ phía trên từ, theo mức {wordWiseSettings.maxDifficulty} và
+                        ngôn ngữ {wordWiseSettings.language === "vi" ? "Anh - Việt" : "Anh - Anh"}.
+                      </span>
+                    </div>
+                  </label>
+
+                  <label
+                    htmlFor="toggle-xray"
+                    className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all ${
+                      xrayData
+                        ? "border-border hover:bg-secondary/40"
+                        : "border-border opacity-60 cursor-not-allowed"
+                    }`}
+                  >
+                    <Checkbox
+                      id="toggle-xray"
+                      checked={appendXRayAppendix && Boolean(xrayData)}
+                      disabled={!xrayData}
+                      onCheckedChange={(checked) => setAppendXRayAppendix(Boolean(checked))}
+                      className="mt-0.5"
+                    />
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-xs font-semibold text-foreground">
+                        Thêm phụ lục tra cứu nhân vật (kiểu X-Ray)
+                      </span>
+                      <span className="text-[11px] text-muted-foreground leading-relaxed">
+                        {xrayData
+                          ? `Sẽ thêm chương "Dramatis Personae" với ${xrayData.people.length} nhân vật và ${xrayData.terms.length} thuật ngữ.`
+                          : "Chưa có dữ liệu. Hãy quét nhân vật ở mục Kindle X-Ray & Word Wise trước."}
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Readiness warnings */}
+                {readiness.warnings.length > 0 && (
+                  <Alert className="border-amber-500/30 bg-amber-500/10 text-foreground py-2.5">
+                    <AlertTriangle className="size-4 text-amber-500" />
+                    <AlertTitle className="text-xs font-medium text-amber-600 dark:text-amber-400">Lưu ý trước khi xuất</AlertTitle>
+                    <AlertDescription className="text-[11px] flex flex-col gap-1 mt-1 text-muted-foreground">
+                      {readiness.warnings.map((w, i) => (
+                        <div key={i} className="flex items-start gap-1.5 leading-relaxed">
+                          <span>• {w}</span>
+                        </div>
+                      ))}
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </>
+            )}
+
+            {/* Success banner */}
+            {exportedSize !== null && exportedPath && (
+              <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-xs flex flex-col gap-1.5">
+                <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
+                  <CheckCircle2 className="size-4" />
+                  <span>Đã đóng gói hoàn tất!</span>
+                </div>
+                <p className="text-[11px] text-foreground font-mono break-all bg-background/50 p-1.5 rounded border border-border">
+                  {exportedPath}
+                </p>
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1 border-t border-border">
+                  <span>Dung lượng tệp:</span>
+                  <span className="font-mono font-semibold text-foreground">
+                    {formatSize(exportedSize)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Synthesized navigation */}
+            {tocRepair && (
+              <div className="p-2.5 rounded-lg bg-secondary/50 border border-border flex flex-col gap-1 text-[11px]">
+                <span className="font-semibold text-foreground">
+                  Đã bổ sung mục lục cho bản Kindle:
                 </span>
-              ))}
-            </div>
-          )}
+                <span className="text-muted-foreground leading-relaxed">
+                  Sách gốc thiếu {tocRepair.addedNcx && tocRepair.addedNav
+                    ? "cả mục lục NCX và trang mục lục"
+                    : tocRepair.addedNcx
+                      ? "mục lục NCX"
+                      : "trang mục lục"}
+                  . Đã tạo tự động {tocRepair.entries} mục theo thứ tự chương.
+                </span>
+              </div>
+            )}
 
-          {/* Honest note about scope */}
-          <div className="p-2.5 rounded bg-[var(--secondary)] border border-[var(--border)] flex items-start gap-1.5">
-            <Info size={12} className="text-[var(--muted-foreground)] mt-0.5 flex-shrink-0" />
-            <p className="text-[10px] text-[var(--muted-foreground)] leading-relaxed">
-              Bộ chuyển đổi Kindle được biên dịch sẵn trong ứng dụng, không cần cài Calibre. Chú thích
-              từ vựng hiển thị dưới dạng ký tự nhỏ phía trên từ (chuẩn ruby), không phải công cụ Word Wise
-              độc quyền của Amazon.
-            </p>
+            {/* Internal link repairs */}
+            {linkRepair && (
+              <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 flex flex-col gap-1 text-[11px]">
+                <span className="font-semibold text-foreground">
+                  Đã sửa liên kết hỏng để bản Kindle dựng được:
+                </span>
+                {linkRepair.removed > 0 && (
+                  <span className="text-muted-foreground leading-relaxed">
+                    • {linkRepair.removed} liên kết trỏ tới tệp không tồn tại đã được chuyển thành chữ thường.
+                  </span>
+                )}
+                {linkRepair.stripped > 0 && (
+                  <span className="text-muted-foreground leading-relaxed">
+                    • {linkRepair.stripped} liên kết có neo (#) không tồn tại đã được bỏ neo.
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Converter warnings */}
+            {conversionWarnings.length > 0 && (
+              <div className="p-2.5 rounded-lg bg-secondary/50 border border-border flex flex-col gap-1 text-[11px]">
+                <span className="font-semibold text-foreground">
+                  Bộ chuyển đổi đã đơn giản hoá {conversionWarnings.length} thành phần không hỗ trợ:
+                </span>
+                {conversionWarnings.slice(0, 4).map((w, i) => (
+                  <span key={i} className="text-muted-foreground leading-relaxed break-all">
+                    • {w}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Honest note about scope */}
+            <div className="p-2.5 rounded-lg bg-secondary/40 border border-border flex items-start gap-2">
+              <Info className="size-4 text-muted-foreground mt-0.5 shrink-0" />
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Bộ chuyển đổi Kindle được biên dịch sẵn trong ứng dụng, không cần cài Calibre. Chú thích
+                từ vựng hiển thị dưới dạng ký tự nhỏ phía trên từ (chuẩn ruby).
+              </p>
+            </div>
           </div>
-        </div>
+        </ScrollArea>
 
-        {/* Footer */}
-        <div className="p-3 border-t border-[var(--border)] bg-[var(--ui-titlebar-surface)] flex items-center justify-end gap-2 flex-shrink-0">
-          <button type="button" onClick={onClose} className="lg-button lg-button--secondary h-7 text-xs px-3">
+        <DialogFooter className="m-0 p-4 border-t border-border bg-muted/30 flex items-center justify-end gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={onClose} className="h-8 text-xs">
             Đóng
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            size="sm"
             onClick={exportMode === "kindle" ? handleKindleExport : handleStandardExport}
             disabled={isExporting}
-            className="lg-button lg-button--primary h-7 text-xs px-3"
+            className="h-8 text-xs gap-1.5"
           >
-            <Download size={13} className={isExporting ? "animate-bounce" : ""} />
+            <Download className={`size-3.5 ${isExporting ? "animate-bounce" : ""}`} />
             <span>
               {isExporting
                 ? "Đang chuyển đổi..."
@@ -613,9 +608,9 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
                   ? "Chọn Nơi Lưu & Tạo Bản Kindle"
                   : "Chọn Nơi Lưu & Xuất"}
             </span>
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

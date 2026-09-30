@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+﻿import React, { useState, useEffect, useRef } from "react";
 import {
   X,
   Sparkles,
@@ -29,6 +29,7 @@ import { toast } from "sonner";
 interface MetadataModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialTab?: "metadata" | "covers" | "upload";
   // Optional mode for ConverterView
   converterValues?: {
     title: string;
@@ -49,6 +50,7 @@ interface MetadataModalProps {
 export function MetadataModal({
   isOpen,
   onClose,
+  initialTab,
   converterValues,
   onApplyConverterValues,
 }: MetadataModalProps) {
@@ -68,7 +70,7 @@ export function MetadataModal({
   const [coverDataUrl, setCoverDataUrl] = useState<string | null>(null);
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState<"metadata" | "covers" | "upload">("metadata");
+  const [activeTab, setActiveTab] = useState<"metadata" | "covers" | "upload">(initialTab || "metadata");
 
   // Search Source Mode: All / Wattpad & Webnovel / Published Books
   const [searchSourceMode, setSearchSourceMode] = useState<"all" | "wattpad" | "published">("all");
@@ -98,34 +100,164 @@ export function MetadataModal({
   const [isFetchingCustomUrl, setIsFetchingCustomUrl] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Sync state when opening or currentBook changes
+  // Auto-Save State & Refs
+  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
+  const isInitialSync = useRef(true);
+  const prevIsOpenRef = useRef(false);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const valuesRef = useRef({
+    title,
+    author,
+    publisher,
+    publishedYear,
+    language,
+    genre,
+    isbn,
+    description,
+    coverDataUrl,
+  });
+
+  valuesRef.current = {
+    title,
+    author,
+    publisher,
+    publishedYear,
+    language,
+    genre,
+    isbn,
+    description,
+    coverDataUrl,
+  };
+
+  const performSave = (overrides?: Partial<typeof valuesRef.current>) => {
+    const current = { ...valuesRef.current, ...overrides };
+    const rawTitle = current.title ?? "";
+    const trimmedTitle = String(rawTitle).trim();
+    if (!trimmedTitle) {
+      setSaveStatus("unsaved");
+      return false;
+    }
+
+    setSaveStatus("saving");
+
+    const trimmedAuthor = String(current.author ?? "").trim() || "Khuyết Danh";
+    const trimmedLanguage = String(current.language ?? "vi").trim() || "vi";
+    const trimmedDescription = String(current.description ?? "").trim();
+    const rawPublisher = String(current.publisher ?? "").trim();
+    const rawPublishedYear = String(current.publishedYear ?? "").trim();
+    const rawGenre = String(current.genre ?? "").trim();
+    const rawIsbn = String(current.isbn ?? "").trim();
+
+    if (isConverterMode && onApplyConverterValues) {
+      onApplyConverterValues({
+        title: trimmedTitle,
+        author: trimmedAuthor,
+        language: trimmedLanguage,
+        description: trimmedDescription,
+        coverDataUrl: current.coverDataUrl || undefined,
+      });
+    } else {
+      updateBookMetadata({
+        title: trimmedTitle,
+        author: trimmedAuthor,
+        publisher: rawPublisher || undefined,
+        published_year: rawPublishedYear || undefined,
+        language: trimmedLanguage,
+        genre: rawGenre || undefined,
+        isbn: rawIsbn || undefined,
+        description: trimmedDescription || null,
+        cover_data_url: current.coverDataUrl || null,
+      });
+    }
+
+    setSaveStatus("saved");
+    return true;
+  };
+
+  // Debounced auto-save on field edits
   useEffect(() => {
     if (!isOpen) return;
 
-    if (isConverterMode && converterValues) {
-      setTitle(converterValues.title || "");
-      setAuthor(converterValues.author || "");
-      setLanguage(converterValues.language || "vi");
-      setDescription(converterValues.description || "");
-      setCoverDataUrl(converterValues.coverDataUrl || null);
-      setCoverSearchQuery(converterValues.title || "");
-    } else if (currentBook) {
-      setTitle(currentBook.title || "");
-      setAuthor(currentBook.author || "");
-      setPublisher(currentBook.publisher || "");
-      setPublishedYear(currentBook.published_year || "");
-      setLanguage(currentBook.language || "vi");
-      setGenre(currentBook.genre || "");
-      setIsbn(currentBook.isbn || "");
-      setDescription(currentBook.description || "");
-      setCoverDataUrl(currentBook.cover_data_url || null);
-      setCoverSearchQuery(currentBook.title || "");
+    if (isInitialSync.current) {
+      isInitialSync.current = false;
+      return;
     }
 
-    setSearchResults([]);
-    setShowSearchResults(false);
-    setDiffModalData(null);
-  }, [isOpen, currentBook, isConverterMode, converterValues]);
+    setSaveStatus("saving");
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    debounceTimerRef.current = setTimeout(() => {
+      performSave();
+    }, 600);
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [title, author, publisher, publishedYear, language, genre, isbn, description]);
+
+  // Sync state ONLY when opening (isOpen transitions from false to true)
+  useEffect(() => {
+    if (isOpen && !prevIsOpenRef.current) {
+      useAppStore.getState().setAgentDrawerOpen(false);
+      isInitialSync.current = true;
+      setSaveStatus("saved");
+      if (initialTab) {
+        setActiveTab(initialTab);
+      }
+      if (isConverterMode && converterValues) {
+        setTitle(converterValues.title || "");
+        setAuthor(converterValues.author || "");
+        setLanguage(converterValues.language || "vi");
+        setDescription(converterValues.description || "");
+        setCoverDataUrl(converterValues.coverDataUrl || null);
+        setCoverSearchQuery(converterValues.title || "");
+      } else {
+        const book = useAppStore.getState().currentBook;
+        if (book) {
+          setTitle(book.title || "");
+          setAuthor(book.author || "");
+          setPublisher(book.publisher || "");
+          setPublishedYear(book.published_year || "");
+          setLanguage(book.language || "vi");
+          setGenre(book.genre || "");
+          setIsbn(book.isbn || "");
+          setDescription(book.description || "");
+          setCoverDataUrl(book.cover_data_url || null);
+          setCoverSearchQuery(book.title || "");
+        }
+      }
+
+      setSearchResults([]);
+      setShowSearchResults(false);
+      setDiffModalData(null);
+    }
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, initialTab, isConverterMode, converterValues]);
+
+  function handleClose() {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    performSave();
+    onClose();
+  }
+
+  // Handle ESC key to auto-save and close modal
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !diffModalData) {
+        handleClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, diffModalData]);
 
   if (!isOpen) return null;
 
@@ -262,11 +394,13 @@ export function MetadataModal({
     if (fieldsToApply.isbn && incoming.isbn) setIsbn(incoming.isbn);
     if (fieldsToApply.description && incoming.description) setDescription(incoming.description);
 
+    let appliedCoverDataUrl = coverDataUrl;
     if (fieldsToApply.cover && incoming.coverUrl) {
       toast.loading("Đang tải ảnh bìa chất lượng cao...", { id: "dl-cover" });
       try {
         const b64 = await BookMetadataService.fetchCoverDataUrl(incoming.coverUrl);
         setCoverDataUrl(b64);
+        appliedCoverDataUrl = b64;
         toast.success("Đã nạp ảnh bìa mới!", { id: "dl-cover" });
       } catch (err) {
         console.error(err);
@@ -276,7 +410,18 @@ export function MetadataModal({
 
     setDiffModalData(null);
     setShowSearchResults(false);
-    toast.success("Đã áp dụng các thông tin đã chọn vào bản thảo!");
+    performSave({
+      title: fieldsToApply.title && incoming.title ? incoming.title : title,
+      author: fieldsToApply.author && incoming.author ? normalizeAuthor(incoming.author) : author,
+      publisher: fieldsToApply.publisher && incoming.publisher ? incoming.publisher : publisher,
+      publishedYear: fieldsToApply.publishedYear && incoming.publishedYear ? incoming.publishedYear : publishedYear,
+      language: fieldsToApply.language && incoming.language ? incoming.language : language,
+      genre: fieldsToApply.genre && incoming.categories ? incoming.categories.join(", ") : genre,
+      isbn: fieldsToApply.isbn && incoming.isbn ? incoming.isbn : isbn,
+      description: fieldsToApply.description && incoming.description ? incoming.description : description,
+      coverDataUrl: appliedCoverDataUrl,
+    });
+    toast.success("Đã áp dụng và tự động lưu thông tin vào bản thảo!");
   }
 
   // Search Covers Gallery
@@ -312,7 +457,8 @@ export function MetadataModal({
     try {
       const b64 = await BookMetadataService.fetchCoverDataUrl(cov.url);
       setCoverDataUrl(b64);
-      toast.success("Đã chọn ảnh bìa thành công!", { id: "dl-cover-item" });
+      performSave({ coverDataUrl: b64 });
+      toast.success("Đã chọn và tự động lưu ảnh bìa mới!", { id: "dl-cover-item" });
       setActiveTab("metadata");
     } catch (err) {
       console.error(err);
@@ -334,7 +480,8 @@ export function MetadataModal({
     reader.onload = () => {
       if (typeof reader.result === "string") {
         setCoverDataUrl(reader.result);
-        toast.success("Đã nạp ảnh bìa từ máy tính!");
+        performSave({ coverDataUrl: reader.result });
+        toast.success("Đã nạp và tự động lưu ảnh bìa từ máy tính!");
         setActiveTab("metadata");
       }
     };
@@ -354,7 +501,8 @@ export function MetadataModal({
       const b64 = await BookMetadataService.fetchCoverDataUrl(u);
       setCoverDataUrl(b64);
       setCustomImageUrl("");
-      toast.success("Đã áp dụng ảnh bìa từ URL!", { id: "custom-url" });
+      performSave({ coverDataUrl: b64 });
+      toast.success("Đã áp dụng và tự động lưu ảnh bìa từ URL!", { id: "custom-url" });
       setActiveTab("metadata");
     } catch (err) {
       console.error(err);
@@ -371,37 +519,21 @@ export function MetadataModal({
       return;
     }
 
-    if (isConverterMode && onApplyConverterValues) {
-      onApplyConverterValues({
-        title: title.trim(),
-        author: author.trim() || "Khuyết Danh",
-        language: language.trim() || "vi",
-        description: description.trim(),
-        coverDataUrl: coverDataUrl || undefined,
-      });
-      toast.success("Đã lưu thông tin sách vào trình chuyển đổi!");
-      onClose();
-      return;
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
     }
+    performSave();
 
-    updateBookMetadata({
-      title: title.trim(),
-      author: author.trim() || "Khuyết Danh",
-      publisher: publisher.trim() || undefined,
-      published_year: publishedYear.trim() || undefined,
-      language: language.trim() || "vi",
-      genre: genre.trim() || undefined,
-      isbn: isbn.trim() || undefined,
-      description: description.trim() || null,
-      cover_data_url: coverDataUrl,
-    });
-
-    toast.success("Đã cập nhật metadata và ảnh bìa sách thành công!");
+    if (isConverterMode) {
+      toast.success("Đã lưu thông tin sách vào trình chuyển đổi!");
+    } else {
+      toast.success("Đã cập nhật metadata và ảnh bìa sách thành công!");
+    }
     onClose();
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 md:p-6 select-none animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 md:p-6 select-none animate-in fade-in duration-150">
       <input
         ref={fileInputRef}
         type="file"
@@ -421,6 +553,17 @@ export function MetadataModal({
               <div className="flex items-center gap-2">
                 <h2 className="font-bold text-sm text-[var(--foreground)]">Chỉnh Sửa Metadata &amp; Ảnh Bìa</h2>
                 <span className="app-badge app-badge--brand text-[10px]">Đa Nền Tảng &amp; Wattpad</span>
+                {saveStatus === "saving" ? (
+                  <span className="flex items-center gap-1 text-[11px] text-[var(--muted-foreground)] bg-[var(--muted)]/50 px-2 py-0.5 rounded-full border border-[var(--border)] animate-pulse">
+                    <Loader2 size={11} className="animate-spin text-[var(--primary)]" />
+                    <span>Đang lưu...</span>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-medium">
+                    <Check size={11} />
+                    <span>Tự động lưu</span>
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-[var(--muted-foreground)]">
                 Bổ sung thông tin sách xuất bản, truyện mạng/Wattpad &amp; tìm kiếm ảnh bìa đẹp
@@ -446,7 +589,7 @@ export function MetadataModal({
 
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="p-1.5 rounded-lg text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--accent)] transition-colors"
             >
               <X size={16} />
@@ -506,7 +649,11 @@ export function MetadataModal({
                   {coverDataUrl && (
                     <button
                       type="button"
-                      onClick={() => setCoverDataUrl(null)}
+                      onClick={() => {
+                        setCoverDataUrl(null);
+                        performSave({ coverDataUrl: null });
+                        toast.success("Đã xóa và tự động lưu ảnh bìa!");
+                      }}
                       className="lg-button lg-button--ghost text-xs h-7 px-2.5 gap-1 text-[var(--ui-failure)] w-full hover:bg-red-500/10"
                     >
                       <Trash2 size={12} />
@@ -690,7 +837,7 @@ export function MetadataModal({
                           ) : (
                             <Wand2 size={13} />
                           )}
-                          <span>{isAiEnriching ? "AI đang đọc..." : "AI Tóm tắt &amp; Văn án"}</span>
+                          <span>{isAiEnriching ? "AI đang đọc..." : "AI Tóm tắt & Văn án"}</span>
                         </button>
                       </div>
                     </div>
@@ -811,7 +958,7 @@ export function MetadataModal({
                         <span>Văn án / Lời giới thiệu &amp; Tóm tắt nội dung</span>
                       </label>
                       <span className="text-[10px] text-[var(--muted-foreground)]">
-                        {description.length} ký tự
+                        {(description || "").length} ký tự
                       </span>
                     </div>
                     <textarea
@@ -1119,20 +1266,34 @@ export function MetadataModal({
 
             {/* Modal Bottom Footer Actions */}
             <div className="h-14 px-6 border-t border-[var(--border)] flex items-center justify-between bg-[var(--ui-titlebar-surface)] shrink-0">
-              <div className="text-[11px] text-[var(--muted-foreground)] flex items-center gap-2">
-                <span>Trạng thái:</span>
-                <span className="text-[var(--foreground)] font-medium">
-                  {currentBook ? `${currentBook.chapter_count} chương` : "Bản thảo"}
-                </span>
+              <div className="text-[11px] text-[var(--muted-foreground)] flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <span>Trạng thái:</span>
+                  <span className="text-[var(--foreground)] font-medium">
+                    {currentBook ? `${currentBook.chapter_count} chương` : "Bản thảo"}
+                  </span>
+                </div>
+                <div className="h-3 w-px bg-[var(--border)]" />
+                {saveStatus === "saving" ? (
+                  <span className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
+                    <Loader2 size={12} className="animate-spin text-[var(--primary)]" />
+                    <span>Đang tự động lưu thay đổi...</span>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                    <Check size={12} />
+                    <span>Mọi thay đổi đã được tự động lưu</span>
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={handleClose}
                   className="lg-button lg-button--ghost text-xs h-8 px-3"
                 >
-                  Hủy bỏ
+                  Đóng
                 </button>
 
                 <button
@@ -1141,7 +1302,7 @@ export function MetadataModal({
                   className="lg-button lg-button--primary text-xs h-8 px-4 gap-1.5 font-medium shadow-xs"
                 >
                   <BookmarkCheck size={14} />
-                  <span>Lưu Metadata &amp; Bìa Sách</span>
+                  <span>Hoàn Tất &amp; Lưu</span>
                 </button>
               </div>
             </div>
@@ -1151,7 +1312,7 @@ export function MetadataModal({
 
       {/* DIFF & CONFIRMATION MODAL POPUP */}
       {diffModalData && (
-        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-100">
+        <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-100">
           <div className="card-surface rounded-xl max-w-lg w-full p-5 space-y-4 shadow-2xl border border-[var(--border)]">
             <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
               <div className="flex items-center gap-2">

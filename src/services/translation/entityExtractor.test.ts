@@ -137,4 +137,50 @@ describe("EntityExtractor", () => {
     expect(merged["Uncle Vernon"]).toBe("Dượng Vernon");
     expect(merged["Privet Drive"]).toBe("Đường Privet Drive");
   });
+
+  it("extracts candidates directly from raw sample text via AI", async () => {
+    const mockInvoke = vi.mocked(invoke);
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify([
+        { name: "萧炎", translated: "Tiêu Viêm", category: "person" },
+        { name: "乌坦城", translated: "Ô Thản Thành", category: "place" },
+        { name: "斗之气", translated: "Đấu Chi Khí", category: "term" },
+      ])
+    );
+
+    const candidates = await EntityExtractor.extractDirectWithAi(
+      "“斗之力，三段！”望着测验魔石碑上面闪亮得甚至有些刺眼的四个大字，少年面无表情，唇角有着一抹自嘲，紧握的手掌...",
+      {
+        bookTitle: "Đấu Phá Thương Khung",
+        sourceLang: "Chinese",
+        targetLang: "Vietnamese",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-4o",
+      }
+    );
+
+    expect(candidates.length).toBe(3);
+    expect(candidates[0].name).toBe("萧炎");
+    expect(candidates[0].suggestedTranslation).toBe("Tiêu Viêm");
+    expect(candidates[0].category).toBe("person");
+
+    expect(candidates[1].name).toBe("乌坦城");
+    expect(candidates[1].suggestedTranslation).toBe("Ô Thản Thành");
+    expect(candidates[1].category).toBe("place");
+  });
+
+  it("extracts CJK sects and location terms with low occurrence count", () => {
+    const chapters: ChapterTextSource[] = [
+      {
+        href: "c1.xhtml",
+        title: "C1",
+        html: "<p>Vân Lam Tông (云岚宗) uy phong lẫm liệt, tọa lạc tại Gia Mã Đế Quốc (加玛帝国).</p>",
+      },
+    ];
+
+    const candidates = EntityExtractor.extractCandidates(chapters, {});
+    const yunlan = candidates.find((c) => c.name === "云岚宗");
+    expect(yunlan).toBeDefined();
+    expect(yunlan?.category).toBe("place");
+  });
 });

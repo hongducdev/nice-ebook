@@ -131,6 +131,114 @@ describe("AgentToolDispatcher", () => {
     expect(mockMutatingCtx.selectPreset).toHaveBeenCalledWith("light-novel");
     expect(mockMutatingCtx.updateTypography).toHaveBeenCalledWith({ fontSize: 18 });
   });
+  it("executes get_workflow_status to inspect running and completed background jobs", async () => {
+    const ctxWithJobs: ReadOnlyStoreContext = {
+      ...mockReadOnlyCtx,
+      workflowJobs: {
+        job_1: { id: "job_1", type: "translation", label: "Dịch chương 1", status: "running", progress: 60 },
+      },
+    };
+
+    const res = await AgentToolDispatcher.executeReadOnlyTool("get_workflow_status", {}, ctxWithJobs);
+    expect(res).toContain("total_jobs");
+    expect(res).toContain("Dịch chương 1");
+  });
+
+  it("creates ActionProposal for translate_chapter and executes upon approval", async () => {
+    const mockMutatingCtx: MutatingStoreContext = {
+      updateBookMetadata: vi.fn(),
+      selectPreset: vi.fn(),
+      updateTypography: vi.fn(),
+      setTranslationConfig: vi.fn(),
+      translateSingleChapter: vi.fn().mockResolvedValue(true),
+    };
+
+    const proposal = AgentToolDispatcher.createActionProposal(
+      "translate_chapter",
+      { chapterIndex: 0, targetLang: "vi" },
+      mockReadOnlyCtx
+    );
+
+    expect(proposal.toolName).toBe("translate_chapter");
+    expect(proposal.title).toContain("Dịch chương");
+
+    const result = await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
+    expect(result).toContain("Đã kích hoạt dịch thành công");
+    expect(mockMutatingCtx.translateSingleChapter).toHaveBeenCalledWith(0);
+  });
+
+  it("creates ActionProposal for enhance_chapter and executes upon approval", async () => {
+    const mockMutatingCtx: MutatingStoreContext = {
+      updateBookMetadata: vi.fn(),
+      selectPreset: vi.fn(),
+      updateTypography: vi.fn(),
+      setTranslationConfig: vi.fn(),
+      enhanceSingleChapter: vi.fn().mockResolvedValue(true),
+    };
+
+    const proposal = AgentToolDispatcher.createActionProposal(
+      "enhance_chapter",
+      { chapterIndex: 1, standardizeH1: true, cleanWatermarks: true },
+      mockReadOnlyCtx
+    );
+
+    expect(proposal.toolName).toBe("enhance_chapter");
+    const result = await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
+    expect(result).toContain("chuẩn hóa tiêu đề H1");
+    expect(mockMutatingCtx.enhanceSingleChapter).toHaveBeenCalledWith(1, {
+      standardizeH1: true,
+      cleanTopJunk: true,
+    });
+  });
+
+  it("creates ActionProposal for extract_xray_entities and executes upon approval", async () => {
+    const mockMutatingCtx: MutatingStoreContext = {
+      updateBookMetadata: vi.fn(),
+      selectPreset: vi.fn(),
+      updateTypography: vi.fn(),
+      setTranslationConfig: vi.fn(),
+      runXRayExtraction: vi.fn().mockResolvedValue({ people: [], terms: [] }),
+      embedXRayAppendixToBook: vi.fn().mockResolvedValue(true),
+    };
+
+    const proposal = AgentToolDispatcher.createActionProposal(
+      "extract_xray_entities",
+      { autoEmbedAppendix: true },
+      mockReadOnlyCtx
+    );
+
+    expect(proposal.toolName).toBe("extract_xray_entities");
+    const result = await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
+    expect(result).toContain("nhúng phụ lục X-Ray");
+    expect(mockMutatingCtx.runXRayExtraction).toHaveBeenCalled();
+    expect(mockMutatingCtx.embedXRayAppendixToBook).toHaveBeenCalled();
+  });
+
+  it("creates ActionProposal for import_content_snippet and executes insertion into chapter", async () => {
+    const mockMutatingCtx: MutatingStoreContext = {
+      updateBookMetadata: vi.fn(),
+      selectPreset: vi.fn(),
+      updateTypography: vi.fn(),
+      setTranslationConfig: vi.fn(),
+      setChapterHtml: vi.fn(),
+      readChapterText: vi.fn().mockResolvedValue("<p>Chapter content</p>"),
+      currentBook: mockReadOnlyCtx.currentBook,
+    };
+
+    const proposal = AgentToolDispatcher.createActionProposal(
+      "import_content_snippet",
+      { chapterIndex: 0, snippet: "<blockquote>Lời tựa đặc biệt</blockquote>", mode: "prepend" },
+      mockReadOnlyCtx
+    );
+
+    expect(proposal.toolName).toBe("import_content_snippet");
+    const result = await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
+    expect(result).toContain("Đã chèn nội dung vào chương 1");
+    expect(mockMutatingCtx.setChapterHtml).toHaveBeenCalledWith(
+      "c1.xhtml",
+      expect.stringContaining("Lời tựa đặc biệt")
+    );
+  });
 
   it("PROMPT INJECTION TEST: chapter containing malicious command is tagged as data and does not execute tools", async () => {
     const poisonedChapterText = `
@@ -238,6 +346,107 @@ describe("AgentToolDispatcher", () => {
       expect(result).not.toContain(fakeKey);
       expect(result).toContain("sk-o");
       expect(result).toContain("****");
+    });
+  });
+
+  describe("Expanded Agent Tools Suite", () => {
+    it("searches across book chapters via search_book_content", async () => {
+      const result = await AgentToolDispatcher.executeReadOnlyTool(
+        "search_book_content",
+        { query: "hobbit", maxResults: 3 },
+        mockReadOnlyCtx
+      );
+
+      const parsed = JSON.parse(result);
+      expect(parsed.query).toBe("hobbit");
+      expect(parsed.total_matches_found).toBeGreaterThan(0);
+      expect(parsed.matches[0].chapterTitle).toBe("An Unexpected Party");
+      expect(parsed.matches[0].snippet).toContain("hobbit");
+    });
+
+    it("retrieves detailed translation and glossary metrics via get_translation_status", async () => {
+      const result = await AgentToolDispatcher.executeReadOnlyTool(
+        "get_translation_status",
+        {},
+        mockReadOnlyCtx
+      );
+
+      const parsed = JSON.parse(result);
+      expect(parsed.source_language).toBe("Tiếng Anh (English)");
+      expect(parsed.target_language).toBe("Tiếng Việt (Vietnamese)");
+      expect(parsed.glossary_terms_count).toBe(1);
+      expect(parsed.glossary_sample[0].original).toBe("Hobbit");
+    });
+
+    it("proposes and executes update_typography action", async () => {
+      const mockMutatingCtx: MutatingStoreContext = {
+        updateBookMetadata: vi.fn(),
+        selectPreset: vi.fn(),
+        updateTypography: vi.fn(),
+        setTranslationConfig: vi.fn(),
+      };
+
+      const proposal = AgentToolDispatcher.createActionProposal(
+        "update_typography",
+        { fontSize: 18, lineHeight: 1.8, textAlign: "justify", dropCaps: false },
+        mockReadOnlyCtx
+      );
+
+      expect(proposal.toolName).toBe("update_typography");
+      expect(proposal.diffSummary?.length).toBeGreaterThan(0);
+
+      const result = await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
+      expect(result).toContain("thành công");
+      expect(mockMutatingCtx.updateTypography).toHaveBeenCalledWith({
+        fontSize: 18,
+        lineHeight: 1.8,
+        textAlign: "justify",
+        dropCaps: false,
+      });
+    });
+
+    it("proposes and executes clean_watermarks action", async () => {
+      const mockMutatingCtx: MutatingStoreContext = {
+        updateBookMetadata: vi.fn(),
+        selectPreset: vi.fn(),
+        updateTypography: vi.fn(),
+        setTranslationConfig: vi.fn(),
+        cleanWatermarksInBook: vi.fn().mockResolvedValue({ affectedChapters: 3, removedCount: 12 }),
+      };
+
+      const proposal = AgentToolDispatcher.createActionProposal(
+        "clean_watermarks",
+        { keywords: ["truyenfull"] },
+        mockReadOnlyCtx
+      );
+
+      expect(proposal.toolName).toBe("clean_watermarks");
+
+      const result = await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
+      expect(result).toContain("12");
+      expect(result).toContain("3");
+      expect(mockMutatingCtx.cleanWatermarksInBook).toHaveBeenCalledWith(["truyenfull"]);
+    });
+
+    it("proposes and executes export_book with openExportModal support", async () => {
+      const mockOpenExportModal = vi.fn();
+      const mockMutatingCtx: MutatingStoreContext = {
+        updateBookMetadata: vi.fn(),
+        selectPreset: vi.fn(),
+        updateTypography: vi.fn(),
+        setTranslationConfig: vi.fn(),
+        openExportModal: mockOpenExportModal,
+      };
+
+      const proposal = AgentToolDispatcher.createActionProposal(
+        "export_book",
+        { format: "epub" },
+        mockReadOnlyCtx
+      );
+
+      const result = await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
+      expect(mockOpenExportModal).toHaveBeenCalled();
+      expect(result).toContain("EPUB");
     });
   });
 });

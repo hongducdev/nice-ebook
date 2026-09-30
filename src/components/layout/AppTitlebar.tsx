@@ -9,6 +9,8 @@ import {
   Loader2,
   Bot
 } from "lucide-react";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
 import { useAppStore } from "../../stores/useAppStore";
 import { open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
@@ -101,49 +103,54 @@ export function AppTitlebar({ onOpenExport }: AppTitlebarProps) {
         onChange={handleFileInputChange}
       />
 
-      <div className="topbar__left">
-        <button
-          type="button"
-          className="topbar__menu-button"
+      <div className="topbar__left flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 text-muted-foreground hover:text-foreground"
           onClick={toggleSidebar}
           title={isSidebarCollapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
           aria-label="Toggle Sidebar"
         >
-          <SidebarToggleIcon size={18} />
-        </button>
+          <SidebarToggleIcon size={16} />
+        </Button>
 
         <div className="topbar__brand flex items-center gap-2">
-          <img src="/app-icon.png" alt="NiceEbook Studio" className="w-5 h-5 rounded object-contain shadow-2xs" />
-          <strong className="tracking-tight text-foreground font-semibold">NiceEbook Studio</strong>
-          <span className="app-badge app-badge--brand text-[10px] px-1.5 h-[18px]">v0.1.0</span>
+          <img src="/app-icon.png" alt="NiceEbook Studio" className="size-5 rounded object-contain shadow-2xs" />
+          <strong className="tracking-tight text-foreground font-semibold text-xs">NiceEbook Studio</strong>
+          <Badge variant="outline" className="text-[10px] px-1.5 h-4.5 font-mono border-primary/40 text-primary">
+            v0.1.0
+          </Badge>
         </div>
 
         {currentBook && (
-          <div className="flex items-center gap-1.5 ml-3 px-2 py-0.5 rounded bg-[var(--secondary)] border border-[var(--border)] text-xs text-[var(--foreground)]">
-            <BookOpen size={13} className="text-[var(--primary)]" />
+          <div className="flex items-center gap-1.5 ml-2 px-2 py-0.5 rounded-md bg-secondary/60 border border-border text-xs text-foreground">
+            <BookOpen size={13} className="text-primary" />
             <span className="max-w-[220px] truncate font-medium">{currentBook.title}</span>
-            <span className="text-[11px] text-[var(--muted-foreground)] font-mono">
+            <span className="text-[11px] text-muted-foreground font-mono">
               ({currentBook.chapter_count} chương)
             </span>
           </div>
         )}
       </div>
 
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
+      <div className="flex items-center gap-1.5">
+        <Button
+          variant="outline"
+          size="sm"
           onClick={handleOpenFileDialog}
-          className="lg-button lg-button--secondary h-7 text-xs px-2.5"
+          className="h-7 text-xs px-2.5 gap-1.5"
           title="Chọn file EPUB từ máy tính"
         >
           <FolderOpen size={13} />
           <span>Nạp sách</span>
-        </button>
+        </Button>
 
         {currentBook && (
           <>
-            <button
-              type="button"
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => {
                 toast.loading("Đang phân tích cấu trúc sách...", { id: "book-scan" });
                 runJevClassification().then(() => {
@@ -151,47 +158,46 @@ export function AppTitlebar({ onOpenExport }: AppTitlebarProps) {
                 });
               }}
               disabled={isAnalyzingJev}
-              className="lg-button lg-button--outline h-7 text-xs px-2.5 text-[var(--primary)]"
+              className="h-7 text-xs px-2.5 gap-1.5 text-primary border-primary/30 hover:bg-primary/10"
               title="Phân tích cấu trúc sách và thể loại tự động"
             >
               {isAnalyzingJev ? (
-                <Loader2 size={13} className="animate-spin text-[var(--primary)]" />
+                <Loader2 size={13} className="animate-spin text-primary" />
               ) : (
                 <Sparkles size={13} />
               )}
               <span>{isAnalyzingJev ? "Đang phân tích..." : "Tự động phân tích"}</span>
-            </button>
+            </Button>
 
             {onOpenExport && (
-              <button
-                type="button"
+              <Button
+                size="sm"
                 onClick={onOpenExport}
-                className="lg-button lg-button--primary h-7 text-xs px-2.5"
+                className="h-7 text-xs px-2.5 gap-1.5 font-medium"
                 title="Đóng gói và xuất file EPUB hoàn chỉnh"
               >
                 <Download size={13} />
                 <span>Xuất bản EPUB</span>
-              </button>
+              </Button>
             )}
           </>
         )}
 
-        <button
-          type="button"
+        <Button
+          variant={isAgentDrawerOpen ? "default" : "outline"}
+          size="sm"
           onClick={toggleAgentDrawer}
-          className={`lg-button h-7 text-xs px-2.5 gap-1.5 font-medium transition-all cursor-pointer ${
-            isAgentDrawerOpen
-              ? "bg-[var(--primary)] text-[var(--primary-foreground)] shadow-xs"
-              : "lg-button--secondary text-[var(--foreground)] hover:text-[var(--primary)]"
+          className={`h-7 text-xs px-2.5 gap-1.5 font-medium transition-all ${
+            isAgentDrawerOpen ? "shadow-xs" : "text-foreground hover:text-primary"
           }`}
           title="Mở Trợ lý Chat AI tương tác và tự động hóa tác vụ trên dự án sách"
         >
-          <Bot size={14} className={isAgentDrawerOpen ? "text-[var(--primary-foreground)]" : "text-amber-400"} />
+          <Bot size={14} className={isAgentDrawerOpen ? "text-primary-foreground" : "text-amber-500"} />
           <span>Trợ Lý AI</span>
           {agentMessages.length > 0 && (
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
           )}
-        </button>
+        </Button>
       </div>
     </header>
   );

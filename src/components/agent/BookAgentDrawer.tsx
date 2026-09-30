@@ -8,19 +8,70 @@ import {
   Sliders,
   Loader2,
   Check,
-  ChevronRight
+  ChevronRight,
+  Copy
 } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "../ui/sheet";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
 import { useAppStore } from "../../stores/useAppStore";
 import { ActionProposal } from "../../services/agent/agentTools";
+import { ChatMessageContent } from "./ChatMessageContent";
+import { AgentModelSelector } from "./AgentModelSelector";
 import { toast } from "sonner";
 
-const QUICK_ACTIONS = [
+const DEFAULT_QUICK_ACTIONS = [
   "Tóm tắt thông tin cuốn sách hiện tại",
   "Đọc và tóm tắt nội dung chương 1",
   "Đổi phong cách sách sang Cổ Phong / Tiên Hiệp",
   "Chuyển sang màn hình Đọc thử & Soát lỗi",
   "Kiểm tra xem sách có bao nhiêu chương và đã dịch được bao nhiêu",
 ];
+
+const TAB_QUICK_ACTIONS: Record<string, string[]> = {
+  reader: [
+    "Tóm tắt chương hiện tại",
+    "Đổi phong cách sách sang Cổ Phong / Tiên Hiệp",
+    "Kiểm tra xem sách có bao nhiêu chương",
+    "Xuất sách sang file EPUB hoàn chỉnh",
+  ],
+  translator: [
+    "Dịch chương hiện tại sang tiếng Việt",
+    "Kiểm tra tiến độ dịch và các tác vụ nền",
+    "Thêm từ khóa nhân vật vào Glossary",
+    "Chuyển sang màn hình Đọc thử & Soát lỗi",
+  ],
+  ai: [
+    "Chuẩn hóa tiêu đề H1 và sửa lỗi chính tả chương này",
+    "Làm sạch watermark và rác quảng cáo trong sách",
+    "Kiểm tra tình trạng các chương đã tinh chỉnh",
+    "Chuyển sang màn hình Đọc thử",
+  ],
+  "ai-editor": [
+    "Chuẩn hóa tiêu đề H1 và sửa lỗi chính tả chương này",
+    "Làm sạch watermark và rác quảng cáo trong sách",
+    "Kiểm tra tình trạng các chương đã tinh chỉnh",
+    "Chuyển sang màn hình Đọc thử",
+  ],
+  kindle: [
+    "Trích xuất danh sách nhân vật & thuật ngữ (Kindle X-Ray)",
+    "Tự động nhúng phụ lục X-Ray vào cuối sách",
+    "Xuất sách định dạng Kindle AZW3",
+    "Tóm tắt thông tin cuốn sách hiện tại",
+  ],
+  converter: [
+    "Kiểm tra trạng thái các tác vụ nền (Workflow Jobs)",
+    "Chuyển sang tab Đọc thử sau khi chuyển đổi",
+    "Cập nhật tên sách và tác giả",
+    "Tóm tắt chương đầu tiên",
+  ],
+};
 
 export function BookAgentDrawer() {
   const {
@@ -29,17 +80,30 @@ export function BookAgentDrawer() {
     setAgentDrawerOpen,
     agentMessages,
     isAgentThinking,
+    agentThinkingStatus,
     sendAgentMessage,
     confirmAgentAction,
     clearAgentChat,
     currentBook,
-    activeGateway,
-    selectedModel,
+    activeTab,
   } = useAppStore();
 
+  const currentQuickActions = TAB_QUICK_ACTIONS[activeTab] || DEFAULT_QUICK_ACTIONS;
   const [inputVal, setInputVal] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  async function handleCopyMessage(id: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      toast.success("Đã sao chép phản hồi vào clipboard!");
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      toast.error("Không thể sao chép văn bản");
+    }
+  }
 
   // Auto scroll to bottom when messages update or thinking
   useEffect(() => {
@@ -55,7 +119,7 @@ export function BookAgentDrawer() {
     }
   }, [isAgentDrawerOpen]);
 
-  if (!isAgentDrawerOpen) {
+  if (!isAgentDrawerOpen || activeTab === "agent") {
     return null;
   }
 
@@ -83,90 +147,83 @@ export function BookAgentDrawer() {
   }
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px] animate-in fade-in duration-200"
-        onClick={() => setAgentDrawerOpen(false)}
-      />
-
-      {/* Slide-out Drawer Panel */}
-      <aside className="fixed top-0 right-0 bottom-0 z-50 w-[420px] max-w-[95vw] bg-[var(--card)] border-l border-[var(--border)] shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 select-text">
+    <Sheet open={isAgentDrawerOpen} onOpenChange={(open) => setAgentDrawerOpen(open)}>
+      <SheetContent
+        side="right"
+        showCloseButton={false}
+        className="w-[420px] max-w-[95vw] p-0 flex flex-col gap-0 border-l border-border bg-card shadow-2xl select-text"
+      >
         {/* Drawer Header */}
-        <header className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] bg-[var(--secondary)]/40 flex-shrink-0">
+        <SheetHeader className="flex flex-row items-center justify-between px-4 py-3 border-b border-border bg-muted/40 shrink-0 space-y-0">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[color-mix(in_srgb,var(--primary)_15%,var(--card))] text-[var(--primary)] border border-[var(--primary)]/30 shrink-0">
+            <div className="size-8 rounded-lg flex items-center justify-center bg-primary/10 text-primary border border-primary/20 shrink-0">
               <Bot size={18} />
             </div>
-            <div className="flex flex-col min-w-0">
+            <div className="flex flex-col min-w-0 text-left">
               <div className="flex items-center gap-1.5">
-                <h2 className="text-xs font-semibold text-[var(--foreground)] truncate">
+                <SheetTitle className="text-xs font-semibold text-foreground truncate">
                   Trợ Lý Dự Án Sách
-                </h2>
-                <span className="app-badge app-badge--brand text-[9px] px-1.5 h-3.5">
+                </SheetTitle>
+                <Badge variant="outline" className="text-[9px] px-1.5 h-3.5 border-primary/40 text-primary">
                   Agent AI
-                </span>
+                </Badge>
               </div>
-              <span className="text-[10px] text-[var(--muted-foreground)] truncate">
+              <SheetDescription className="text-[10px] text-muted-foreground truncate">
                 {currentBook ? currentBook.title : "Chưa mở sách"}
-              </span>
+              </SheetDescription>
             </div>
           </div>
 
           <div className="flex items-center gap-1">
-            <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-[var(--secondary)] border border-[var(--border)] text-[10px] font-mono text-[var(--muted-foreground)] mr-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span className="truncate max-w-[100px]">
-                {selectedModel || (activeGateway ? activeGateway.models[0] : "Ollama/Local")}
-              </span>
-            </div>
+            <AgentModelSelector compact className="mr-1" />
 
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={clearAgentChat}
-              className="p-1.5 rounded hover:bg-[var(--accent)] text-[var(--muted-foreground)] hover:text-red-400 transition-colors cursor-pointer"
+              className="size-7 text-muted-foreground hover:text-destructive"
               title="Xóa toàn bộ cuộc trò chuyện"
             >
               <Trash2 size={13} />
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={toggleAgentDrawer}
-              className="p-1.5 rounded hover:bg-[var(--accent)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
+              className="size-7 text-muted-foreground hover:text-foreground"
               title="Đóng ngăn kéo"
             >
               <X size={15} />
-            </button>
+            </Button>
           </div>
-        </header>
-
+        </SheetHeader>
         {/* Messages Scroll Area */}
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
           {agentMessages.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-6 select-none">
-              <div className="w-12 h-12 rounded-2xl bg-[var(--secondary)] border border-[var(--border)] flex items-center justify-center text-[var(--primary)] mb-3 shadow-xs">
+              <div className="size-12 rounded-2xl bg-secondary border border-border flex items-center justify-center text-primary mb-3 shadow-xs">
                 <Sparkles size={24} />
               </div>
-              <h3 className="text-xs font-semibold text-[var(--foreground)] mb-1">
+              <h3 className="text-xs font-semibold text-foreground mb-1">
                 Chào bạn! Tôi có thể giúp gì cho cuốn sách?
               </h3>
-              <p className="text-[11px] text-[var(--muted-foreground)] max-w-xs leading-relaxed mb-6">
+              <p className="text-[11px] text-muted-foreground max-w-xs leading-relaxed mb-6">
                 Tôi có thể đọc và tóm tắt các chương, kiểm tra tình trạng sách, cập nhật thông tin tác phẩm, đổi phong cách hoặc điều hướng giao diện giúp bạn.
               </p>
 
               <div className="w-full flex flex-col gap-1.5 text-left">
-                <span className="text-[10px] uppercase font-semibold text-[var(--muted-foreground)] tracking-wider">
+                <span className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider">
                   Gợi ý thao tác nhanh:
                 </span>
-                {QUICK_ACTIONS.map((promptText) => (
+                {currentQuickActions.map((promptText) => (
                   <button
                     key={promptText}
                     type="button"
                     onClick={() => sendAgentMessage(promptText)}
-                    className="p-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)]/30 hover:bg-[var(--secondary)] hover:border-[var(--primary)]/50 text-[11px] text-[var(--foreground)] flex items-center justify-between gap-2 transition-all text-left cursor-pointer group"
+                    className="p-2 rounded-lg border border-border bg-secondary/30 hover:bg-secondary hover:border-primary/50 text-[11px] text-foreground flex items-center justify-between gap-2 transition-all text-left cursor-pointer group"
                   >
                     <span>{promptText}</span>
-                    <ChevronRight size={12} className="text-[var(--muted-foreground)] group-hover:text-[var(--primary)] shrink-0 transition-colors" />
+                    <ChevronRight size={12} className="text-muted-foreground group-hover:text-primary shrink-0 transition-colors" />
                   </button>
                 ))}
               </div>
@@ -181,13 +238,13 @@ export function BookAgentDrawer() {
               >
                 {/* Message Bubble */}
                 <div
-                  className={`max-w-[90%] rounded-xl p-3 text-xs leading-relaxed ${
+                  className={`max-w-[92%] rounded-xl p-3 text-xs leading-relaxed select-text cursor-text ${
                     msg.role === "user"
-                      ? "bg-[var(--primary)] text-[var(--primary-foreground)] rounded-br-xs font-medium shadow-xs"
-                      : "bg-[var(--secondary)]/70 text-[var(--foreground)] rounded-bl-xs border border-[var(--border)] shadow-xs"
+                      ? "bg-primary text-primary-foreground rounded-br-xs font-medium shadow-xs"
+                      : "bg-secondary/70 text-foreground rounded-bl-xs border border-border shadow-xs"
                   }`}
                 >
-                  <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                  <ChatMessageContent content={msg.content} role={msg.role} />
 
                   {/* Mutating Action Proposal Confirmation Card */}
                   {msg.actionProposal && (
@@ -199,18 +256,32 @@ export function BookAgentDrawer() {
                   )}
                 </div>
 
-                <span className="text-[9px] text-[var(--muted-foreground)] px-1">
-                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                </span>
+                <div className="flex items-center gap-2 px-1">
+                  <span className="text-[9px] text-muted-foreground">
+                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  {msg.role === "assistant" && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => handleCopyMessage(msg.id, msg.content)}
+                      className="size-5 text-muted-foreground hover:text-foreground"
+                      title="Sao chép câu trả lời"
+                    >
+                      {copiedId === msg.id ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
+                    </Button>
+                  )}
+                </div>
               </div>
             ))
           )}
 
           {/* Thinking Indicator */}
           {isAgentThinking && (
-            <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)] p-2">
-              <Loader2 size={13} className="animate-spin text-[var(--primary)]" />
-              <span>Trợ lý đang suy nghĩ và kiểm tra dự án...</span>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground p-2.5 rounded-lg bg-secondary/50 border border-border/60 animate-pulse">
+              <Loader2 size={13} className="animate-spin text-primary shrink-0" />
+              <span className="truncate font-medium">{agentThinkingStatus || "Trợ lý đang suy nghĩ và kiểm tra dự án..."}</span>
             </div>
           )}
 
@@ -218,42 +289,24 @@ export function BookAgentDrawer() {
         </div>
 
         {/* Drawer Footer: Input Box */}
-        <footer className="p-3 border-t border-[var(--border)] bg-[var(--card)]/90 backdrop-blur-xs flex flex-col gap-2">
+        <footer className="p-3 border-t border-border bg-card/90 backdrop-blur-xs flex flex-col gap-2">
           {/* Quick chips if conversation is active */}
           {agentMessages.length > 0 && !isAgentThinking && (
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-              <button
-                type="button"
-                onClick={() => sendAgentMessage("Tóm tắt chương hiện tại")}
-                className="whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] bg-[var(--secondary)] border border-[var(--border)] hover:border-[var(--primary)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
-              >
-                Tóm tắt chương
-              </button>
-              <button
-                type="button"
-                onClick={() => sendAgentMessage("Kiểm tra tình trạng dự án sách")}
-                className="whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] bg-[var(--secondary)] border border-[var(--border)] hover:border-[var(--primary)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
-              >
-                Tình trạng sách
-              </button>
-              <button
-                type="button"
-                onClick={() => sendAgentMessage("Đổi phong cách sách sang Cổ Phong / Tiên Hiệp")}
-                className="whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] bg-[var(--secondary)] border border-[var(--border)] hover:border-[var(--primary)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
-              >
-                Đổi phong cách
-              </button>
-              <button
-                type="button"
-                onClick={() => sendAgentMessage("Chuyển sang màn hình Đọc thử & Soát lỗi")}
-                className="whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] bg-[var(--secondary)] border border-[var(--border)] hover:border-[var(--primary)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
-              >
-                Mở Đọc thử
-              </button>
+              {currentQuickActions.slice(0, 4).map((actionText) => (
+                <button
+                  key={actionText}
+                  type="button"
+                  onClick={() => sendAgentMessage(actionText)}
+                  className="whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] bg-secondary border border-border hover:border-primary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                >
+                  {actionText.length > 25 ? `${actionText.slice(0, 24)}...` : actionText}
+                </button>
+              ))}
             </div>
           )}
 
-          <div className="flex items-end gap-2 bg-[var(--secondary)]/60 border border-[var(--border)] rounded-xl p-2 focus-within:border-[var(--primary)] transition-colors">
+          <div className="flex items-end gap-2 bg-secondary/60 border border-border rounded-xl p-2 focus-within:border-primary transition-colors">
             <textarea
               ref={inputRef}
               rows={2}
@@ -262,22 +315,36 @@ export function BookAgentDrawer() {
               onKeyDown={handleKeyDown}
               placeholder="Hỏi về nội dung sách, yêu cầu đổi kiểu chữ, tóm tắt chương..."
               disabled={isAgentThinking}
-              className="flex-1 bg-transparent text-xs text-[var(--foreground)] outline-none resize-none leading-relaxed placeholder:text-[var(--muted-foreground)]"
+              className="flex-1 bg-transparent text-xs text-foreground outline-none resize-none leading-relaxed placeholder:text-muted-foreground select-text"
             />
 
-            <button
-              type="button"
-              disabled={!inputVal.trim() || isAgentThinking}
-              onClick={handleSend}
-              className="p-2 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-40 transition-opacity cursor-pointer shrink-0"
-              title="Gửi tin nhắn (Enter)"
-            >
-              {isAgentThinking ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-            </button>
+            {isAgentThinking ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => useAppStore.setState({ isAgentThinking: false, agentThinkingStatus: null })}
+                className="text-destructive hover:bg-destructive/10 shrink-0"
+                title="Dừng / Hủy phản hồi"
+              >
+                <X size={14} />
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                disabled={!inputVal.trim()}
+                onClick={handleSend}
+                size="icon-sm"
+                className="shrink-0"
+                title="Gửi tin nhắn (Enter)"
+              >
+                <Send size={13} />
+              </Button>
+            )}
           </div>
         </footer>
-      </aside>
-    </>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -289,7 +356,7 @@ interface ActionProposalCardProps {
 
 function ActionProposalCard({ proposal, status, onConfirm }: ActionProposalCardProps) {
   return (
-    <div className="mt-2.5 p-3 rounded-lg border border-amber-500/40 bg-amber-500/5 text-[var(--foreground)] flex flex-col gap-2 shadow-xs animate-in fade-in duration-150">
+    <div className="mt-2.5 p-3 rounded-lg border border-amber-500/40 bg-amber-500/5 text-foreground flex flex-col gap-2 shadow-xs animate-in fade-in duration-150">
       {/* Proposal Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5 font-semibold text-[11px] text-amber-500">
@@ -298,41 +365,41 @@ function ActionProposalCard({ proposal, status, onConfirm }: ActionProposalCardP
         </div>
 
         {status === "executed" && (
-          <span className="app-badge app-badge--success text-[9px] px-1.5 h-3.5">
+          <Badge variant="secondary" className="text-[9px] px-1.5 h-3.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
             Đã thực thi
-          </span>
+          </Badge>
         )}
         {status === "rejected" && (
-          <span className="app-badge app-badge--neutral text-[9px] px-1.5 h-3.5">
+          <Badge variant="outline" className="text-[9px] px-1.5 h-3.5 text-muted-foreground">
             Đã bỏ qua
-          </span>
+          </Badge>
         )}
         {status === "pending" && (
-          <span className="app-badge bg-amber-500/20 text-amber-500 border border-amber-500/30 text-[9px] px-1.5 h-3.5">
+          <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 text-[9px] px-1.5 h-3.5">
             Chờ xác nhận
-          </span>
+          </Badge>
         )}
       </div>
 
-      <p className="text-[10px] text-[var(--muted-foreground)] leading-tight">
+      <p className="text-[10px] text-muted-foreground leading-tight">
         {proposal.description}
       </p>
 
       {/* Diffs / Changes Summary */}
       {proposal.diffSummary && proposal.diffSummary.length > 0 && (
-        <div className="border border-[var(--border)] rounded bg-[var(--card)]/80 overflow-hidden mt-0.5">
+        <div className="border border-border rounded bg-card/80 overflow-hidden mt-0.5">
           <table className="w-full text-[10px] text-left">
-            <tbody className="divide-y divide-[var(--border)]/60">
+            <tbody className="divide-y divide-border/60">
               {proposal.diffSummary.map((d, i) => (
-                <tr key={i} className="hover:bg-[var(--secondary)]/30">
-                  <td className="p-1.5 font-medium text-[var(--muted-foreground)] w-24">
+                <tr key={i} className="hover:bg-secondary/30">
+                  <td className="p-1.5 font-medium text-muted-foreground w-24">
                     {d.field}
                   </td>
-                  <td className="p-1.5 text-[var(--muted-foreground)] line-through">
+                  <td className="p-1.5 text-muted-foreground line-through">
                     {d.before || "(Trống)"}
                   </td>
-                  <td className="p-1.5 text-center w-4 text-[var(--primary)]">➔</td>
-                  <td className="p-1.5 font-semibold text-[var(--primary)]">
+                  <td className="p-1.5 text-center w-4 text-primary">➔</td>
+                  <td className="p-1.5 font-semibold text-primary">
                     {d.after}
                   </td>
                 </tr>
@@ -345,21 +412,24 @@ function ActionProposalCard({ proposal, status, onConfirm }: ActionProposalCardP
       {/* Action Decision Buttons */}
       {status === "pending" && (
         <div className="flex items-center justify-end gap-2 pt-1 mt-1 border-t border-amber-500/20">
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="xs"
             onClick={() => onConfirm(false)}
-            className="px-2.5 py-1 rounded text-[10px] font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer"
+            className="text-[10px] h-6 px-2 text-muted-foreground hover:text-foreground"
           >
             Bỏ qua
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            size="xs"
             onClick={() => onConfirm(true)}
-            className="px-2.5 py-1 rounded text-[10px] font-semibold bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90 transition-opacity flex items-center gap-1 shadow-xs cursor-pointer"
+            className="text-[10px] h-6 px-2.5 gap-1 font-medium shadow-xs"
           >
             <Check size={11} />
             <span>Chấp nhận thực thi</span>
-          </button>
+          </Button>
         </div>
       )}
     </div>
