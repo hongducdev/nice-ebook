@@ -41,7 +41,7 @@ export function TypographyControls() {
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-1.5">
                 <SlidersHorizontal size={15} className="text-[var(--primary)]" />
-                <span>Cấu Hình Typography</span>
+                <span>Bước 5: Cấu Hình Typography &amp; Bố Cục</span>
               </h2>
               {isVietnameseBook && (
                 <span className="app-badge app-badge--brand text-[10px] px-1.5 py-0.5 flex items-center gap-1" title="Sách tiếng Việt - Tự động chọn font hỗ trợ đầy đủ dấu thanh">

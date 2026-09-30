@@ -254,7 +254,7 @@ describe("AiService - OpenCode Free Model Routing", () => {
     expect(execution.plan.h1_title).toBe("Chương 1: Khởi Nguyên");
     expect(execution.updatedHtml).toContain('<h1 class="chapter-title">Chương 1: Khởi Nguyên</h1>');
     expect(execution.updatedHtml).toContain("nỗ lực");
-    expect(logs.some((l) => l.text.includes("⚡ [Jev Verdict 2.0] System-1 Local Engine"))).toBe(true);
+    expect(logs.some((l) => l.text.includes("⚡ [Xử Lý Cục Bộ] Native Engine"))).toBe(true);
   });
 
   it("enhanceChapter automatically falls back to secondary model when primary fails", async () => {
@@ -377,7 +377,7 @@ describe("AiService - OpenCode Free Model Routing", () => {
 
       expect(res.success).toBe(true);
       expect(res.latencyMs).toBeLessThanOrEqual(5);
-      expect(res.message).toContain("Jev Verdict 2.0");
+      expect(res.message).toContain("Lõi Offline Cục Bộ");
     });
 
     it("tests opencode model via test_opencode_model invoke", async () => {

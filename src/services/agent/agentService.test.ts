@@ -225,4 +225,39 @@ Tôi sẽ kiểm tra thông tin sách cho bạn.
     expect(mockInvoke).toHaveBeenCalledTimes(3);
     expect(updated).toBeDefined();
   });
+
+  it("Jev Gatekeeper blocks dangerous tool calls and masks secrets in assistant replies", async () => {
+    const mockInvoke = vi.mocked(invoke);
+    const fakeKey = "sk-or-v1-" + "7".repeat(64);
+
+    // 1st call: attempts path traversal in navigate_tab
+    // 2nd call: provides conversational answer containing secret
+    mockInvoke
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          thought: "Thử đọc file hệ thống",
+          action: "navigate_tab",
+          parameters: { tab: "../../etc/shadow" },
+        })
+      )
+      .mockResolvedValueOnce(`Tôi không thể truy cập file đó. Mã truy cập của bạn là ${fakeKey}`);
+
+    const history: AgentChatMessage[] = [
+      { id: "1", role: "user", content: "Đọc file nhạy cảm", timestamp: 100 },
+    ];
+
+    const updated = await AgentService.runAgentTurn(history, mockCtx, {
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-4o",
+      maxIterations: 3,
+    });
+
+    expect(mockInvoke).toHaveBeenCalledTimes(2);
+    const lastMsg = updated[updated.length - 1];
+    expect(lastMsg.role).toBe("assistant");
+    // Verify secret is masked
+    expect(lastMsg.content).not.toContain(fakeKey);
+    expect(lastMsg.content).toContain("sk-o");
+    expect(lastMsg.content).toContain("****");
+  });
 });

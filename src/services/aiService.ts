@@ -15,6 +15,7 @@ import {
   parseChapterEnhancePlan,
 } from "./prompts/chapterEnhancer";
 import { JevDecision } from "../stores/useAppStore";
+import { getCircuitBreaker } from "./ai/circuitBreaker";
 
 export interface AiRequestOptions {
   baseUrl: string;
@@ -115,7 +116,7 @@ export class AiService {
       return {
         success: true,
         latencyMs: 1,
-        message: "Jev Verdict 2.0 (Offline Rust Core - Sẵn sàng)",
+        message: "Lõi Offline Cục Bộ (Sẵn sàng)",
       };
     }
 
@@ -265,16 +266,21 @@ export class AiService {
         stream: false,
       };
 
-      const response = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-      });
+      const breaker = getCircuitBreaker(baseUrl || "ai-gateway");
+      const response = await breaker.execute(async () => {
+        const res = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(45000),
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`AI Gateway responded with status ${response.status}: ${errorText}`);
-      }
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`AI Gateway responded with status ${res.status}: ${errorText.slice(0, 100)}`);
+        }
+        return res;
+      });
 
       const data = await response.json();
       const content = data.choices?.[0]?.message?.content;
@@ -300,7 +306,7 @@ export class AiService {
       const jev: JevDecision = await invoke("classify_text_jev", { text: sampleText });
 
       const fallbackResult: AiStylingResult = {
-        theme_name: `${jev.genre_label} (Jev Auto-Generated)`,
+        theme_name: `${jev.genre_label} (Tự động)`,
         genre_analysis: jev.explanation,
         colors: {
           bg: jev.typography.palette.bg_color,
@@ -361,7 +367,7 @@ export class AiService {
 
       onLog?.({
         type: "info",
-        text: `⚡ ${labelPrefix}[Jev Verdict 2.0] System-1 Local Engine: ${verdictPlan.latency_ms.toFixed(1)}ms (Độ tập trung: ${verdictPlan.concentration.toFixed(3)}, Độ tin cậy: ${(verdictPlan.confidence * 100).toFixed(1)}%)`,
+        text: `⚡ ${labelPrefix}[Xử Lý Cục Bộ] Native Engine: ${verdictPlan.latency_ms.toFixed(1)}ms (Độ tập trung: ${verdictPlan.concentration.toFixed(3)}, Độ tin cậy: ${(verdictPlan.confidence * 100).toFixed(1)}%)`,
       });
 
       const vHeadings = Array.isArray(verdictPlan.headings) ? verdictPlan.headings : [];
@@ -430,7 +436,7 @@ export class AiService {
         if (!verdictPlan.needs_cloud_escalation && verdictPlan.confidence >= 0.90) {
           onLog?.({
             type: "info",
-            text: `⚡ [Jev Verdict 2.0] System-1 Xác thực thành công: ${verdictPlan.latency_ms.toFixed(1)}ms (Bỏ qua gọi Cloud, Tiết kiệm 100% Token)`,
+            text: `⚡ [Xử Lý Cục Bộ] Xác thực thành công: ${verdictPlan.latency_ms.toFixed(1)}ms (Bỏ qua gọi Cloud, Tiết kiệm 100% Token)`,
           });
 
           const plan: ChapterEnhancePlan = {
@@ -464,7 +470,7 @@ export class AiService {
 
         onLog?.({
           type: "info",
-          text: `⚡ [Jev Verdict 2.0] Tiền xử lý System-1 hoàn tất (${verdictPlan.latency_ms.toFixed(1)}ms). Chuyển tiếp ${verdictPlan.ambiguous_paragraphs.length} đoạn nghi vấn lên Cloud LLM...`,
+          text: `⚡ [Xử Lý Cục Bộ] Tiền xử lý hoàn tất (${verdictPlan.latency_ms.toFixed(1)}ms). Chuyển tiếp ${verdictPlan.ambiguous_paragraphs.length} đoạn nghi vấn lên Cloud LLM...`,
         });
       } catch (hybridErr) {
         console.warn("Hybrid pre-filter failed, falling back to full cloud pass:", hybridErr);

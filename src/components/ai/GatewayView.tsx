@@ -96,20 +96,21 @@ export function GatewayView() {
   }
 
   // Test Jev Core Heuristic
+  // Test Local Core Latency
   async function handleTestJev() {
     setIsTestingJev(true);
-    toast.loading("Đang kiểm tra Jev Core System-1...", { id: "test-jev" });
+    toast.loading("Đang đo độ trễ lõi xử lý cục bộ...", { id: "test-engine" });
     const start = performance.now();
     try {
-      await invoke("classify_text_jev", { text: "Kiểm tra phản hồi nhanh của bộ vi xử lý Jev Core" });
+      await invoke("classify_text_jev", { text: "Kiểm tra phản hồi nhanh của bộ vi xử lý cục bộ" });
       const latency = Math.max(1, Math.round(performance.now() - start));
       setIsTestingJev(false);
       setJevTestResult({ success: true, latencyMs: latency });
-      toast.success(`Jev Core phản hồi tức thì (~${latency}ms) không phụ thuộc mạng!`, { id: "test-jev" });
+      toast.success(`Lõi cục bộ phản hồi tức thì (~${latency}ms) không phụ thuộc mạng!`, { id: "test-engine" });
     } catch (err) {
       setIsTestingJev(false);
       setJevTestResult({ success: false, latencyMs: 0 });
-      toast.error(`Lỗi Jev Core: ${err}`, { id: "test-jev" });
+      toast.error(`Lỗi kiểm tra: ${err}`, { id: "test-engine" });
     }
   }
 
@@ -133,7 +134,7 @@ export function GatewayView() {
               </span>
             ) : (
               <span className="app-badge app-badge--neutral text-[10px] h-[18px]">
-                Jev Offline Plane
+                Lõi Offline (Cục bộ)
               </span>
             )}
           </h2>
@@ -177,7 +178,7 @@ export function GatewayView() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center flex-wrap gap-2">
                 <h3 className="text-sm font-semibold text-[var(--foreground)]">
-                  Jev Core (System-1 Decision Engine)
+                  Lõi Xử Lý Cục Bộ (Tự động 100% Offline)
                 </h3>
                 <span className="app-badge app-badge--success text-[10px] h-[18px]">
                   100% Offline
@@ -221,10 +222,10 @@ export function GatewayView() {
               onClick={handleTestJev}
               disabled={isTestingJev}
               className="lg-button lg-button--secondary h-7 text-xs px-3 gap-1.5 flex-shrink-0"
-              title="Kiểm tra thời gian phản hồi của Jev Core"
+              title="Kiểm tra thời gian phản hồi của lõi cục bộ"
             >
               <Activity size={13} className={isTestingJev ? "animate-spin text-[var(--primary)]" : "text-emerald-500"} />
-              <span>{isTestingJev ? "Đang đo..." : jevTestResult ? `${jevTestResult.latencyMs}ms` : "Test Jev"}</span>
+              <span>{isTestingJev ? "Đang đo..." : jevTestResult ? `${jevTestResult.latencyMs}ms` : "Đo độ trễ"}</span>
             </button>
           </div>
         </div>

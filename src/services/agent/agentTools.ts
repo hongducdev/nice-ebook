@@ -5,7 +5,19 @@
  * - Read-only tools can be executed automatically by the agent loop.
  * - Mutating tools are STRUCTURALLY UNROUTABLE to auto-execution in the agent loop.
  *   They can only generate an ActionProposal that requires explicit user confirmation.
+ * - Jev Guardrail Gatekeeper verifies parameters for path traversal / command injection.
+ * - Secret Scrubber masks sensitive tokens before returning data to LLM context.
  */
+
+import { maskSecrets } from "../../utils/secretScrubber";
+
+export type ToolVerdict = "allow" | "warn" | "block";
+
+export interface ToolSecurityVerdict {
+  verdict: ToolVerdict;
+  riskScore: number;
+  reason: string;
+}
 
 export interface ToolDefinition {
   name: string;
@@ -162,6 +174,61 @@ export const AGENT_TOOLS: ToolDefinition[] = [
 
 export class AgentToolDispatcher {
   /**
+   * Jev Guardrail - Tool Security Gatekeeper
+   * Analyzes parameters and tool type to produce ALLOW / WARN / BLOCK verdicts.
+   */
+  public static evaluateToolCall(
+    toolName: string,
+    params: Record<string, unknown>
+  ): ToolSecurityVerdict {
+    const tool = AGENT_TOOLS.find((t) => t.name === toolName);
+    if (!tool) {
+      return {
+        verdict: "block",
+        riskScore: 9.0,
+        reason: `Công cụ "${toolName}" không tồn tại trong danh mục cho phép.`,
+      };
+    }
+
+    // Inspect all parameter values recursively for dangerous patterns (Path Traversal, command injection, script tags)
+    const dangerousCommandPattern = /(?:\brm\s+-[a-z]*r[a-z]*\b|\bDROP\s+TABLE\b|<\s*script\b|javascript\s*:)/i;
+    const dangerousPathPattern = /(?:(?:^|[/\\])\.\.[/\\]|\/etc\/(?:passwd|shadow))/i;
+    const stack: unknown[] = [params];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (!current || typeof current !== "object") continue;
+
+      for (const [key, val] of Object.entries(current as Record<string, unknown>)) {
+        if (typeof val === "string") {
+          if (dangerousCommandPattern.test(val) || dangerousPathPattern.test(val)) {
+            return {
+              verdict: "block",
+              riskScore: 10.0,
+              reason: `Phát hiện tham số không an toàn trong trường "${key}" (chứa ký tự nguy hiểm hoặc đường dẫn cấm).`,
+            };
+          }
+        } else if (typeof val === "object" && val !== null) {
+          stack.push(val);
+        }
+      }
+    }
+
+    if (tool.isMutating) {
+      return {
+        verdict: "warn",
+        riskScore: 5.0,
+        reason: `Công cụ thay đổi trạng thái "${toolName}" cần xác nhận từ người dùng.`,
+      };
+    }
+
+    return {
+      verdict: "allow",
+      riskScore: 1.0,
+      reason: "Thao tác đọc an toàn.",
+    };
+  }
+
+  /**
    * Executes a read-only tool. If a mutating tool name is passed here,
    * it throws an invariant error immediately.
    */
@@ -170,6 +237,10 @@ export class AgentToolDispatcher {
     params: Record<string, unknown>,
     ctx: ReadOnlyStoreContext
   ): Promise<string> {
+    const security = this.evaluateToolCall(toolName, params);
+    if (security.verdict === "block") {
+      throw new Error(`[Jev Guardrail - BLOCK]: ${security.reason}`);
+    }
     const tool = AGENT_TOOLS.find((t) => t.name === toolName);
     if (!tool) {
       throw new Error(`Công cụ không xác định: "${toolName}"`);
@@ -181,16 +252,18 @@ export class AgentToolDispatcher {
       );
     }
 
+    let output: string;
     switch (toolName) {
       case "get_project_status": {
         if (!ctx.currentBook) {
-          return "Hiện tại chưa có cuốn sách nào được mở trong dự án.";
+          output = "Hiện tại chưa có cuốn sách nào được mở trong dự án.";
+          break;
         }
         const b = ctx.currentBook;
         const modCount = Object.keys(ctx.modifiedChapters).length;
         const glossaryCount = Object.keys(ctx.translationConfig.glossary || {}).length;
 
-        return JSON.stringify(
+        output = JSON.stringify(
           {
             title: b.title,
             author: b.author,
@@ -206,11 +279,13 @@ export class AgentToolDispatcher {
           null,
           2
         );
+        break;
       }
 
       case "list_chapters": {
         if (!ctx.currentBook || ctx.currentBook.chapters.length === 0) {
-          return "Không có danh sách chương.";
+          output = "Không có danh sách chương.";
+          break;
         }
         const limit = typeof params.limit === "number" ? Math.max(1, params.limit) : 20;
         const list = ctx.currentBook.chapters.slice(0, limit).map((c, i) => ({
@@ -220,7 +295,7 @@ export class AgentToolDispatcher {
           is_modified_or_translated: Boolean(ctx.modifiedChapters[c.href]),
         }));
 
-        return JSON.stringify(
+        output = JSON.stringify(
           {
             total: ctx.currentBook.chapters.length,
             showing: list.length,
@@ -229,12 +304,14 @@ export class AgentToolDispatcher {
           null,
           2
         );
+        break;
       }
 
       case "read_chapter_excerpt": {
         const chIdx = Number(params.chapterIndex);
         if (isNaN(chIdx) || chIdx < 0 || !ctx.currentBook || chIdx >= ctx.currentBook.chapters.length) {
-          return `Lỗi: Chỉ số chương ${params.chapterIndex} không hợp lệ.`;
+          output = `Lỗi: Chỉ số chương ${params.chapterIndex} không hợp lệ.`;
+          break;
         }
 
         const maxChars = typeof params.maxChars === "number" ? Math.max(200, params.maxChars) : 2000;
@@ -243,7 +320,8 @@ export class AgentToolDispatcher {
         const excerpt = cleanText.slice(0, maxChars);
 
         // Security Tagging: Content is wrapped in passive data tags so LLMs do not execute commands inside it
-        return `<book_content_data chapter_index="${chIdx}" title="${ctx.currentBook.chapters[chIdx].title}">\n${excerpt}\n</book_content_data>`;
+        output = `<book_content_data chapter_index="${chIdx}" title="${ctx.currentBook.chapters[chIdx].title}">\n${excerpt}\n</book_content_data>`;
+        break;
       }
 
       case "navigate_tab": {
@@ -252,12 +330,15 @@ export class AgentToolDispatcher {
         if (typeof params.chapterIndex === "number") {
           ctx.setActiveChapterIndex(params.chapterIndex);
         }
-        return `Đã chuyển sang màn hình "${tab}" thành công.`;
+        output = `Đã chuyển sang màn hình "${tab}" thành công.`;
+        break;
       }
 
       default:
         throw new Error(`Chưa hỗ trợ công cụ: ${toolName}`);
     }
+
+    return maskSecrets(output);
   }
 
   /**
@@ -268,6 +349,11 @@ export class AgentToolDispatcher {
     params: Record<string, unknown>,
     ctx: ReadOnlyStoreContext
   ): ActionProposal {
+    const security = this.evaluateToolCall(toolName, params);
+    if (security.verdict === "block") {
+      throw new Error(`[Jev Guardrail - BLOCK]: ${security.reason}`);
+    }
+
     const tool = AGENT_TOOLS.find((t) => t.name === toolName);
     if (!tool || !tool.isMutating) {
       throw new Error(`Không thể tạo đề xuất cho công cụ không thay đổi dữ liệu: "${toolName}"`);

@@ -4,6 +4,7 @@ import { useAppStore } from "./stores/useAppStore";
 import { Sidebar } from "./components/layout/Sidebar";
 import { AppTitlebar } from "./components/layout/AppTitlebar";
 import { StatusBar } from "./components/layout/StatusBar";
+import { AppSplashScreen } from "./components/layout/AppSplashScreen";
 import { BookView } from "./components/books/BookView";
 import { PresetGallery } from "./components/styles/PresetGallery";
 import { TypographyControls } from "./components/styles/TypographyControls";
@@ -15,6 +16,7 @@ import { KindleCompanionView } from "./components/kindle/KindleCompanionView";
 import { ExportModal } from "./components/export/ExportModal";
 import { ConverterView } from "./components/converter/ConverterView";
 import { BookAgentDrawer } from "./components/agent/BookAgentDrawer";
+import { BookPipelineStepper } from "./components/workflow/BookPipelineStepper";
 import { notifyIngestRoute } from "./components/workflow/ingestRouteToast";
 import { workflowKindFromFile, workflowLabel } from "./utils/bookTypeDetector";
 import { 
@@ -24,8 +26,11 @@ import {
 
 export default function App() {
   const [isExportOpen, setIsExportOpen] = useState(false);
-
+  const [isAppLoading, setIsAppLoading] = useState(true);
+  const [splashStep, setSplashStep] = useState("Khởi tạo môi trường Studio...");
+  const [splashProgress, setSplashProgress] = useState(30);
   const { 
+    currentBook,
     activeTab, 
     scanGateways, 
     loadBookFromPath, 
@@ -41,11 +46,32 @@ export default function App() {
     bookProfile,
   } = useAppStore();
 
-  // Auto scan local gateways once on startup
+  // Auto scan local gateways once on startup with smooth splash progression
   useEffect(() => {
-    scanGateways();
-  }, [scanGateways]);
+    let isMounted = true;
+    async function initApp() {
+      await new Promise((resolve) => setTimeout(resolve, 180));
+      if (!isMounted) return;
+      setSplashStep("Đang quét các cổng AI Proxy cục bộ...");
+      setSplashProgress(65);
 
+      await scanGateways();
+      if (!isMounted) return;
+      setSplashStep("Hoàn tất khởi động, sẵn sàng làm việc!");
+      setSplashProgress(100);
+
+      setTimeout(() => {
+        if (isMounted) {
+          setIsAppLoading(false);
+        }
+      }, 350);
+    }
+
+    initApp();
+    return () => {
+      isMounted = false;
+    };
+  }, [scanGateways]);
   // Setup Tauri native window drag & drop listener
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -131,6 +157,13 @@ export default function App() {
         richColors 
       />
 
+      {/* Startup Splash Screen */}
+      <AppSplashScreen
+        isLoading={isAppLoading}
+        stepMessage={splashStep}
+        progressPercent={splashProgress}
+      />
+
       {/* Global Drag & Drop Overlay */}
       {isDraggingFile && (
         <div className="fixed inset-0 z-50 bg-[var(--background)]/85 backdrop-blur-md border-2 border-dashed border-[var(--primary)] flex flex-col items-center justify-center pointer-events-none animate-in fade-in duration-150">
@@ -156,6 +189,11 @@ export default function App() {
 
         {/* LinguaGacha Workspace Frame with 8px Corner */}
         <main className="workspace-frame">
+          {currentBook && activeTab !== "books" && activeTab !== "settings" && (
+            <div className="px-4 py-1.5 border-b border-[var(--border)] bg-[var(--card)]/40 flex-shrink-0 flex items-center justify-between">
+              <BookPipelineStepper compact className="flex-1" />
+            </div>
+          )}
           {activeTab === "books" && <BookView />}
           {activeTab === "converter" && <ConverterView />}
           {activeTab === "reader" && <EpubReaderViewer />}
@@ -284,7 +322,7 @@ export default function App() {
                   <div className="setting-card-row__copy">
                     <h3 className="setting-card-row__title">Về NiceEbook Studio</h3>
                     <p className="setting-card-row__description">
-                      Phần mềm thiết kế và làm đẹp sách điện tử (EPUB) tự động bằng AI, phong cách thẩm mỹ chuẩn mực lấy cảm hứng từ LinguaGacha, tích hợp Jev Core System-1 Decision Plane siêu tốc chạy trực tiếp trong Rust.
+                      Phần mềm thiết kế và làm đẹp sách điện tử (EPUB) tự động bằng AI, phong cách thẩm mỹ chuẩn mực lấy cảm hứng từ LinguaGacha, tích hợp lõi phân loại và chuẩn hóa siêu tốc chạy trực tiếp trong Rust.
                     </p>
                   </div>
                   <div className="setting-card-row__action">
@@ -308,7 +346,7 @@ export default function App() {
                   <div className="setting-card-row__copy">
                     <h3 className="setting-card-row__title">Quyền riêng tư & Bảo mật Zero-Key</h3>
                     <p className="setting-card-row__description">
-                      Sách được phân tích và đóng gói 100% cục bộ trên máy tính. Dữ liệu không bao giờ bị tải lên bất kỳ máy chủ đám mây nào khi sử dụng Jev Core.
+                      Sách được phân tích và đóng gói 100% cục bộ trên máy tính. Dữ liệu không bao giờ bị tải lên bất kỳ máy chủ đám mây nào khi sử dụng chế độ xử lý cục bộ (Offline).
                     </p>
                   </div>
                   <div className="setting-card-row__action">

@@ -157,4 +157,87 @@ describe("AgentToolDispatcher", () => {
     // Ensure no mutating action was executed on any store context
     // (mockReadOnlyCtx has no mutation methods, and executeReadOnlyTool refused mutations)
   });
+
+  describe("Jev Guardrail Gatekeeper & Secret Scrubber", () => {
+    it("evaluates safe read-only tools as ALLOW", () => {
+      const verdict = AgentToolDispatcher.evaluateToolCall("list_chapters", { limit: 10 });
+      expect(verdict.verdict).toBe("allow");
+      expect(verdict.riskScore).toBe(1.0);
+    });
+
+    it("evaluates mutating tools as WARN requiring confirmation", () => {
+      const verdict = AgentToolDispatcher.evaluateToolCall("update_metadata", { title: "New Title" });
+      expect(verdict.verdict).toBe("warn");
+      expect(verdict.riskScore).toBe(5.0);
+    });
+
+    it("evaluates unknown tools as BLOCK", () => {
+      const verdict = AgentToolDispatcher.evaluateToolCall("delete_system_database", {});
+      expect(verdict.verdict).toBe("block");
+      expect(verdict.riskScore).toBe(9.0);
+    });
+
+    it("does not block innocent prose like 'Transform -Rebirth' or ellipses", () => {
+      const verdict = AgentToolDispatcher.evaluateToolCall("update_metadata", {
+        title: "Transform -Rebirth of the Legend.../ Volume 1",
+      });
+      expect(verdict.verdict).toBe("warn"); // Mutating tool, not blocked
+      expect(verdict.riskScore).toBe(5.0);
+    });
+    it("evaluates path traversal parameter as BLOCK", () => {
+      const verdict = AgentToolDispatcher.evaluateToolCall("navigate_tab", {
+        tab: "../../etc/shadow",
+      });
+      expect(verdict.verdict).toBe("block");
+      expect(verdict.riskScore).toBe(10.0);
+      expect(verdict.reason).toContain("không an toàn");
+    });
+
+    it("evaluates script injection parameter as BLOCK", () => {
+      const verdict = AgentToolDispatcher.evaluateToolCall("update_metadata", {
+        title: "<script>alert('xss')</script>",
+      });
+      expect(verdict.verdict).toBe("block");
+      expect(verdict.riskScore).toBe(10.0);
+    });
+
+    it("blocks executeReadOnlyTool when dangerous parameters are supplied", async () => {
+      await expect(
+        AgentToolDispatcher.executeReadOnlyTool(
+          "navigate_tab",
+          { tab: "../../../secret" },
+          mockReadOnlyCtx
+        )
+      ).rejects.toThrow(/\[Jev Guardrail - BLOCK\]/);
+    });
+
+    it("blocks createActionProposal when dangerous parameters are supplied", () => {
+      expect(() =>
+        AgentToolDispatcher.createActionProposal(
+          "update_metadata",
+          { title: "rm -rf /" },
+          mockReadOnlyCtx
+        )
+      ).toThrow(/\[Jev Guardrail - BLOCK\]/);
+    });
+
+    it("automatically masks secrets if they appear in read-only tool output", async () => {
+      const fakeKey = "sk-or-v1-" + "e".repeat(64);
+      const poisonedChapter = `<p>Chapter text containing leaked key ${fakeKey}</p>`;
+      const ctxWithSecret: ReadOnlyStoreContext = {
+        ...mockReadOnlyCtx,
+        readChapterText: vi.fn().mockResolvedValue(poisonedChapter),
+      };
+
+      const result = await AgentToolDispatcher.executeReadOnlyTool(
+        "read_chapter_excerpt",
+        { chapterIndex: 0 },
+        ctxWithSecret
+      );
+
+      expect(result).not.toContain(fakeKey);
+      expect(result).toContain("sk-o");
+      expect(result).toContain("****");
+    });
+  });
 });

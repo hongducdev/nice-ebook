@@ -274,7 +274,7 @@ export function KindleCompanionView() {
           <div className="flex items-center gap-2">
             <h1 className="text-base font-bold text-[var(--foreground)] flex items-center gap-2">
               <Sparkles size={18} className="text-[var(--primary)]" />
-              Kindle Companion: X-Ray &amp; Word Wise
+              Bước 7: Kindle X-Ray, Word Wise &amp; Xuất Bản
             </h1>
             <span className="app-badge app-badge--brand text-[10px] h-[18px]">Universal EPUB</span>
           </div>

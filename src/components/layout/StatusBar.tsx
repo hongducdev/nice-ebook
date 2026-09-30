@@ -35,16 +35,16 @@ export function StatusBar() {
             </span>
           ) : (
             <span className="app-badge app-badge--neutral h-[18px] text-[10px] px-1.5">
-              <span>Jev Zero-Key Core</span>
+              <span>Lõi Offline (Cục bộ)</span>
             </span>
           )}
         </div>
 
         <span className="text-[var(--border)]">|</span>
 
-        {/* Jev System-1 Decision Badge */}
+        {/* Content Genre Classification Badge */}
         <div className="flex items-center gap-1.5">
-          <span className="font-medium text-[var(--foreground)]">Jev Core:</span>
+          <span className="font-medium text-[var(--foreground)]">Phân loại:</span>
           {jevDecision ? (
             <span className="app-badge app-badge--brand h-[18px] text-[10px] px-1.5 font-mono">
               <Sparkles size={10} />
@@ -53,7 +53,7 @@ export function StatusBar() {
           ) : (
             <span className="app-badge app-badge--neutral h-[18px] text-[10px] px-1.5">
               <Zap size={10} />
-              <span>Heuristic Ready</span>
+              <span>Tự động nhận diện</span>
             </span>
           )}
         </div>

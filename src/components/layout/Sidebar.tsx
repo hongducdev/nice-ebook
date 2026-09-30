@@ -18,14 +18,122 @@ import { useAppStore } from "../../stores/useAppStore";
 import { isTranslationWorkflow } from "../../utils/bookTypeDetector";
 import type { ActiveTab } from "../../types/navigation";
 
-interface NavItem {
+export interface NavItem {
   id: ActiveTab | "agent";
   label: string;
-  icon: any;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
   badge?: string | null;
   badgeTone?: "success" | "neutral" | "warning";
 }
 
+export interface NavigationGroup {
+  id: string;
+  title: string;
+  items: NavItem[];
+}
+
+export function buildNavigationGroups(context: {
+  currentBook?: { chapter_count?: number } | null;
+  activeGateway?: { name?: string } | null;
+  modifiedCount?: number;
+  pendingConverterFile?: unknown;
+  translationBadge?: string | null;
+  bilingualActive?: boolean;
+}): NavigationGroup[] {
+  const {
+    currentBook,
+    activeGateway,
+    modifiedCount = 0,
+    pendingConverterFile,
+    translationBadge,
+    bilingualActive,
+  } = context;
+
+  return [
+    {
+      id: "pipeline",
+      title: "Quy trình Ebook",
+      items: [
+        { 
+          id: "converter" as const, 
+          label: "1. Nạp & Chuyển đổi", 
+          icon: RefreshCw,
+          badge: pendingConverterFile ? "Đang chờ" : "OCR / Convert",
+          badgeTone: pendingConverterFile ? "warning" : "neutral"
+        },
+        { 
+          id: "translator" as const, 
+          label: "2. Dịch thuật AI", 
+          icon: Languages, 
+          badge: translationBadge,
+          badgeTone: translationBadge === "Đã dịch" ? "neutral" : "success"
+        },
+        { 
+          id: "ai-editor" as const, 
+          label: "3. Biên tập & Soát lỗi", 
+          icon: Wand2, 
+          badge: modifiedCount > 0 ? `${modifiedCount} ch.` : null,
+          badgeTone: "success"
+        },
+        { 
+          id: "presets" as const, 
+          label: "4. Thư viện phong cách", 
+          icon: Palette 
+        },
+        { 
+          id: "editor" as const, 
+          label: "5. Kiểu chữ & Bố cục", 
+          icon: SlidersHorizontal 
+        },
+        { 
+          id: "reader" as const, 
+          label: "6. Đọc thử & Kiểm tra", 
+          icon: BookOpenCheck,
+          badge: bilingualActive ? "Song ngữ" : null,
+          badgeTone: "success"
+        },
+        { 
+          id: "kindle" as const, 
+          label: "7. Gói Kindle & Xuất bản", 
+          icon: Sparkles,
+          badge: "X-Ray",
+          badgeTone: "neutral"
+        },
+      ],
+    },
+    {
+      id: "workspace",
+      title: "Dự án & Hệ thống",
+      items: [
+        { 
+          id: "books" as const, 
+          label: "Tổng quan sách", 
+          icon: Layers, 
+          badge: currentBook ? `${currentBook.chapter_count} ch.` : null 
+        },
+        { 
+          id: "ai" as const, 
+          label: "Cổng AI & Mô hình", 
+          icon: Boxes, 
+          badge: activeGateway ? "Online" : null,
+          badgeTone: activeGateway ? "success" : "neutral"
+        },
+        { 
+          id: "agent" as const, 
+          label: "Trợ lý Chat AI", 
+          icon: Bot, 
+          badge: "Agent",
+          badgeTone: "success"
+        },
+        { 
+          id: "settings" as const, 
+          label: "Cài đặt ứng dụng", 
+          icon: Settings 
+        },
+      ],
+    },
+  ];
+}
 export function Sidebar() {
   const { 
     activeTab, 
@@ -60,102 +168,14 @@ export function Sidebar() {
     : null;
   const bilingualActive = translationConfig.mode === "bilingual" && translatedCount > 0;
 
-  const navigationGroups: { id: string; title: string; items: NavItem[] }[] = [
-    {
-      id: "library",
-      title: "Thư viện & Sách",
-      items: [
-        { 
-          id: "books" as const, 
-          label: "Quản lý sách", 
-          icon: Layers, 
-          badge: currentBook ? `${currentBook.chapter_count}` : null 
-        },
-        { 
-          id: "converter" as const, 
-          label: "Chuyển đổi Ebook", 
-          icon: RefreshCw,
-          badge: pendingConverterFile ? "Đang chờ" : "PDF / OCR",
-          badgeTone: pendingConverterFile ? "warning" : "success"
-        },
-        { 
-          id: "reader" as const, 
-          label: "Đọc thử & Soát lỗi", 
-          icon: BookOpenCheck,
-          badge: bilingualActive ? "Song ngữ" : null,
-          badgeTone: "success"
-        },
-        { 
-          id: "kindle" as const, 
-          label: "Kindle X-Ray & Word Wise", 
-          icon: Sparkles,
-          badge: "Kindle",
-          badgeTone: "success"
-        },
-      ],
-    },
-    {
-      id: "styling",
-      title: "Định kiểu & Bố cục",
-      items: [
-        { 
-          id: "presets" as const, 
-          label: "Thư viện phong cách", 
-          icon: Palette 
-        },
-        { 
-          id: "editor" as const, 
-          label: "Kiểu chữ (Typography)", 
-          icon: SlidersHorizontal 
-        },
-      ],
-    },
-    {
-      id: "intelligence",
-      title: "Trí tuệ nhân tạo",
-      items: [
-        { 
-          id: "ai" as const, 
-          label: "AI Gateway & Models", 
-          icon: Boxes, 
-          badge: activeGateway ? "Online" : null,
-          badgeTone: activeGateway ? "success" : "neutral"
-        },
-        { 
-          id: "translator" as const, 
-          label: "Dịch thuật AI", 
-          icon: Languages, 
-          badge: translationBadge,
-          badgeTone: translationBadge === "Đã dịch" ? "neutral" : "success"
-        },
-        { 
-          id: "agent" as const, 
-          label: "Trợ lý Chat AI", 
-          icon: Bot, 
-          badge: "Agent",
-          badgeTone: "success"
-        },
-        { 
-          id: "ai-editor" as const, 
-          label: "Biên tập & Soát lỗi AI", 
-          icon: Wand2, 
-          badge: modifiedCount > 0 ? `${modifiedCount} ch.` : null,
-          badgeTone: "success"
-        },
-      ],
-    },
-    {
-      id: "system",
-      title: "Hệ thống",
-      items: [
-        { 
-          id: "settings" as const, 
-          label: "Cài đặt ứng dụng", 
-          icon: Settings 
-        },
-      ],
-    },
-  ];
+  const navigationGroups = buildNavigationGroups({
+    currentBook,
+    activeGateway,
+    modifiedCount,
+    pendingConverterFile,
+    translationBadge,
+    bilingualActive,
+  });
 
   return (
     <aside 
@@ -281,7 +301,7 @@ export function Sidebar() {
                 NiceEbook Studio
               </span>
               <span className="text-[10px] text-[var(--muted-foreground)] truncate font-mono">
-                {activeGateway ? `● ${activeGateway.name}` : "○ Jev Offline Ready"}
+                {activeGateway ? `● ${activeGateway.name}` : "○ Lõi Offline sẵn sàng"}
               </span>
             </div>
           )}

@@ -449,7 +449,7 @@ export function BookTranslatorView() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xs font-semibold text-[var(--foreground)] leading-none">
-                Dịch Thuật Sách AI
+                Bước 2: Dịch Thuật Sách AI
               </h1>
               <span className="app-badge app-badge--brand text-[9px] px-1.5 h-4">
                 Surgical XHTML Preserved
@@ -525,7 +525,7 @@ export function BookTranslatorView() {
                 <span>Tự Động Cấu Hình Toàn Diện</span>
               </div>
               <span className="app-badge app-badge--brand text-[9px] px-1.5 h-3.5">
-                AI + Jev 1-Click
+                Tự động 1-Click
               </span>
             </div>
 

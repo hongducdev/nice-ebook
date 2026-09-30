@@ -6,6 +6,7 @@ import {
   parseTranslationResponse,
   TranslationTone,
 } from "../prompts/bookTranslator";
+import { getCircuitBreaker } from "../ai/circuitBreaker";
 
 export interface TranslateChapterOptions {
   chapterHtml: string;
@@ -193,26 +194,37 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
           throw new DOMException("Thao tác dịch đã bị hủy bởi người dùng", "AbortError");
         }
 
+        const modelBreaker = getCircuitBreaker(`${baseUrl || "gateway"}|${activeModel}`);
+
+        if (!modelBreaker.canExecute()) {
+          onLog?.({
+            type: "warning",
+            text: `⚠️ [Jev Guardrail]: Mô hình "${activeModel}" đang tạm ngắt do lỗi liên tục (Circuit Breaker OPEN). Thử mô hình kế tiếp...`,
+          });
+          continue;
+        }
+
         try {
           onLog?.({
             type: "detail",
             text: `[Mẻ ${cIdx + 1}/${chunks.length}] Gửi ${chunk.length} đoạn tới mô hình "${activeModel}"...`,
           });
 
-          const rawOutput = await invoke<string>("call_ai_completion", {
-            options: {
-              base_url: baseUrl,
-              api_key: apiKey,
-              model: activeModel,
-              messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: chunkPrompt },
-              ],
-              temperature,
-              timeout_secs: timeoutSecs,
-            },
+          const rawOutput = await modelBreaker.execute(async () => {
+            return await invoke<string>("call_ai_completion", {
+              options: {
+                base_url: baseUrl,
+                api_key: apiKey,
+                model: activeModel,
+                messages: [
+                  { role: "system", content: systemPrompt },
+                  { role: "user", content: chunkPrompt },
+                ],
+                temperature,
+                timeout_secs: timeoutSecs,
+              },
+            });
           });
-
           const parsed = parseTranslationResponse(rawOutput);
           const translatedKeys = Object.keys(parsed);
 

@@ -145,21 +145,21 @@ export function AppTitlebar({ onOpenExport }: AppTitlebarProps) {
             <button
               type="button"
               onClick={() => {
-                toast.loading("Jev Core đang phân tích...", { id: "jev-scan" });
+                toast.loading("Đang phân tích cấu trúc sách...", { id: "book-scan" });
                 runJevClassification().then(() => {
-                  toast.success("Jev Core đã đề xuất phong cách tối ưu!", { id: "jev-scan" });
+                  toast.success("Đã phân tích và đề xuất phong cách tối ưu!", { id: "book-scan" });
                 });
               }}
               disabled={isAnalyzingJev}
               className="lg-button lg-button--outline h-7 text-xs px-2.5 text-[var(--primary)]"
-              title="Phân tích cấu trúc sách và thể loại bằng Jev Core"
+              title="Phân tích cấu trúc sách và thể loại tự động"
             >
               {isAnalyzingJev ? (
                 <Loader2 size={13} className="animate-spin text-[var(--primary)]" />
               ) : (
                 <Sparkles size={13} />
               )}
-              <span>{isAnalyzingJev ? "Đang phân tích..." : "Jev Scan"}</span>
+              <span>{isAnalyzingJev ? "Đang phân tích..." : "Tự động phân tích"}</span>
             </button>
 
             {onOpenExport && (

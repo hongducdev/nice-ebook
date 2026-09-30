@@ -285,7 +285,7 @@ export function ConverterView() {
       isOpen: true,
       title: "Đang Mở & Phân Tích Tài Liệu",
       statusText: `Đang nạp file ${name}...`,
-      subText: "Kiểm tra cấu trúc và khởi động bộ phân loại Jev Core",
+      subText: "Kiểm tra cấu trúc và phân loại nội dung tự động",
       percent: -1,
       stage: "reading",
       canCancel: false,
@@ -433,8 +433,7 @@ export function ConverterView() {
   async function handleRunJevVerdictOnChapters() {
     if (chapters.length === 0) return;
     setIsEnhancingJev(true);
-    toast.loading("Jev Verdict 2.0 đang chuẩn hóa và tối ưu cấu trúc các chương...", { id: "jev-verdict" });
-
+    toast.loading("Đang chuẩn hóa và tối ưu cấu trúc các chương...", { id: "clean-verdict" });
     try {
       const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
       const enhanced: ChapterChunk[] = [];
@@ -485,13 +484,12 @@ export function ConverterView() {
 
       setChapters(enhanced);
       toast.success(
-        `Jev Verdict hoàn tất! Đã chuẩn hóa ${enhanced.length} chương (sửa ${totalTyposFixed} lỗi, thêm ${totalHeadingsAdded} phân đoạn).`,
-        { id: "jev-verdict" }
+        `Đã chuẩn hóa ${enhanced.length} chương (sửa ${totalTyposFixed} lỗi, thêm ${totalHeadingsAdded} phân đoạn).`,
+        { id: "clean-verdict" }
       );
     } catch (err) {
       console.error(err);
-      toast.error("Lỗi khi chạy Jev Verdict", { id: "jev-verdict" });
-    } finally {
+      toast.error("Lỗi khi chuẩn hóa cấu trúc chương", { id: "clean-verdict" });
       setIsEnhancingJev(false);
     }
   }
@@ -1060,7 +1058,7 @@ export function ConverterView() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base font-semibold text-[var(--foreground)]">Chuyển Đổi Sách Điện Tử (Ebook Converter)</h1>
+              <h1 className="text-base font-semibold text-[var(--foreground)]">Bước 1: Nạp &amp; Chuyển Đổi Sách</h1>
               <span className="app-badge app-badge--brand text-[10px] font-mono">PDF &bull; OCR &bull; TXT &bull; MD</span>
             </div>
             <p className="text-xs text-[var(--muted-foreground)]">
@@ -1361,7 +1359,7 @@ export function ConverterView() {
                       </div>
                       <div className="text-xs">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-[var(--foreground)]">Jev Core Decision:</span>
+                          <span className="font-semibold text-[var(--foreground)]">Phân loại nội dung:</span>
                           <span className="app-badge app-badge--brand text-[10px] font-mono">
                             {activeJev.genre_label}
                           </span>
@@ -1378,7 +1376,7 @@ export function ConverterView() {
 
                     <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
                       <span className="app-badge app-badge--success text-[10px] font-mono">
-                        Rust Jev &lt; 2ms
+                        Xử lý cục bộ &lt; 2ms
                       </span>
                     </div>
                   </div>
@@ -1790,10 +1788,10 @@ export function ConverterView() {
                     disabled={isEnhancingJev || chapters.length === 0}
                     onClick={handleRunJevVerdictOnChapters}
                     className="app-button app-button--secondary text-xs flex items-center gap-1.5"
-                    title="Chuẩn hóa tiêu đề H1, dọn rác đầu chương và sửa lỗi chính tả bằng Jev Verdict Rust Core"
+                    title="Chuẩn hóa tiêu đề H1, dọn rác đầu chương và sửa lỗi chính tả tự động"
                   >
                     <Sparkles size={13} className="text-amber-500" />
-                    <span>{isEnhancingJev ? "Jev Đang Tối Ưu..." : "⚡ Tối Ưu Bằng Jev Verdict (< 5ms)"}</span>
+                    <span>{isEnhancingJev ? "Đang tối ưu..." : "⚡ Tối Ưu Cấu Trúc Nhanh (< 5ms)"}</span>
                   </button>
 
                   <button

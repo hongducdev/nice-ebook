@@ -73,7 +73,7 @@ export function PresetGallery() {
         <div>
           <h2 className="text-base font-semibold text-[var(--foreground)] tracking-tight flex items-center gap-2">
             <Palette size={18} className="text-[var(--primary)]" />
-            <span>Thư Viện Phong Cách EPUB</span>
+            <span>Bước 4: Thư Viện Phong Cách EPUB</span>
           </h2>
           <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
             Các gói giao diện và định dạng CSS được thiết kế chuẩn quốc tế cho Apple Books, Kindle và Kobo.
@@ -244,12 +244,12 @@ export function PresetGallery() {
                   : ""
               }`}
             >
-              {/* Jev Recommendation Badge */}
+              {/* Smart Recommendation Badge */}
               {isJevRecommended && (
                 <div className="absolute top-2 right-2">
                   <span className="app-badge app-badge--brand text-[10px] h-[18px] px-1.5 font-mono">
                     <Sparkles size={10} />
-                    <span>Jev Đề Xuất</span>
+                    <span>Gợi ý phù hợp</span>
                   </span>
                 </div>
               )}

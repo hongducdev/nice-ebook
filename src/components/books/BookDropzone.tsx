@@ -222,7 +222,7 @@ export function BookDropzone() {
         <div className="p-3.5 rounded-xl bg-[#141418] border border-[#27272a]/70">
           <div className="flex items-center gap-1.5 mb-1">
             <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
-            <span className="text-[11px] font-semibold text-indigo-400">Jev Core (Offline)</span>
+            <span className="text-[11px] font-semibold text-indigo-400">Xử lý cục bộ (Offline)</span>
           </div>
           <p className="text-[11px] text-[#71717a] leading-relaxed">
             Nhận diện thể loại và gợi ý phong cách 100% offline không cần API key.

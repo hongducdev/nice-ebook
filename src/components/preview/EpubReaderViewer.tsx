@@ -8,6 +8,7 @@ import {
   Monitor, 
   Code2, 
   BookOpen,
+  BookOpenCheck,
   Sparkles,
   List,
   Check,
@@ -21,7 +22,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../stores/useAppStore";
 import { generateEpubCss, injectCssIntoHtml } from "../../utils/cssGenerator";
 import { combinePreviewCss } from "../../utils/bookStyleAnalyzer";
-
+import { sanitizeEpubHtml } from "../../utils/htmlSanitizer";
 const CodeMirrorCss = lazy(() =>
   import("./CodeMirrorCss").then((m) => ({ default: m.CodeMirrorCss }))
 );
@@ -209,7 +210,8 @@ export function EpubReaderViewer() {
     const doc = iframeRef.current.contentDocument;
     if (!doc) return;
 
-    const fullDoc = injectCssIntoHtml(chapterHtml, previewCss);
+    const safeHtml = sanitizeEpubHtml(chapterHtml);
+    const fullDoc = injectCssIntoHtml(safeHtml, previewCss);
     doc.open();
     doc.write(fullDoc);
     doc.close();
@@ -248,6 +250,14 @@ export function EpubReaderViewer() {
     <div className="flex-1 flex flex-col overflow-hidden select-none gap-2 p-1">
       {/* Top Reader Command Bar */}
       <div className="command-bar h-10 px-3">
+        {/* Step 6 indicator */}
+        <div className="flex items-center gap-2 pr-3 mr-1 border-r border-[var(--border)]">
+          <BookOpenCheck size={16} className="text-[var(--primary)]" />
+          <h1 className="text-xs font-semibold text-[var(--foreground)] whitespace-nowrap">
+            Bước 6: Đọc Thử &amp; Kiểm Tra
+          </h1>
+        </div>
+
         {/* Left: Mode toggle */}
         <div className="segmented-toggle">
           <button
@@ -481,7 +491,7 @@ export function EpubReaderViewer() {
                 ref={iframeRef}
                 title="Epub Live Reader Preview"
                 className="w-full h-full border-none select-text bg-white"
-                sandbox="allow-same-origin allow-scripts"
+                sandbox="allow-same-origin"
               />
             </div>
           </div>

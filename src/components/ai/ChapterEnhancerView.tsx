@@ -222,7 +222,7 @@ export function ChapterEnhancerView() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-sm font-semibold text-[var(--foreground)]">
-                Biên Tập & Soát Lỗi AI (AI Chapter Enhancer)
+                Bước 3: Biên Tập &amp; Soát Lỗi AI
               </h1>
               <span className="app-badge app-badge--brand text-[10px] font-mono h-[18px]">
                 {selectedModel || "gemini-3.6-flash"}
@@ -364,7 +364,7 @@ export function ChapterEnhancerView() {
                 <Zap size={13} className="text-[var(--primary)]" />
                 <span>Động Cơ AI (Engine)</span>
               </label>
-              <span className="app-badge app-badge--brand text-[9px] px-1 font-mono">openJev v2.0</span>
+              <span className="app-badge app-badge--brand text-[9px] px-1 font-mono">Offline Core</span>
             </div>
             
             <div className="flex flex-col gap-1.5">
@@ -384,7 +384,7 @@ export function ChapterEnhancerView() {
                   {aiEngineMode === "hybrid" && <Check size={12} className="text-[var(--primary)]" />}
                 </div>
                 <p className="text-[11px] text-[var(--muted-foreground)] mt-0.5 leading-snug">
-                  Jev Verdict lọc rác &amp; sửa lỗi nhanh; chỉ chuyển tiếp câu từ phức tạp lên Cloud LLM (tiết kiệm ~80% token).
+                  Lõi cục bộ lọc rác &amp; sửa lỗi nhanh; chỉ chuyển tiếp câu từ phức tạp lên Cloud LLM (tiết kiệm ~80% token).
                 </p>
               </button>
 
@@ -399,7 +399,7 @@ export function ChapterEnhancerView() {
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-[var(--foreground)] flex items-center gap-1.5">
-                    ⚡ Jev Verdict 2.0 (Siêu tốc ~15ms)
+                    ⚡ Tự động Offline (~15ms)
                   </span>
                   {aiEngineMode === "jev-verdict" && <Check size={12} className="text-[var(--primary)]" />}
                 </div>

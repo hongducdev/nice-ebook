@@ -448,14 +448,14 @@ export function BookView() {
         </div>
 
         <div className="card-surface workbench-page__stat-card">
-          <p className="workbench-page__stat-card-title">Phân loại Jev Core</p>
+          <p className="workbench-page__stat-card-title">Thể loại tác phẩm</p>
           <p className="workbench-page__stat-card-value workbench-page__stat-card-value--text workbench-page__stat-card-value--success">
-            {jevDecision ? jevDecision.genre_label : (currentBook ? "Heuristic" : "—")}
+            {jevDecision ? jevDecision.genre_label : (currentBook ? "Tự động" : "—")}
           </p>
           <span className="workbench-page__stat-card-unit truncate">
             {jevDecision 
               ? `${(jevDecision.confidence * 100).toFixed(0)}% độ tin cậy` 
-              : "System-1 Decision Plane"}
+              : "Nhận diện tự động"}
           </span>
         </div>
 
@@ -465,12 +465,12 @@ export function BookView() {
             className={`workbench-page__stat-card-value workbench-page__stat-card-value--text ${
               activeGateway ? "workbench-page__stat-card-value--skipped" : ""
             }`}
-            title={activeGateway ? activeGateway.name : "Jev Offline"}
+            title={activeGateway ? activeGateway.name : "Lõi Offline"}
           >
-            {activeGateway ? activeGateway.name : "Jev Offline"}
+            {activeGateway ? activeGateway.name : "Lõi Offline"}
           </p>
           <span className="workbench-page__stat-card-unit truncate">
-            {activeGateway ? `Port ${activeGateway.port} (${activeGateway.latency_ms}ms)` : "Zero-Key Local Engine"}
+            {activeGateway ? `Port ${activeGateway.port} (${activeGateway.latency_ms}ms)` : "Xử lý cục bộ tức thì"}
           </span>
         </div>
       </section>
@@ -632,9 +632,9 @@ export function BookView() {
               <button
                 type="button"
                 onClick={() => {
-                  toast.loading("Jev Core đang phân tích thể loại...", { id: "jev-scan" });
+                  toast.loading("Đang phân tích cấu trúc thể loại...", { id: "genre-scan" });
                   runJevClassification().then(() => {
-                    toast.success("Jev Core đã tối ưu cấu trúc sách!", { id: "jev-scan" });
+                    toast.success("Đã phân tích cấu trúc sách thành công!", { id: "genre-scan" });
                   });
                 }}
                 disabled={isAnalyzingJev}
@@ -645,7 +645,7 @@ export function BookView() {
                 ) : (
                   <Sparkles size={14} />
                 )}
-                <span>Jev Heuristic</span>
+                <span>Phân tích nhanh</span>
               </button>
 
               <button
@@ -656,7 +656,7 @@ export function BookView() {
                   if (ok) {
                     toast.success("Đã hoàn tất định kiểu độc bản!", { id: "ai-deep" });
                   } else {
-                    toast.info("Đã áp dụng định kiểu từ Jev Core", { id: "ai-deep" });
+                    toast.info("Đã áp dụng phong cách phù hợp", { id: "ai-deep" });
                   }
                   setActiveTab("reader");
                 }}
