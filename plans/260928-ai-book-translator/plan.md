@@ -7,7 +7,7 @@ description: >-
   glossary management, and full Studio integration.
 status: completed
 priority: P1
-branch: master
+branch: main
 tags:
   - desktop
   - tauri

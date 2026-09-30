@@ -7,7 +7,7 @@ description: >-
   stepper and context-aware navigation.
 status: completed
 priority: P1
-branch: master
+branch: main
 tags:
   - desktop
   - tauri

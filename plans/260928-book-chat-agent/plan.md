@@ -6,7 +6,7 @@ description: >-
   and safely performs automated actions with an explicit user confirmation gate.
 status: completed
 priority: P1
-branch: master
+branch: main
 tags:
   - desktop
   - tauri
