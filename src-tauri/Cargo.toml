@@ -1,9 +1,11 @@
 [package]
-name = "tauri-app"
+name = "nice-ebook"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Next-gen desktop studio for AI-assisted EPUB styling, translation, OCR conversion & Kindle companion packaging (AZW3/MOBI/X-Ray/WordWise)"
+authors = ["hongducdev <contact.hongduc@gmail.com>"]
 edition = "2021"
+repository = "https://github.com/hongducdev/nice-ebook"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

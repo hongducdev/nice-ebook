@@ -1,13 +1,48 @@
 {
-  "name": "tauri-app",
-  "private": true,
+  "name": "nice-ebook",
   "version": "0.1.0",
+  "description": "Next-gen desktop studio for AI-assisted EPUB styling, translation, OCR conversion & Kindle companion packaging (AZW3/MOBI/X-Ray/WordWise). Built with Tauri v2, Rust & React 19.",
+  "author": "hongducdev <contact.hongduc@gmail.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/hongducdev/nice-ebook#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hongducdev/nice-ebook.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hongducdev/nice-ebook/issues"
+  },
+  "keywords": [
+    "ebook",
+    "epub",
+    "epub3",
+    "kindle",
+    "azw3",
+    "mobi",
+    "x-ray",
+    "wordwise",
+    "ai",
+    "translator",
+    "ocr",
+    "tesseract",
+    "tauri",
+    "tauri-v2",
+    "rust",
+    "react",
+    "react19",
+    "tailwindcss",
+    "desktop-app",
+    "llm"
+  ],
+  "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "prepare": "node scripts/install-hooks.mjs",
     "tauri": "tauri"
   },
   "dependencies": {
