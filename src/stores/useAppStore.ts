@@ -6,11 +6,30 @@ import { detectIsVietnameseBook } from "../utils/vietnameseHelper";
 import { cleanChapterHtmlWatermarks } from "../utils/watermarkCleaner";
 import { saveChaptersToDb, loadChaptersFromDb, deleteChaptersFromDb } from "../utils/chapterStorage";
 import { generateEpubCss } from "../utils/cssGenerator";
+import {
+  MIN_NATIVE_STYLE_CONFIDENCE,
+  NATIVE_PRESET_ID,
+  buildNativePreset,
+  deriveBookStyleSignature,
+  emptySignature,
+  type BookStyleSignature,
+  type StylesheetSource,
+} from "../utils/bookStyleAnalyzer";
 import { injectWordWiseRuby, stripWordWiseRuby } from "../services/kindle/wordWiseService";
 import { extractXRayHeuristic, generateXRayAppendixHtml, XRayBookData, ChapterTextSource } from "../services/kindle/xrayService";
 import { TranslationService } from "../services/translation/translationService";
 import { TranslationTone, TONE_DESCRIPTIONS } from "../services/prompts/bookTranslator";
 import { LanguageDetector, LanguageDetectionResult } from "../utils/languageDetector";
+import type { ActiveTab } from "../types/navigation";
+import {
+  type BookProfile,
+  type BookWorkflow,
+  type IngestKind,
+  WORKFLOW_TAB,
+  bookIdentityKey,
+  detectBookProfile,
+  workflowLabel,
+} from "../utils/bookTypeDetector";
 import { EntityExtractor, ExtractedEntityCandidate } from "../services/translation/entityExtractor";
 import { BookResearchService } from "../services/translation/bookResearchService";
 import { AgentService, AgentChatMessage } from "../services/agent/agentService";
@@ -67,6 +86,13 @@ export interface JevDecision {
   is_vietnamese?: boolean;
 }
 
+export interface ConfiguredProviderInfo {
+  provider: string;
+  name: string;
+  is_active: boolean;
+  test_status?: string;
+}
+
 export interface DetectedGateway {
   name: string;
   base_url: string;
@@ -75,6 +101,8 @@ export interface DetectedGateway {
   models: string[];
   gateway_type: string;
   latency_ms: number;
+  api_key?: string;
+  configured_providers?: ConfiguredProviderInfo[];
 }
 
 export interface EbookProject {
@@ -103,6 +131,14 @@ export interface EbookProject {
   chapterEnhanceReports: Record<string, ChapterEnhanceReport>;
   createdAt: number;
   lastOpenedAt: number;
+
+  // --- Ingest workflow state (optional: projects saved before this feature
+  // simply lack these fields and are read back with `??` defaults) ---
+  workflowId?: BookWorkflow | null;
+  workflowSource?: "auto" | "manual" | null;
+  workflowCompletedSteps?: string[];
+  translatedChapters?: Record<string, number>;
+  detectedLanguageCode?: string | null;
 }
 
 export interface TerminalLogEntry {
@@ -160,7 +196,18 @@ export interface AutoTranslationConfigResult {
   detectedLanguage: LanguageDetectionResult | null;
   recommendedTone: TranslationTone;
   toneLabel: string;
+  /** Every entity the scan produced (proper names + terminology), before dedupe. */
   entitiesExtractedCount: number;
+  /** Proper names (person / place) newly pinned into the glossary. */
+  properNamesCount: number;
+  /** Terminology (term) newly pinned into the glossary. */
+  termsCount: number;
+  /** Names of the proper names that were pinned into the glossary. */
+  addedProperNames: string[];
+  /** Names of the terms that were pinned into the glossary. */
+  addedTerms: string[];
+  /** Human-readable label of the AI engine that will run the translation. */
+  activeEngineLabel: string;
   researchBriefGenerated: boolean;
   researchBriefSnippet?: string;
   stepStatuses: {
@@ -171,10 +218,34 @@ export interface AutoTranslationConfigResult {
   };
 }
 
+export type IngestRouteReasonValue =
+  | "auto"
+  | "native-vietnamese"
+  | "low-confidence"
+  | "preference-off"
+  | "manual-locked"
+  | "auto-switch-disabled";
+
+export interface IngestRouteResult {
+  profile: BookProfile;
+  tab: ActiveTab;
+  switched: boolean;
+  reason: IngestRouteReasonValue;
+}
+
+export interface RouteBookContext {
+  kind?: IngestKind;
+  isScannedPdf?: boolean;
+  /** Re-use an already-computed profile instead of detecting a second time. */
+  profile?: BookProfile | null;
+  /** `false` keeps the current tab (used by `openProject`). */
+  autoSwitch?: boolean;
+}
+
 export interface AppState {
   // Navigation
-  activeTab: "books" | "presets" | "editor" | "reader" | "ai" | "settings" | "ai-editor" | "converter" | "kindle" | "translator";
-  setActiveTab: (tab: "books" | "presets" | "editor" | "reader" | "ai" | "settings" | "ai-editor" | "converter" | "kindle" | "translator") => void;
+  activeTab: ActiveTab;
+  setActiveTab: (tab: ActiveTab) => void;
 
   // Pending file for Ebook Converter
   pendingConverterFile: { name: string; bytes: Uint8Array; type: "pdf" | "txt" | "md" } | null;
@@ -197,6 +268,39 @@ export interface AppState {
   isVietnameseBook: boolean;
   activeChapterIndex: number;
   setActiveChapterIndex: (idx: number) => void;
+
+  // Book Ingest Workflow Router
+  /** Classification of the book currently open, produced on every ingest. */
+  bookProfile: BookProfile | null;
+  /** Result of the most recent routing decision (used by the UI for toasts). */
+  lastIngestRoute: IngestRouteResult | null;
+  /** `manual` means the user picked a workflow and detection must not override it. */
+  workflowSource: "auto" | "manual" | null;
+  /** Ids of workflow steps already finished for the open book. */
+  workflowCompletedSteps: string[];
+  /** Book identity whose workflow banner the user dismissed. */
+  dismissedWorkflowFor: string | null;
+  /** Auto-switch tab on ingest. User preference, persisted in localStorage. */
+  autoRouteOnIngest: boolean;
+  /** href -> timestamp, so "chapters left to translate" is O(1) instead of scanning content. */
+  translatedChapters: Record<string, number>;
+
+  setAutoRouteOnIngest: (enabled: boolean) => void;
+  routeAfterBookLoad: (meta: EpubMetadata, context?: RouteBookContext) => IngestRouteResult | null;
+  /**
+   * Re-applies a saved project's workflow state on top of the routing decision.
+   * Routing and restoring are one operation by construction, because routing
+   * resets per-book state and a later restore must never lose that race.
+   */
+  restoreProjectWorkflow: (project: EbookProject, profile?: BookProfile | null) => void;
+  startRecommendedWorkflow: () => ActiveTab | null;
+  markWorkflowStepComplete: (stepId: string) => void;
+  dismissWorkflow: () => void;
+  resetWorkflowState: () => void;
+  recomputeProfileLanguage: () => void;
+  /** Translation coverage — the single source for every "translated" counter/badge. */
+  getTranslationCoverage: () => { translated: number; total: number; isLegacyFallback: boolean };
+  getUntranslatedChapterCount: () => number;
 
   // Jev Core State
   jevDecision: JevDecision | null;
@@ -230,6 +334,16 @@ export interface AppState {
   sceneDivider: string;
   fontFamily: string;
   setFontFamily: (font: string) => void;
+
+  // "Theo sách hiện tại" — style suy ra từ CSS gốc của sách đang mở
+  bookStyleSignature: BookStyleSignature | null;
+  /** CSS gốc lấy từ EPUB, chỉ giữ trong phiên để nhúng vào trình đọc thử. */
+  bookStyleCss: string | null;
+  isAnalyzingBookStyle: boolean;
+  /** Bật/tắt việc tự động áp dụng style gốc khi mở một sách mới. */
+  autoStyleFromBook: boolean;
+  setAutoStyleFromBook: (enabled: boolean) => void;
+  analyzeBookStyle: (opts?: { apply?: boolean }) => Promise<BookStyleSignature | null>;
 
   // Actions
   loadBookFromPath: (filePath: string) => Promise<boolean>;
@@ -332,6 +446,11 @@ export interface AppState {
 
 const initialTheme = (typeof window !== "undefined" && (window.localStorage.getItem("lg-theme-mode") as "dark" | "light" | "system")) || "dark";
 const initialSidebarCollapsed = typeof window !== "undefined" && window.localStorage.getItem("lg-sidebar-collapsed") === "true";
+const AUTO_ROUTE_STORAGE_KEY = "lg-auto-route-ingest";
+const initialAutoRouteOnIngest =
+  typeof window === "undefined" || !window.localStorage
+    ? true
+    : window.localStorage.getItem(AUTO_ROUTE_STORAGE_KEY) !== "false";
 
 const PROJECTS_STORAGE_KEY = "nice-ebook-projects-v1";
 
@@ -398,6 +517,39 @@ const defaultTranslationConfig: TranslationConfig = {
   translateTitles: true,
 };
 
+/** Joins entity names for the terminal log, truncating very long scans. */
+function summarizeEntityNames(names: string[], max = 30): string {
+  if (names.length <= max) return names.join(", ");
+  return `${names.slice(0, max).join(", ")} … (+${names.length - max})`;
+}
+
+/**
+ * State patch cho chế độ "Theo sách hiện tại".
+ *
+ * `customCss` luôn rỗng: lớp phủ thích ứng do `generateEpubCss` sinh ra từ
+ * `bookStyleSignature`, không phải từ template của preset.
+ */
+function nativeStylePatch(
+  signature: BookStyleSignature,
+  fallback: StylePreset,
+  isVietnamese: boolean
+) {
+  const preset = buildNativePreset(signature, fallback, isVietnamese);
+  const font =
+    isVietnamese && preset.vietnameseFontFamily ? preset.vietnameseFontFamily : preset.fontFamily;
+
+  return {
+    activePresetId: NATIVE_PRESET_ID,
+    activePreset: preset,
+    customCss: "",
+    fontFamily: font,
+    lineHeight: preset.lineHeight,
+    firstLineIndent: preset.firstLineIndent,
+    dropCaps: preset.dropCaps,
+    sceneDivider: preset.sceneDivider,
+  };
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   activeTab: "books",
   setActiveTab: (tab) => set({ activeTab: tab }),
@@ -439,6 +591,207 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeChapterIndex: 0,
   setActiveChapterIndex: (idx) => set({ activeChapterIndex: idx }),
 
+  // --- Book Ingest Workflow Router -----------------------------------------
+  bookProfile: null,
+  lastIngestRoute: null,
+  workflowSource: null,
+  workflowCompletedSteps: [],
+  dismissedWorkflowFor: null,
+  autoRouteOnIngest: initialAutoRouteOnIngest,
+  translatedChapters: {},
+
+  setAutoRouteOnIngest: (enabled) => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem(AUTO_ROUTE_STORAGE_KEY, String(enabled));
+    }
+    set({ autoRouteOnIngest: enabled });
+    get().addTerminalLog({
+      type: "info",
+      text: enabled
+        ? "🧭 [Quy trình] Đã bật tự động chuyển quy trình khi nạp sách."
+        : "🧭 [Quy trình] Đã tắt tự động chuyển quy trình — chỉ hiện gợi ý.",
+    });
+  },
+
+  routeAfterBookLoad: (meta, context = {}) => {
+    const profile =
+      context.profile ??
+      detectBookProfile(meta, {
+        kind: context.kind,
+        isScannedPdf: context.isScannedPdf,
+      });
+
+    if (!profile) {
+      set({ bookProfile: null, lastIngestRoute: null });
+      return null;
+    }
+
+    const identity = profile.bookIdentity;
+    const isSameBook = get().bookProfile?.bookIdentity === identity;
+
+    // A manual choice is sticky: once the user picks a workflow for this book,
+    // detection is no longer allowed to change tabs or reset progress.
+    const workflowSource: "auto" | "manual" =
+      isSameBook && get().workflowSource ? get().workflowSource! : "auto";
+    const tab = WORKFLOW_TAB[profile.workflow];
+    const autoSwitchRequested = context.autoSwitch !== false;
+
+    let switched = false;
+    let reason: IngestRouteReasonValue;
+
+    if (!autoSwitchRequested) {
+      reason = "auto-switch-disabled";
+    } else if (workflowSource === "manual") {
+      reason = "manual-locked";
+    } else if (!get().autoRouteOnIngest) {
+      reason = "preference-off";
+    } else if (!profile.autoRoutable) {
+      reason = "low-confidence";
+    } else if (tab === "books") {
+      reason = "native-vietnamese";
+    } else {
+      switched = true;
+      reason = "auto";
+      set({ activeTab: tab });
+      if (tab === "translator") {
+        // Cheap, offline pre-fill so the translator is usable immediately.
+        // The expensive AI auto-configuration stays an explicit user action.
+        get().autoDetectSourceLanguage();
+        get().setTranslationConfig({ targetLang: "Tiếng Việt (Vietnamese)" });
+      }
+    }
+
+    const route: IngestRouteResult = { profile, tab, switched, reason };
+
+    set({
+      bookProfile: profile,
+      lastIngestRoute: route,
+      workflowSource,
+      workflowCompletedSteps: isSameBook ? get().workflowCompletedSteps : [],
+      translatedChapters: isSameBook ? get().translatedChapters : {},
+      dismissedWorkflowFor: get().dismissedWorkflowFor === identity ? identity : null,
+    });
+
+    get().addTerminalLog({
+      type: switched ? "success" : "info",
+      text: `🧭 [Quy trình] ${profile.languageFlag} ${profile.languageName} (${Math.round(
+        profile.languageConfidence * 100
+      )}%) → quy trình "${workflowLabel(profile)}"${switched ? ` — đã mở tab phù hợp` : ""}`,
+    });
+
+    return route;
+  },
+
+  restoreProjectWorkflow: (project, profile) => {
+    const meta = get().currentBook;
+    if (!meta) return;
+
+    // Order is enforced here, not at the call site: routing first (it resets
+    // per-book state), then the persisted progress is applied on top.
+    get().routeAfterBookLoad(meta, { profile: profile ?? undefined, autoSwitch: false });
+
+    set({
+      workflowCompletedSteps: project.workflowCompletedSteps ?? [],
+      workflowSource: project.workflowSource ?? "auto",
+      translatedChapters: project.translatedChapters ?? {},
+    });
+  },
+
+  startRecommendedWorkflow: () => {
+    const profile = get().bookProfile;
+    if (!profile) return null;
+
+    const tab = WORKFLOW_TAB[profile.workflow];
+    set({ workflowSource: "manual", dismissedWorkflowFor: null, activeTab: tab });
+    if (tab === "translator") {
+      get().autoDetectSourceLanguage();
+    }
+    get().addTerminalLog({
+      type: "info",
+      text: `🧭 [Quy trình] Bắt đầu thủ công: ${workflowLabel(profile)}`,
+    });
+    return tab;
+  },
+
+  markWorkflowStepComplete: (stepId) => {
+    if (!stepId) return;
+    const current = get().workflowCompletedSteps;
+    if (current.includes(stepId)) return;
+    set({ workflowCompletedSteps: [...current, stepId] });
+    if (get().activeProjectId) {
+      get().saveActiveProject();
+    }
+  },
+
+  dismissWorkflow: () => {
+    const { currentBook, bookProfile } = get();
+    // Prefer the live book, but fall back to the profile so dismissing works even
+    // when the caller only routed a profile (e.g. a project opened from the library).
+    const identity = currentBook ? bookIdentityKey(currentBook) : bookProfile?.bookIdentity ?? null;
+    if (!identity) return;
+    set({ dismissedWorkflowFor: identity });
+  },
+
+  resetWorkflowState: () => {
+    set({ workflowCompletedSteps: [], workflowSource: "auto", dismissedWorkflowFor: null });
+    if (get().activeProjectId) {
+      get().saveActiveProject();
+    }
+  },
+
+  recomputeProfileLanguage: () => {
+    const { currentBook, workflowSource, bookProfile } = get();
+    if (!currentBook) return;
+
+    const fresh = detectBookProfile(currentBook);
+    if (!fresh) return;
+
+    // Never let detection overwrite a manually chosen workflow; refresh only the
+    // observed language facts so the banner stays truthful.
+    if (workflowSource === "manual" && bookProfile && bookProfile.bookIdentity === fresh.bookIdentity) {
+      set({
+        bookProfile: {
+          ...bookProfile,
+          languageCode: fresh.languageCode,
+          languageName: fresh.languageName,
+          languageFlag: fresh.languageFlag,
+          languageConfidence: fresh.languageConfidence,
+          detectionSource: fresh.detectionSource,
+          isVietnamese: fresh.isVietnamese,
+        },
+      });
+      return;
+    }
+
+    set({ bookProfile: fresh });
+  },
+
+  getTranslationCoverage: () => {
+    const { currentBook, translatedChapters, modifiedChapters } = get();
+    if (!currentBook) return { translated: 0, total: 0, isLegacyFallback: false };
+
+    // Prefer the actual chapter list: `chapter_count` from the Rust parser can
+    // differ, and only the listed chapters can ever be translated.
+    const total = currentBook.chapters.length || currentBook.chapter_count || 0;
+
+    // A project translated before per-chapter tracking existed has an empty
+    // `translatedChapters` map, so fall back to `modifiedChapters` — an
+    // approximation, and the only signal those projects have.
+    const isLegacyFallback =
+      Object.keys(translatedChapters).length === 0 && Object.keys(modifiedChapters).length > 0;
+    const source = isLegacyFallback ? modifiedChapters : translatedChapters;
+
+    const translated = currentBook.chapters.filter((chapter) =>
+      Boolean(source[chapter.href])
+    ).length;
+    return { translated, total, isLegacyFallback };
+  },
+
+  getUntranslatedChapterCount: () => {
+    const { translated, total } = get().getTranslationCoverage();
+    return Math.max(0, total - translated);
+  },
+
   jevDecision: null,
   isAnalyzingJev: false,
 
@@ -467,6 +820,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   fontFamily: (STYLE_PRESETS.find((p) => p.id === "classic-hardcover") || STYLE_PRESETS[0]).vietnameseFontFamily || (STYLE_PRESETS.find((p) => p.id === "classic-hardcover") || STYLE_PRESETS[0]).fontFamily,
   setFontFamily: (font) => set({ fontFamily: font }),
 
+  bookStyleSignature: null,
+  bookStyleCss: null,
+  isAnalyzingBookStyle: false,
+  autoStyleFromBook: true,
+  setAutoStyleFromBook: (enabled) => set({ autoStyleFromBook: enabled }),
+
   // Kindle Companion Initial State
   wordWiseSettings: {
     maxDifficulty: 3,
@@ -493,7 +852,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isLoadingBook: true });
     try {
       const meta = await invoke<EpubMetadata>("read_epub", { path: filePath });
-      const isVi = detectIsVietnameseBook(meta);
+      // The ingest router's classification is canonical; fall back to the legacy
+      // boolean only when there is no usable evidence at all.
+      const profile = detectBookProfile(meta);
+      const isVi =
+        !profile || profile.detectionSource === "unknown"
+          ? detectIsVietnameseBook(meta)
+          : profile.isVietnamese;
       const chosenFont = isVi
         ? get().activePreset.vietnameseFontFamily || get().activePreset.fontFamily
         : get().activePreset.fontFamily;
@@ -511,7 +876,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         modifiedChapters: {},
         chapterEnhanceReports: {},
         activeProjectId: newProjectId,
+        // Chữ ký/ CSS gốc của sách trước không còn giá trị cho sách mới.
+        bookStyleSignature: null,
+        bookStyleCss: null,
       });
+
+      // Route the user into the right workflow (may switch tabs it is told to).
+      get().routeAfterBookLoad(meta, { profile, autoSwitch: true });
+
+      // Sách mở lần đầu chưa có lựa chọn style riêng ⇒ tự style theo chính nó.
+      // Luôn phân tích (chỉ đọc zip, rất rẻ) để trình đọc thử có nền CSS gốc;
+      // chỉ ÁP DỤNG khi người dùng bật chế độ tự động.
+      void get().analyzeBookStyle({ apply: get().autoStyleFromBook });
 
       // Auto trigger Jev Core on loaded book sample text
       if (meta.sample_text && meta.sample_text.length > 50) {
@@ -530,7 +906,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isLoadingBook: true });
     try {
       const meta = await invoke<EpubMetadata>("read_epub_bytes", { bytes });
-      const isVi = detectIsVietnameseBook(meta);
+      const profile = detectBookProfile(meta);
+      const isVi =
+        !profile || profile.detectionSource === "unknown"
+          ? detectIsVietnameseBook(meta)
+          : profile.isVietnamese;
       const chosenFont = isVi
         ? get().activePreset.vietnameseFontFamily || get().activePreset.fontFamily
         : get().activePreset.fontFamily;
@@ -548,7 +928,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         modifiedChapters: {},
         chapterEnhanceReports: {},
         activeProjectId: newProjectId,
+        // Chữ ký/ CSS gốc của sách trước không còn giá trị cho sách mới.
+        bookStyleSignature: null,
+        bookStyleCss: null,
       });
+
+      // Route the user into the right workflow (may switch tabs it is told to).
+      get().routeAfterBookLoad(meta, { profile, autoSwitch: true });
+
+      // Sách mở lần đầu chưa có lựa chọn style riêng ⇒ tự style theo chính nó.
+      // Luôn phân tích (chỉ đọc zip, rất rẻ) để trình đọc thử có nền CSS gốc;
+      // chỉ ÁP DỤNG khi người dùng bật chế độ tự động.
+      void get().analyzeBookStyle({ apply: get().autoStyleFromBook });
 
       // Auto trigger Jev Core on loaded book
       if (meta.sample_text && meta.sample_text.length > 50) {
@@ -577,8 +968,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         isAnalyzingJev: false,
       });
 
-      // Apply recommended preset automatically
-      if (decision.recommended_preset) {
+      // Apply recommended preset automatically — trừ khi người dùng đang ở chế độ
+      // "theo sách hiện tại" (khi đó CSS gốc của sách mới là chuẩn, Jev chỉ đề xuất).
+      const current = get();
+      const isNativeAuto =
+        current.autoStyleFromBook && current.activePresetId === NATIVE_PRESET_ID;
+      if (decision.recommended_preset && !isNativeAuto) {
         get().selectPreset(decision.recommended_preset);
       }
     } catch (err) {
@@ -605,6 +1000,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   selectPreset: (presetId: string) => {
+    // "Theo sách hiện tại": không thay thế CSS mà dựng lại lớp phủ thích ứng
+    // từ chữ ký CSS gốc (phân tích lại nếu chưa có).
+    if (presetId === NATIVE_PRESET_ID) {
+      const existing = get().bookStyleSignature;
+      if (existing) {
+        set(nativeStylePatch(existing, STYLE_PRESETS[0], get().isVietnameseBook));
+      } else {
+        void get().analyzeBookStyle({ apply: true });
+      }
+      return;
+    }
+
     const preset = STYLE_PRESETS.find((p) => p.id === presetId) || STYLE_PRESETS[0];
     const isVi = get().isVietnameseBook;
     const font = isVi && preset.vietnameseFontFamily ? preset.vietnameseFontFamily : preset.fontFamily;
@@ -620,6 +1027,74 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
+  analyzeBookStyle: async (opts) => {
+    const { currentBook, currentFilePath, currentFileBytes, isVietnameseBook, modifiedChapters } = get();
+    if (!currentBook) return null;
+
+    set({ isAnalyzingBookStyle: true });
+    try {
+      const sheets = await invoke<StylesheetSource[]>("read_epub_styles", {
+        path: currentFilePath ?? null,
+        bytes: currentFileBytes ?? null,
+      });
+
+      // Một chương đầu là đủ để bắt các hook định dạng (drop-cap, scene-break...)
+      // và CSS nhúng trong chương.
+      let chapterHtml = "";
+      const sampleHref = currentBook.chapters[0]?.href;
+      if (sampleHref) {
+        chapterHtml = modifiedChapters[sampleHref] || "";
+        if (!chapterHtml) {
+          try {
+            chapterHtml = currentFilePath
+              ? await invoke<string>("read_chapter", { path: currentFilePath, href: sampleHref })
+              : currentFileBytes
+                ? await invoke<string>("read_chapter_bytes", { bytes: currentFileBytes, href: sampleHref })
+                : "";
+          } catch (err) {
+            console.warn("Không đọc được chương mẫu để phân tích định dạng:", err);
+          }
+        }
+      }
+
+      const signature = deriveBookStyleSignature({
+        stylesheets: sheets,
+        chapterHtml,
+        isVietnamese: isVietnameseBook,
+      });
+
+      set({
+        bookStyleSignature: signature,
+        bookStyleCss: sheets.map((sheet) => sheet.content).join("\n\n"),
+        isAnalyzingBookStyle: false,
+      });
+
+      const basePreset =
+        get().activePreset?.id === NATIVE_PRESET_ID ? STYLE_PRESETS[0] : get().activePreset;
+      const shouldApply =
+        opts?.apply === true || get().activePresetId === NATIVE_PRESET_ID;
+
+      if (shouldApply) {
+        if (signature.confidence >= MIN_NATIVE_STYLE_CONFIDENCE) {
+          set(nativeStylePatch(signature, basePreset, isVietnameseBook));
+        } else if (get().activePresetId === NATIVE_PRESET_ID) {
+          // Đang ở chế độ theo sách nhưng CSS gốc quá ít thông tin: giữ lớp phủ
+          // tối thiểu (không màu) và để người dùng quyết định preset khác.
+          set(nativeStylePatch(signature, basePreset, isVietnameseBook));
+          console.warn(
+            `Định dạng gốc của sách không đủ dữ liệu (confidence ${signature.confidence}) — giữ lớp phủ tối thiểu.`
+          );
+        }
+      }
+
+      return signature;
+    } catch (err) {
+      console.error("Failed to analyze book style:", err);
+      set({ isAnalyzingBookStyle: false });
+      return null;
+    }
+  },
+
   runAiDeepStyling: async () => {
     const { currentBook, activeGateway, selectedModel, jevDecision } = get();
     if (!currentBook || !currentBook.sample_text) {
@@ -628,11 +1103,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({ isAiGenerating: true });
     try {
-      const baseUrl = activeGateway ? activeGateway.base_url : "http://127.0.0.1:20128/v1";
+      const baseUrl = activeGateway ? activeGateway.base_url : "http://100.118.3.52:20128/v1";
+      const apiKey = activeGateway?.api_key;
       const model = selectedModel || "claude-3-5-sonnet";
 
       const { result, source } = await AiService.generateStyling({
         baseUrl,
+        apiKey,
         model,
         title: currentBook.title,
         author: currentBook.author,
@@ -673,6 +1150,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         sceneDivider: result.typography.scene_divider,
         isAiGenerating: false,
       });
+
+      get().markWorkflowStepComplete("style");
 
       return source === "gateway";
     } catch (err) {
@@ -750,11 +1229,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   testModel: async (modelName: string) => {
     const { activeGateway } = get();
-    const baseUrl = activeGateway ? activeGateway.base_url : "http://127.0.0.1:20128/v1";
+    const baseUrl = activeGateway ? activeGateway.base_url : "http://100.118.3.52:20128/v1";
+    const apiKey = activeGateway?.api_key;
     const gatewayType = activeGateway ? activeGateway.gateway_type : undefined;
 
     const result = await AiService.testModel({
       baseUrl,
+      apiKey,
       model: modelName,
       gatewayType,
     });
@@ -838,6 +1319,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       chapterEnhanceReports: {},
       enhanceProgress: null,
       isBatchEnhancing: false,
+      // Bản dịch nằm trong modifiedChapters, nên khi xoá nội dung đ ghi đè thì
+      // sổ theo dõi quy trình cũng phải xoá theo, nếu không số liệu sẽ sai.
+      translatedChapters: {},
+      workflowCompletedSteps: [],
     });
   },
 
@@ -889,12 +1374,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       return false;
     }
 
-    const baseUrl = activeGateway ? activeGateway.base_url : "http://127.0.0.1:20128/v1";
+    const baseUrl = activeGateway ? activeGateway.base_url : "http://100.118.3.52:20128/v1";
+    const apiKey = activeGateway?.api_key;
     const model = selectedModel || "gemini-3.6-flash";
 
     try {
       const execution = await AiService.enhanceChapter({
         baseUrl,
+        apiKey,
         model,
         chapterTitle: chapter.title,
         chapterHtml,
@@ -1119,6 +1606,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           customOverrides: get().customCss,
           isVietnamese: get().isVietnameseBook,
           fontFamily: get().fontFamily,
+          // Ghi thẳng vào file EPUB: phải giữ nguyên hành vi "theo sách hiện tại".
+          signature: get().bookStyleSignature,
         });
 
         await invoke<number>("export_epub", {
@@ -1145,6 +1634,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (activeProjectId) {
       get().saveActiveProject();
       saveChaptersToDb(activeProjectId, updatedModified);
+    }
+
+    if (totalRemoved > 0) {
+      get().markWorkflowStepComplete("cleanup");
+      // The watermarks are gone, so the profile no longer has them.
+      get().recomputeProfileLanguage();
     }
 
     return { affectedChapters, removedCount: totalRemoved, savedToFile };
@@ -1199,6 +1694,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       isVietnameseBook: isVi,
       projects: updatedProjects,
     });
+
+    // Refresh the detected language facts. This never changes the active tab:
+    // editing metadata must not move the user out of their current workflow.
+    get().recomputeProfileLanguage();
   },
 
   // Kindle Companion Actions Implementation
@@ -1426,8 +1925,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         };
       }
 
-      const isVi = detectIsVietnameseBook(meta);
-      const chosenPreset = STYLE_PRESETS.find((p) => p.id === project.activePresetId) || STYLE_PRESETS[0];
+      const profile = detectBookProfile(meta);
+      const isVi =
+        !profile || profile.detectionSource === "unknown"
+          ? detectIsVietnameseBook(meta)
+          : profile.isVietnamese;
+      const chosenPreset = STYLE_PRESETS.find((p) => p.id === project.activePresetId);
+      // "Theo sách hiện tại": preset sẽ được dựng lại từ CSS gốc ngay sau khi mở.
+      const isNativeStyle = project.activePresetId === NATIVE_PRESET_ID;
+      const resolvedPreset =
+        chosenPreset ??
+        (isNativeStyle ? buildNativePreset(emptySignature(), STYLE_PRESETS[0], isVi) : STYLE_PRESETS[0]);
 
       // Load chapters from IndexedDB if available
       const dbChapters = await loadChaptersFromDb(project.id);
@@ -1468,10 +1976,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         currentFilePath: project.filePath,
         currentFileBytes: null,
         isVietnameseBook: isVi,
-        activePresetId: project.activePresetId || chosenPreset.id,
-        activePreset: chosenPreset,
-        customCss: project.customCss || chosenPreset.cssTemplate,
-        fontFamily: project.fontFamily || (isVi && chosenPreset.vietnameseFontFamily ? chosenPreset.vietnameseFontFamily : chosenPreset.fontFamily),
+        activePresetId: project.activePresetId || resolvedPreset.id,
+        activePreset: resolvedPreset,
+        customCss: isNativeStyle ? "" : project.customCss || resolvedPreset.cssTemplate,
+        fontFamily: project.fontFamily || (isVi && resolvedPreset.vietnameseFontFamily ? resolvedPreset.vietnameseFontFamily : resolvedPreset.fontFamily),
         fontSize: project.fontSize || 16,
         textAlign: project.textAlign || "justify",
         dropCaps: project.dropCaps ?? true,
@@ -1486,6 +1994,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
 
       saveProjectsToStorage(updatedProjects);
+
+      // Classify the book and restore its saved workflow progress, but never
+      // hijack the tab: the user explicitly chose this project from the library.
+      get().restoreProjectWorkflow(project, profile);
+
+      // Luôn phân tích lại CSS gốc (file có thể đã đổi) để trình đọc thử có nền đúng.
+      // Chỉ ÁP DỤNG khi style đã lưu của dự án chính là "theo sách hiện tại" —
+      // lựa chọn preset thủ công của người dùng luôn được tôn trọng.
+      void get().analyzeBookStyle({ apply: isNativeStyle });
+
       return true;
     } catch (err) {
       console.error("Failed to open project:", err);
@@ -1505,7 +2023,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   saveActiveProject: () => {
-    const { activeProjectId, projects, modifiedChapters, chapterEnhanceReports, activePresetId, customCss, fontFamily, fontSize, textAlign, dropCaps, lineHeight, firstLineIndent, sceneDivider } = get();
+    const { activeProjectId, projects, modifiedChapters, chapterEnhanceReports, activePresetId, customCss, fontFamily, fontSize, textAlign, dropCaps, lineHeight, firstLineIndent, sceneDivider, bookProfile, workflowSource, workflowCompletedSteps, translatedChapters } = get();
     if (!activeProjectId) return;
 
     saveChaptersToDb(activeProjectId, modifiedChapters);
@@ -1525,6 +2043,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         sceneDivider,
         modifiedChapters,
         chapterEnhanceReports,
+        workflowId: bookProfile?.workflow ?? p.workflowId ?? null,
+        workflowSource: workflowSource ?? p.workflowSource ?? null,
+        workflowCompletedSteps,
+        translatedChapters,
+        detectedLanguageCode: bookProfile?.languageCode ?? p.detectedLanguageCode ?? null,
         lastOpenedAt: Date.now(),
       };
     });
@@ -1552,6 +2075,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       isAgentDrawerOpen: false,
       isAgentThinking: false,
       activeChapterIndex: 0,
+      bookProfile: null,
+      lastIngestRoute: null,
+      workflowSource: null,
+      workflowCompletedSteps: [],
+      dismissedWorkflowFor: null,
+      translatedChapters: {},
     });
   },
 
@@ -1580,6 +2109,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!chapter) return false;
 
     const baseUrl = activeGateway ? activeGateway.base_url : "http://localhost:11434";
+    const apiKey = activeGateway?.api_key;
     const model = selectedModel || activeGateway?.models?.[0] || "gpt-4o";
 
     let rawHtml = "";
@@ -1628,6 +2158,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         glossary: translationConfig.glossary,
         researchBrief: translationConfig.useResearchBrief ? translationConfig.researchBrief : undefined,
         baseUrl,
+        apiKey,
         model,
         fallbackModels,
         maxBlocksPerChunk: translationConfig.maxBlocksPerChunk,
@@ -1651,6 +2182,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       const updatedModified = {
         ...get().modifiedChapters,
         [chapter.href]: res.translatedHtml,
+      };
+
+      // Cheap O(1) bookkeeping so "chapters left to translate" never has to
+      // re-read chapter content.
+      const updatedTranslated = {
+        ...get().translatedChapters,
+        [chapter.href]: Date.now(),
       };
 
       // Translate chapter title & book title if enabled
@@ -1679,7 +2217,7 @@ export const useAppStore = create<AppState>((set, get) => ({
               targetLang: translationConfig.targetLang,
               tone: translationConfig.tone,
               baseUrl,
-              apiKey: undefined,
+              apiKey,
               model,
             });
             if (translatedBookTitle && translatedBookTitle !== currentBook.title) {
@@ -1699,6 +2237,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         currentBook: updatedBook,
         modifiedChapters: updatedModified,
+        translatedChapters: updatedTranslated,
         isTranslating: false,
         translationProgress: null,
       });
@@ -1764,6 +2303,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Translate book title first if enabled and not already translated
     if (translationConfig.translateTitles !== false && currentBook.title && !get().isVietnameseBook) {
       const baseUrl = activeGateway ? activeGateway.base_url : "http://localhost:11434";
+      const apiKey = activeGateway?.api_key;
       const model = selectedModel || activeGateway?.models?.[0] || "gpt-4o";
       try {
         const translatedBookTitle = await TranslationService.translateTitle({
@@ -1772,7 +2312,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           targetLang: translationConfig.targetLang,
           tone: translationConfig.tone,
           baseUrl,
-          apiKey: undefined,
+          apiKey,
           model,
         });
         if (translatedBookTitle && translatedBookTitle !== currentBook.title) {
@@ -1819,6 +2359,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
+    // Only mark the workflow step done when the WHOLE book is translated.
+    const aborted = translationAbortController?.signal.aborted === true;
+    const coverage = get().getTranslationCoverage();
+    if (!aborted && coverage.total > 0 && coverage.translated >= coverage.total) {
+      get().markWorkflowStepComplete("translate");
+    }
+
     set({ isTranslating: false, translationProgress: null });
     translationAbortController = null;
     return true;
@@ -1837,10 +2384,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   resetChapterTranslation: (chapterHref: string) => {
-    const { modifiedChapters, activeProjectId } = get();
+    const { modifiedChapters, translatedChapters, activeProjectId } = get();
     const updated = { ...modifiedChapters };
     delete updated[chapterHref];
-    set({ modifiedChapters: updated });
+    const updatedTranslated = { ...translatedChapters };
+    delete updatedTranslated[chapterHref];
+    set({ modifiedChapters: updated, translatedChapters: updatedTranslated });
     if (activeProjectId) {
       saveChaptersToDb(activeProjectId, updated);
       get().saveActiveProject();
@@ -1852,8 +2401,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   autoDetectSourceLanguage: () => {
-    const { currentBook } = get();
+    const { currentBook, bookProfile } = get();
     if (!currentBook) return null;
+
+    // The ingest router already classified this book from a richer sample
+    // (body text first, titles only as a weak tail). Reuse that verdict instead
+    // of running a second, potentially disagreeing detection.
+    if (bookProfile && bookProfile.bookIdentity === bookIdentityKey(currentBook)) {
+      const reused: LanguageDetectionResult = {
+        languageCode: bookProfile.languageCode,
+        languageName: bookProfile.languageName,
+        confidence: bookProfile.languageConfidence,
+        source: bookProfile.detectionSource === "unknown" ? "metadata" : bookProfile.detectionSource,
+        details: "Tái sử dụng kết quả nhận diện từ quy trình nạp sách",
+      };
+      get().setTranslationConfig({ sourceLang: reused.languageName });
+      return reused;
+    }
 
     let sample = currentBook.sample_text || "";
     if (sample.length < 50 && currentBook.chapters.length > 0) {
@@ -1920,6 +2484,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // Step 2: AI Proposal
       const baseUrl = activeGateway ? activeGateway.base_url : "http://localhost:11434";
+      const apiKey = activeGateway?.api_key;
       const model = selectedModel || activeGateway?.models?.[0] || "gpt-4o";
 
       const enriched = await EntityExtractor.proposeTranslationsWithAi(rawCandidates, {
@@ -1928,6 +2493,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         sourceLang: translationConfig.sourceLang,
         targetLang: translationConfig.targetLang,
         baseUrl,
+        apiKey,
         model,
       });
 
@@ -1988,6 +2554,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       const baseUrl = activeGateway ? activeGateway.base_url : "http://localhost:11434";
+      const apiKey = activeGateway?.api_key;
       const model = selectedModel || activeGateway?.models?.[0] || "gpt-4o";
 
       const brief = await BookResearchService.generateResearchBrief({
@@ -1999,6 +2566,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         tone: translationConfig.tone,
         sampleText: currentBook.sample_text,
         baseUrl,
+        apiKey,
         model,
       });
 
@@ -2042,6 +2610,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().addTerminalLog({
       type: "info",
       text: "⚡ [Tự động thiết lập] Bắt đầu tự động cấu hình toàn bộ cài đặt dịch thuật cho sách...",
+    });
+
+    // 0. Report which translation engine (gateway + model) will actually run.
+    const { activeGateway, selectedModel } = get();
+    const resolvedModel = selectedModel || activeGateway?.models?.[0] || "";
+    const activeEngineLabel = resolvedModel
+      ? `${resolvedModel} @ ${activeGateway?.name || activeGateway?.gateway_type || "gateway"}`
+      : "Mặc định (Ollama/local)";
+    get().addTerminalLog({
+      type: resolvedModel ? "info" : "warning",
+      text: resolvedModel
+        ? `🤖 [Bộ dịch thuật] Engine sẽ dùng: ${activeEngineLabel}${activeGateway?.base_url ? ` (${activeGateway.base_url})` : ""}`
+        : "⚠️ [Bộ dịch thuật] Chưa chọn mô hình AI — bản dịch sẽ dùng endpoint mặc định (localhost:11434 / gpt-4o).",
     });
 
     const stepStatuses: AutoTranslationConfigResult["stepStatuses"] = {
@@ -2129,25 +2710,106 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     // 4. Auto Entity & Terminology extraction
+    // Seed EVERY newly detected entity — both proper names (person/place) and
+    // terminology (term). No frequency threshold: rare-but-important names must
+    // stay consistent across the whole book too, or the translator will drift.
+    // Existing user glossary entries are never touched (isExistingInGlossary).
     let entitiesCount = 0;
+    let properNamesCount = 0;
+    let termsCount = 0;
+    const addedProperNames: string[] = [];
+    const addedTerms: string[] = [];
     try {
       const candidates = await get().extractBookEntities();
       entitiesCount = candidates.length;
-      if (candidates.length > 0) {
-        // Automatically seed high-frequency candidates (count >= 3) without overwriting existing terms
-        const highConfidence = candidates
-          .filter(
-            (c) =>
-              c.count >= 3 &&
-              !c.isExistingInGlossary &&
-              c.suggestedTranslation !== c.name
-          )
-          .map((c) => ({ name: c.name, translation: c.suggestedTranslation }));
 
-        if (highConfidence.length > 0) {
-          get().applyApprovedEntitiesToGlossary(highConfidence);
+      if (candidates.length > 0) {
+        const alreadyInGlossary = candidates.filter((c) => c.isExistingInGlossary).length;
+        let identityMappedNames = 0;
+        let skippedUnproposedTerms = 0;
+        let skippedUnknownCategory = 0;
+
+        const seed = candidates
+          .filter((c) => !c.isExistingInGlossary)
+          .flatMap((c) => {
+            const isProperName = c.category === "person" || c.category === "place";
+            const isTerm = c.category === "term";
+            const proposed = (c.suggestedTranslation || "").trim();
+            const hasRealTranslation = proposed.length > 0 && proposed !== c.name;
+
+            // Identity-pinning (source => source) is only safe for an explicit
+            // person/place name, where it means "keep the original spelling".
+            // For a term — or for a category the AI invented through its loose
+            // `category` cast — pinning the source word would order the model to
+            // emit it verbatim inside Vietnamese text. Skip those instead.
+            if (!hasRealTranslation && !isProperName) {
+              if (isTerm) skippedUnproposedTerms += 1;
+              else skippedUnknownCategory += 1;
+              return [];
+            }
+            if (!hasRealTranslation) identityMappedNames += 1;
+
+            if (isProperName) {
+              properNamesCount += 1;
+              addedProperNames.push(c.name);
+            } else {
+              termsCount += 1;
+              addedTerms.push(c.name);
+            }
+            return [{ name: c.name, translation: hasRealTranslation ? proposed : c.name }];
+          });
+
+        if (seed.length > 0) {
+          get().applyApprovedEntitiesToGlossary(seed);
         }
+
+        if (addedProperNames.length > 0) {
+          get().addTerminalLog({
+            type: "detail",
+            text: `👤 Tên riêng đã khóa (${addedProperNames.length}): ${summarizeEntityNames(addedProperNames)}`,
+          });
+        }
+        if (addedTerms.length > 0) {
+          get().addTerminalLog({
+            type: "detail",
+            text: `📚 Thuật ngữ đã khóa (${addedTerms.length}): ${summarizeEntityNames(addedTerms)}`,
+          });
+        }
+        if (identityMappedNames > 0) {
+          get().addTerminalLog({
+            type: "detail",
+            text: `🪪 ${identityMappedNames} tên riêng chưa có đề xuất dịch — giữ nguyên bản gốc để không lệch tên.`,
+          });
+        }
+        if (skippedUnproposedTerms > 0) {
+          get().addTerminalLog({
+            type: "detail",
+            text: `⏭️ Bỏ qua ${skippedUnproposedTerms} thuật ngữ chưa có đề xuất dịch (tránh khóa nguyên văn).`,
+          });
+        }
+        if (skippedUnknownCategory > 0) {
+          get().addTerminalLog({
+            type: "detail",
+            text: `⏭️ Bỏ qua ${skippedUnknownCategory} thực thể thuộc loại không xác định chưa có đề xuất dịch (để AI tự dịch tự nhiên).`,
+          });
+        }
+        if (seed.length === 0) {
+          get().addTerminalLog({
+            type: "detail",
+            text: `ℹ️ Không có tên riêng/thuật ngữ mới — ${candidates.length} thực thể phát hiện đã có sẵn trong Glossary.`,
+          });
+        }
+        get().addTerminalLog({
+          type: "detail",
+          text: `🧾 Glossary: quét ${candidates.length} thực thể • đã có sẵn ${alreadyInGlossary} • thêm mới ${seed.length} • bỏ qua ${skippedUnproposedTerms + skippedUnknownCategory + identityMappedNames}`,
+        });
+
         stepStatuses.entities = "success";
+      } else {
+        get().addTerminalLog({
+          type: "detail",
+          text: "ℹ️ Không tìm thấy tên riêng/thuật ngữ nào trong các chương mở đầu.",
+        });
       }
     } catch (entErr) {
       console.warn("Entity extraction failed:", entErr);
@@ -2165,8 +2827,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const toneLabel = TONE_DESCRIPTIONS[recommendedTone]?.name || "Văn học & Tiểu thuyết";
     get().addTerminalLog({
+      type: "detail",
+      text: `🧩 [Tổng hợp Glossary] Tổng thực thể quét được: ${entitiesCount} • Tên riêng mới: ${properNamesCount} • Thuật ngữ mới: ${termsCount} • Tổng mục Glossary hiện tại: ${Object.keys(get().translationConfig.glossary || {}).length}`,
+    });
+
+    get().addTerminalLog({
       type: "success",
-      text: `🎉 [Hoàn tất tự động thiết lập] Ngôn ngữ: ${detectedLang?.languageName || "Tiếng Anh"} ➔ ${get().translationConfig.targetLang} | Văn phong: ${toneLabel} | Thuật ngữ: ${entitiesCount} mục | Bối cảnh: ${researchBrief ? "Đã lập" : "Bỏ qua"}`,
+      text: `🎉 [Hoàn tất tự động thiết lập] Ngôn ngữ: ${detectedLang?.languageName || "Tiếng Anh"} ➔ ${get().translationConfig.targetLang} | Văn phong: ${toneLabel} | Tên riêng: ${properNamesCount} | Thuật ngữ: ${termsCount} | Engine: ${activeEngineLabel} | Bối cảnh: ${researchBrief ? "Đã lập" : "Bỏ qua"}`,
     });
 
     return {
@@ -2174,6 +2841,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       recommendedTone,
       toneLabel,
       entitiesExtractedCount: entitiesCount,
+      properNamesCount,
+      termsCount,
+      addedProperNames,
+      addedTerms,
+      activeEngineLabel,
       researchBriefGenerated: Boolean(researchBrief),
       researchBriefSnippet: researchBrief ? researchBrief.slice(0, 150) + "..." : undefined,
       stepStatuses,
@@ -2248,11 +2920,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
 
     const baseUrl = activeGateway ? activeGateway.base_url : "http://localhost:11434";
+    const apiKey = activeGateway?.api_key;
     const model = selectedModel || activeGateway?.models?.[0] || "gpt-4o";
 
     try {
       const updatedMessages = await AgentService.runAgentTurn(currentHistory, readOnlyCtx, {
         baseUrl,
+        apiKey,
         model,
       });
 

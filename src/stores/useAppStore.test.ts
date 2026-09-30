@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useAppStore } from "./useAppStore";
+import { AiService } from "../services/aiService";
 
 // Mock @tauri-apps/api/core
 vi.mock("@tauri-apps/api/core", () => ({
@@ -468,6 +469,49 @@ describe("useAppStore - Book Loading & Drag-and-Drop", () => {
       expect(verified).not.toContain("opencode/broken-model");
       expect(useAppStore.getState().fallbackModels).toEqual(verified);
     });
+
+    it("preserves 9router configured_providers and api_key and passes api_key to testModel", async () => {
+      const mock9RouterGateway = {
+        name: "9Router (Chính)",
+        base_url: "http://127.0.0.1:20128/v1",
+        port: 20128,
+        is_online: true,
+        models: ["ag/gemini-3.8-flash", "cx/gpt-5.6-sol", "cl/openai/gpt-4o"],
+        gateway_type: "9router",
+        latency_ms: 15,
+        api_key: "sk-mock-key-123",
+        configured_providers: [
+          { provider: "antigravity", name: "hongducyb123@gmail.com", is_active: true },
+          { provider: "codex", name: "hongducyb123@gmail.com", is_active: true },
+          { provider: "cline", name: "hongducyb123@gmail.com", is_active: true },
+        ],
+      };
+
+      useAppStore.getState().selectGateway(mock9RouterGateway);
+
+      const state = useAppStore.getState();
+      expect(state.activeGateway).toEqual(mock9RouterGateway);
+      expect(state.activeGateway?.api_key).toBe("sk-mock-key-123");
+      expect(state.activeGateway?.configured_providers).toHaveLength(3);
+      expect(state.selectedModel).toBe("ag/gemini-3.8-flash");
+
+      const spyTest = vi.spyOn(AiService, "testModel").mockResolvedValueOnce({
+        success: true,
+        latencyMs: 12,
+        message: "OK",
+      });
+
+      await useAppStore.getState().testModel("ag/gemini-3.8-flash");
+
+      expect(spyTest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseUrl: "http://127.0.0.1:20128/v1",
+          apiKey: "sk-mock-key-123",
+          model: "ag/gemini-3.8-flash",
+          gatewayType: "9router",
+        })
+      );
+    });
   });
 
   describe("Project Completed Parts Checking & Resumption", () => {
@@ -902,8 +946,407 @@ describe("useAppStore - Book Loading & Drag-and-Drop", () => {
       expect(updated.translateTitles).toBe(true);
       // Pre-existing user term must be strictly preserved!
       expect(updated.glossary["Custom Term"]).toBe("Bản dịch của người dùng");
+      // New result fields are always present (no entities scanned for this book).
+      expect(res?.entitiesExtractedCount).toBe(0);
+      expect(res?.properNamesCount).toBe(0);
+      expect(res?.termsCount).toBe(0);
+      expect(res?.addedProperNames).toEqual([]);
+      expect(res?.addedTerms).toEqual([]);
+      expect(typeof res?.activeEngineLabel).toBe("string");
+    });
+
+    it("seeds EVERY detected proper name and term — including low-frequency ones", async () => {
+      const originalExtract = useAppStore.getState().extractBookEntities;
+      const originalBrief = useAppStore.getState().generateBookResearchBrief;
+
+      // Deterministic scan: one rare person name, one rare place, one rare term,
+      // plus one entity already in the user glossary. `count: 1` proves the old
+      // `count >= 3` threshold is gone.
+      useAppStore.setState({
+        currentBook: {
+          title: "A Mortal's Journey",
+          author: "Wang Yu",
+          language: "en",
+          description: "Cultivation novel",
+          cover_data_url: null,
+          chapter_count: 1,
+          file_size_bytes: 500,
+          chapters: [],
+          sample_text: "Han Li climbed the mountain and cultivated his Spirit Root.",
+        },
+        activeProjectId: null,
+        translationConfig: {
+          sourceLang: "Tiếng Anh (English)",
+          targetLang: "Tiếng Việt (Vietnamese)",
+          mode: "replace",
+          tone: "literary",
+          glossary: { "Custom Term": "Bản dịch của người dùng" },
+          maxBlocksPerChunk: 12,
+        },
+        extractBookEntities: async () => [
+          { id: "e1", name: "Han Li", count: 1, category: "person", suggestedTranslation: "Hàn Lập", isExistingInGlossary: false },
+          { id: "e2", name: "Qing Yuan Peak", count: 1, category: "place", suggestedTranslation: "Thanh Nguyên Phong", isExistingInGlossary: false },
+          { id: "e3", name: "Spirit Root", count: 1, category: "term", suggestedTranslation: "Linh căn", isExistingInGlossary: false },
+          { id: "e4", name: "Custom Term", count: 9, category: "term", suggestedTranslation: "Bản dịch của người dùng", isExistingInGlossary: true },
+          { id: "e5", name: "Untranslated Term", count: 1, category: "term", suggestedTranslation: "Untranslated Term", isExistingInGlossary: false },
+          // Unknown category the AI could emit through its loose `category` cast.
+          { id: "e6", name: "Mystic Art", count: 1, category: "organization" as never, suggestedTranslation: "Mystic Art", isExistingInGlossary: false },
+          { id: "e7", name: "Azure Sect", count: 1, category: "organization" as never, suggestedTranslation: "Thanh Vân Tông", isExistingInGlossary: false },
+        ],
+        generateBookResearchBrief: async () => "",
+      });
+
+      try {
+        const res = await useAppStore.getState().autoConfigureAllTranslationSettings();
+
+        expect(res?.entitiesExtractedCount).toBe(7);
+        expect(res?.properNamesCount).toBe(2); // Han Li + Qing Yuan Peak
+        expect(res?.termsCount).toBe(2); // Spirit Root + Azure Sect (Custom Term already existed)
+        expect(res?.addedProperNames).toEqual(["Han Li", "Qing Yuan Peak"]);
+        expect(res?.addedTerms).toEqual(["Spirit Root", "Azure Sect"]);
+
+        const glossary = useAppStore.getState().translationConfig.glossary;
+        expect(glossary["Han Li"]).toBe("Hàn Lập");
+        expect(glossary["Qing Yuan Peak"]).toBe("Thanh Nguyên Phong");
+        expect(glossary["Spirit Root"]).toBe("Linh căn");
+        expect(glossary["Azure Sect"]).toBe("Thanh Vân Tông");
+        // A term with no AI proposal must NOT be pinned source => source.
+        expect(glossary["Untranslated Term"]).toBeUndefined();
+        // Nor may an unknown category without a proposal be identity-pinned.
+        expect(glossary["Mystic Art"]).toBeUndefined();
+        // Existing user entry is never overwritten and never re-counted as new.
+        expect(glossary["Custom Term"]).toBe("Bản dịch của người dùng");
+        expect(Object.keys(glossary)).toHaveLength(5);
+      } finally {
+        useAppStore.setState({
+          extractBookEntities: originalExtract,
+          generateBookResearchBrief: originalBrief,
+        });
+      }
     });
   });
 });
 
 
+
+// ---------------------------------------------------------------------------
+// Ingest Workflow Router
+// ---------------------------------------------------------------------------
+
+const ROUTER_EN_SAMPLE =
+  "The wind was rising and the old man knew that this would be the last time they would ever see " +
+  "the shore of that land. He had come here with nothing and he would leave with nothing.";
+
+const ROUTER_VI_SAMPLE =
+  "Gió đang nổi lên và ông lão biết rằng đây sẽ là lần cuối cùng họ còn nhìn thấy bờ biển của " +
+  "vùng đất ấy. Ông đã đến đây với hai bàn tay trắng và rồi ông cũng sẽ ra đi như thế.";
+
+function routerChapter(index: number, title: string, preview: string) {
+  return { id: `ch-${index}`, href: `chapter-${index}.xhtml`, title, preview_text: preview };
+}
+
+function routerBook(overrides: Record<string, unknown> = {}) {
+  return {
+    title: "Untitled",
+    author: "Anonymous",
+    language: "en",
+    description: null,
+    cover_data_url: null,
+    chapter_count: 3,
+    file_size_bytes: 1024,
+    chapters: [
+      routerChapter(1, "Chapter One", ROUTER_EN_SAMPLE),
+      routerChapter(2, "Chapter Two", ROUTER_EN_SAMPLE),
+      routerChapter(3, "Chapter Three", ROUTER_EN_SAMPLE),
+    ],
+    sample_text: ROUTER_EN_SAMPLE,
+    ...overrides,
+  };
+}
+
+function routerVietnameseBook(overrides: Record<string, unknown> = {}) {
+  return routerBook({
+    title: "Người Lái Đò Sông Đà",
+    language: "vi",
+    sample_text: ROUTER_VI_SAMPLE,
+    chapters: [
+      routerChapter(1, "Chương Một", ROUTER_VI_SAMPLE),
+      routerChapter(2, "Chương Hai", ROUTER_VI_SAMPLE),
+      routerChapter(3, "Chương Ba", ROUTER_VI_SAMPLE),
+    ],
+    ...overrides,
+  });
+}
+
+describe("useAppStore - Ingest Workflow Router", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAppStore.setState({
+      currentBook: null,
+      currentFilePath: null,
+      currentFileBytes: null,
+      activeTab: "books",
+      activeProjectId: null,
+      projects: [],
+      bookProfile: null,
+      lastIngestRoute: null,
+      workflowSource: null,
+      workflowCompletedSteps: [],
+      dismissedWorkflowFor: null,
+      autoRouteOnIngest: true,
+      translatedChapters: {},
+    });
+  });
+
+  it("auto-switches a foreign-language EPUB to the Translator", async () => {
+    (invoke as any).mockResolvedValueOnce(routerBook());
+
+    const ok = await useAppStore.getState().loadBookFromPath("C:\\books\\foundation.epub");
+
+    expect(ok).toBe(true);
+    const state = useAppStore.getState();
+    expect(state.activeTab).toBe("translator");
+    expect(state.bookProfile?.workflow).toBe("translate");
+    expect(state.bookProfile?.languageCode).toBe("en");
+    expect(state.lastIngestRoute?.switched).toBe(true);
+    expect(state.lastIngestRoute?.reason).toBe("auto");
+    // Source language was pre-filled offline, without any AI call.
+    expect(state.translationConfig.sourceLang).toContain("English");
+    expect(state.translationConfig.targetLang).toContain("Việt");
+  });
+
+  it("keeps a Vietnamese EPUB in the library", async () => {
+    (invoke as any).mockResolvedValueOnce(routerVietnameseBook());
+
+    const ok = await useAppStore.getState().loadBookFromPath("C:\\books\\sach-viet.epub");
+
+    expect(ok).toBe(true);
+    const state = useAppStore.getState();
+    expect(state.activeTab).toBe("books");
+    expect(state.bookProfile?.workflow).toBe("polish");
+    expect(state.lastIngestRoute?.switched).toBe(false);
+    expect(state.lastIngestRoute?.reason).toBe("native-vietnamese");
+  });
+
+  it("honours the autoRouteOnIngest preference", async () => {
+    useAppStore.getState().setAutoRouteOnIngest(false);
+    (invoke as any).mockResolvedValueOnce(routerBook());
+
+    await useAppStore.getState().loadBookFromPath("C:\\books\\foundation.epub");
+
+    const state = useAppStore.getState();
+    expect(state.activeTab).toBe("books");
+    expect(state.bookProfile?.workflow).toBe("translate");
+    expect(state.lastIngestRoute?.switched).toBe(false);
+    expect(state.lastIngestRoute?.reason).toBe("preference-off");
+
+    useAppStore.getState().setAutoRouteOnIngest(true);
+  });
+
+  it("refuses to auto-switch when the detection has no real evidence", async () => {
+    (invoke as any).mockResolvedValueOnce(
+      routerBook({
+        title: "",
+        language: "",
+        description: null,
+        sample_text: "",
+        chapter_count: 1,
+        chapters: [routerChapter(1, "", "")],
+      })
+    );
+
+    await useAppStore.getState().loadBookFromPath("C:\\books\\unknown.epub");
+
+    const state = useAppStore.getState();
+    expect(state.activeTab).toBe("books");
+    expect(state.bookProfile?.detectionSource).toBe("unknown");
+    expect(state.lastIngestRoute?.switched).toBe(false);
+    expect(state.lastIngestRoute?.reason).toBe("low-confidence");
+  });
+
+  it("never switches tabs when told not to (library project open)", () => {
+    const route = useAppStore.getState().routeAfterBookLoad(routerBook(), {
+      autoSwitch: false,
+    });
+
+    expect(route?.switched).toBe(false);
+    expect(route?.reason).toBe("auto-switch-disabled");
+    expect(useAppStore.getState().activeTab).toBe("books");
+    expect(useAppStore.getState().bookProfile?.workflow).toBe("translate");
+  });
+
+  it("locks routing once the user starts a workflow manually", () => {
+    useAppStore.getState().routeAfterBookLoad(routerBook(), { autoSwitch: false });
+    const tab = useAppStore.getState().startRecommendedWorkflow();
+
+    expect(tab).toBe("translator");
+    expect(useAppStore.getState().activeTab).toBe("translator");
+    expect(useAppStore.getState().workflowSource).toBe("manual");
+
+    useAppStore.getState().setActiveTab("books");
+    const route = useAppStore.getState().routeAfterBookLoad(routerBook(), { autoSwitch: true });
+
+    expect(route?.switched).toBe(false);
+    expect(route?.reason).toBe("manual-locked");
+    expect(useAppStore.getState().activeTab).toBe("books");
+  });
+
+  it("dismisses the banner per book and re-shows it for another book", () => {
+    useAppStore.getState().routeAfterBookLoad(routerBook(), { autoSwitch: false });
+    useAppStore.getState().dismissWorkflow();
+
+    const dismissed = useAppStore.getState().dismissedWorkflowFor;
+    expect(dismissed).toBe(useAppStore.getState().bookProfile?.bookIdentity);
+
+    useAppStore.getState().routeAfterBookLoad(routerBook(), { autoSwitch: false });
+    expect(useAppStore.getState().dismissedWorkflowFor).toBe(dismissed);
+
+    useAppStore
+      .getState()
+      .routeAfterBookLoad(routerVietnameseBook(), { autoSwitch: false });
+    expect(useAppStore.getState().dismissedWorkflowFor).toBeNull();
+  });
+
+  it("resets per-book progress when a different book is loaded", () => {
+    useAppStore.getState().routeAfterBookLoad(routerBook(), { autoSwitch: false });
+    useAppStore.getState().markWorkflowStepComplete("style");
+    expect(useAppStore.getState().workflowCompletedSteps).toEqual(["style"]);
+
+    useAppStore.getState().routeAfterBookLoad(routerVietnameseBook(), { autoSwitch: false });
+    expect(useAppStore.getState().workflowCompletedSteps).toEqual([]);
+  });
+
+  it("does not duplicate completed steps", () => {
+    useAppStore.getState().routeAfterBookLoad(routerBook(), { autoSwitch: false });
+    useAppStore.getState().markWorkflowStepComplete("translate");
+    useAppStore.getState().markWorkflowStepComplete("translate");
+    expect(useAppStore.getState().workflowCompletedSteps).toEqual(["translate"]);
+  });
+
+  it("counts untranslated chapters in O(1) from translatedChapters", () => {
+    useAppStore.setState({
+      currentBook: routerBook() as never,
+      translatedChapters: { "chapter-1.xhtml": 1, "chapter-2.xhtml": 2 },
+    });
+
+    expect(useAppStore.getState().getUntranslatedChapterCount()).toBe(1);
+
+    useAppStore.setState({ translatedChapters: {} });
+    expect(useAppStore.getState().getUntranslatedChapterCount()).toBe(3);
+  });
+
+  it("marks convert-translate for a Chinese scanned PDF", () => {
+    const profile = useAppStore.getState().routeAfterBookLoad(
+      routerBook({
+        language: "zh",
+        title: "海边故事",
+        sample_text: "风吹起，老人知道这将是他们最后一次看到那片土地的海岸。他来时一无所有。",
+        chapters: [
+          routerChapter(1, "第一章", "风吹起，老人知道这将是他们最后一次看到那片土地的海岸。"),
+        ],
+      }) as never,
+      { autoSwitch: false, kind: "pdf-digital", isScannedPdf: true }
+    );
+
+    expect(profile?.profile.kind).toBe("pdf-scanned");
+    expect(profile?.profile.workflow).toBe("ocr-translate");
+  });
+
+  it("round-trips workflow progress through save -> close -> reopen", async () => {
+    // (a) from the completion review: `openProject` used to restore progress in
+    // a separate statement after routing, so a future reorder could silently
+    // reset it. `restoreProjectWorkflow` now owns that ordering; this test pins
+    // the round trip end to end.
+    (invoke as any).mockResolvedValueOnce(routerBook());
+    await useAppStore.getState().loadBookFromPath("C:\\books\\foundation.epub");
+
+    const projectId = useAppStore.getState().activeProjectId!;
+    expect(projectId).toBeTruthy();
+
+    useAppStore.getState().markWorkflowStepComplete("translate");
+    useAppStore.setState({
+      workflowSource: "manual",
+      translatedChapters: { "chapter-1.xhtml": 1, "chapter-2.xhtml": 2 },
+    });
+    useAppStore.getState().saveActiveProject();
+
+    useAppStore.getState().closeActiveProject();
+    expect(useAppStore.getState().workflowCompletedSteps).toEqual([]);
+    expect(useAppStore.getState().translatedChapters).toEqual({});
+    expect(useAppStore.getState().bookProfile).toBeNull();
+
+    (invoke as any).mockResolvedValueOnce(routerBook());
+    const reopened = await useAppStore.getState().openProject(projectId);
+
+    expect(reopened).toBe(true);
+    const state = useAppStore.getState();
+    expect(state.activeTab).toBe("books");
+    expect(state.workflowCompletedSteps).toEqual(["translate"]);
+    expect(state.workflowSource).toBe("manual");
+    expect(Object.keys(state.translatedChapters)).toEqual([
+      "chapter-1.xhtml",
+      "chapter-2.xhtml",
+    ]);
+  });
+
+  it("reports one translation coverage semantic for every reader", () => {
+    // (b) from the completion review: the sidebar badge, the stepper and the
+    // translator panel must not disagree about what "translated" means.
+    useAppStore.setState({
+      currentBook: routerBook() as never,
+      translatedChapters: { "chapter-1.xhtml": 1 },
+      modifiedChapters: { "chapter-1.xhtml": "<p>a</p>", "chapter-2.xhtml": "<p>b</p>" },
+    });
+
+    const tracked = useAppStore.getState().getTranslationCoverage();
+    expect(tracked).toEqual({ translated: 1, total: 3, isLegacyFallback: false });
+    expect(useAppStore.getState().getUntranslatedChapterCount()).toBe(2);
+
+    // A legacy project (translated before per-chapter tracking) has no map, so
+    // the coverage falls back to `modifiedChapters` and says so.
+    useAppStore.setState({ translatedChapters: {} });
+    const legacy = useAppStore.getState().getTranslationCoverage();
+    expect(legacy).toEqual({ translated: 2, total: 3, isLegacyFallback: true });
+    expect(useAppStore.getState().getUntranslatedChapterCount()).toBe(1);
+  });
+
+  it("opens a legacy project that lacks the workflow fields", async () => {
+    const legacyProject = {
+      id: "legacy-1",
+      name: "Sách Cũ",
+      author: "Tác giả",
+      filePath: "C:\\books\\legacy.epub",
+      coverDataUrl: null,
+      chapterCount: 3,
+      fileSizeBytes: 2048,
+      activePresetId: "classic-hardcover",
+      customCss: "",
+      fontFamily: "serif",
+      fontSize: 16,
+      textAlign: "justify" as const,
+      dropCaps: true,
+      lineHeight: 1.75,
+      firstLineIndent: "2em",
+      sceneDivider: "♦ ♦ ♦",
+      modifiedChapters: {},
+      chapterEnhanceReports: {},
+      createdAt: 1,
+      lastOpenedAt: 1,
+      // NOTE: deliberately no workflowId / workflowCompletedSteps /
+      // translatedChapters / detectedLanguageCode / workflowSource.
+    };
+
+    useAppStore.setState({ projects: [legacyProject] as never });
+    (invoke as any).mockResolvedValueOnce(routerVietnameseBook());
+
+    const ok = await useAppStore.getState().openProject("legacy-1");
+
+    expect(ok).toBe(true);
+    const state = useAppStore.getState();
+    expect(state.activeTab).toBe("books");
+    expect(state.workflowCompletedSteps).toEqual([]);
+    expect(state.translatedChapters).toEqual({});
+    expect(state.workflowSource).toBe("auto");
+    expect(state.bookProfile?.workflow).toBe("polish");
+  });
+});

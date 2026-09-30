@@ -117,6 +117,37 @@ const WATERMARK_PHRASE_REGEXES = [
 ];
 
 /**
+ * Removes known watermark tokens (pirate-site domains and Vietnamese promo
+ * phrases) from a text sample.
+ *
+ * Why this exists: `LanguageDetector` decides Vietnamese on the *first* match of
+ * two Vietnamese diacritics anywhere in the sample. A single `Nguồn: truyenfull.vn`
+ * footer line inside an otherwise Chinese or English chapter is enough to make a
+ * foreign book look Vietnamese — and therefore to skip translation entirely.
+ * Callers that classify language must strip these tokens first.
+ *
+ * This only affects the text handed to the classifier; it never rewrites book
+ * content.
+ */
+export function stripWatermarkTokens(text: string): string {
+  if (!text) return text;
+  let output = text;
+
+  for (const keyword of DEFAULT_WATERMARK_KEYWORDS) {
+    output = output.split(keyword).join(" ");
+    const capitalised = keyword.charAt(0).toUpperCase() + keyword.slice(1);
+    output = output.split(capitalised).join(" ");
+  }
+
+  for (const regex of WATERMARK_PHRASE_REGEXES) {
+    regex.lastIndex = 0;
+    output = output.replace(regex, " ");
+  }
+
+  return output.replace(/[ \t]{2,}/g, " ");
+}
+
+/**
  * Strips HTML tags to extract raw plain text
  */
 function stripHtmlTags(html: string): string {

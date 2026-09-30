@@ -15,6 +15,8 @@ import { KindleCompanionView } from "./components/kindle/KindleCompanionView";
 import { ExportModal } from "./components/export/ExportModal";
 import { ConverterView } from "./components/converter/ConverterView";
 import { BookAgentDrawer } from "./components/agent/BookAgentDrawer";
+import { notifyIngestRoute } from "./components/workflow/ingestRouteToast";
+import { workflowKindFromFile, workflowLabel } from "./utils/bookTypeDetector";
 import { 
   Settings as SettingsIcon, 
   Upload 
@@ -32,7 +34,11 @@ export default function App() {
     setActiveTab,
     setPendingConverterFile,
     theme,
-    setTheme
+    setTheme,
+    autoRouteOnIngest,
+    setAutoRouteOnIngest,
+    resetWorkflowState,
+    bookProfile,
   } = useAppStore();
 
   // Auto scan local gateways once on startup
@@ -68,7 +74,9 @@ export default function App() {
                 const ok = await loadBookFromPath(filePath);
                 if (ok) {
                   toast.success("Đã nạp sách thành công!", { id: "load-epub" });
-                  setActiveTab("books");
+                  // The store already routed the user (e.g. foreign book -> Translator).
+                  // Only surface what it decided; never force a tab here.
+                  notifyIngestRoute();
                 } else {
                   toast.error("Không thể đọc file EPUB này", { id: "load-epub" });
                 }
@@ -78,19 +86,19 @@ export default function App() {
                 lower.endsWith(".md") ||
                 lower.endsWith(".markdown")
               ) {
+                const kind = workflowKindFromFile(filePath);
+                const pipelineHint =
+                  kind === "pdf-digital"
+                    ? "quy trình: trích xuất văn bản → đóng gói EPUB"
+                    : "quy trình: chuyển đổi → đóng gói EPUB";
                 toast.loading("Đang nạp file vào trình chuyển đổi Ebook...", { id: "convert-file" });
                 try {
                   const { readFile } = await import("@tauri-apps/plugin-fs");
                   const bytes = await readFile(filePath);
                   const fileName = filePath.split(/[\\/]/).pop() || "document";
-                  const ext = lower.endsWith(".pdf")
-                    ? "pdf"
-                    : lower.endsWith(".md") || lower.endsWith(".markdown")
-                    ? "md"
-                    : "txt";
-                  setPendingConverterFile({ name: fileName, bytes, type: ext });
+                  setPendingConverterFile({ name: fileName, bytes, type: kind === "pdf-digital" ? "pdf" : kind === "md" ? "md" : "txt" });
                   setActiveTab("converter");
-                  toast.success("Đã mở trình chuyển đổi Ebook!", { id: "convert-file" });
+                  toast.success(`Đã mở trình chuyển đổi — ${pipelineHint}`, { id: "convert-file" });
                 } catch (err) {
                   console.error(err);
                   toast.error("Không thể đọc file đã thả", { id: "convert-file" });
@@ -133,7 +141,7 @@ export default function App() {
             Thả file sách (.epub, .pdf, .txt, .md) vào đây
           </h3>
           <p className="text-xs text-[var(--muted-foreground)] max-w-sm text-center">
-            Hệ thống sẽ tự động phân tích định dạng, bóc tách OCR hoặc nạp vào Studio.
+            Hệ thống tự nhận diện ngôn ngữ và chọn quy trình: dịch thuật, OCR hoặc chuyển đổi.
           </p>
         </div>
       )}
@@ -211,6 +219,64 @@ export default function App() {
                         Hệ thống
                       </button>
                     </div>
+                  </div>
+                </div>
+
+                <div className="setting-card-row">
+                  <div className="setting-card-row__copy">
+                    <h3 className="setting-card-row__title">Tự động chuyển quy trình khi nạp sách</h3>
+                    <p className="setting-card-row__description">
+                      Nhận diện ngôn ngữ khi nạp sách: EPUB ngoại ngữ tự mở Dịch thuật AI, PDF scan tự mở OCR,
+                      PDF/TXT/MD mở trình chuyển đổi. Tắt để chỉ hiện gợi ý trong thẻ quy trình.
+                    </p>
+                  </div>
+                  <div className="setting-card-row__action">
+                    <div className="segmented-toggle">
+                      <button
+                        type="button"
+                        data-active={autoRouteOnIngest ? "true" : undefined}
+                        data-variant="primary"
+                        onClick={() => setAutoRouteOnIngest(true)}
+                        className="segmented-toggle__item"
+                      >
+                        Bật
+                      </button>
+                      <button
+                        type="button"
+                        data-active={!autoRouteOnIngest ? "true" : undefined}
+                        data-variant="primary"
+                        onClick={() => setAutoRouteOnIngest(false)}
+                        className="segmented-toggle__item"
+                      >
+                        Tắt
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="setting-card-row">
+                  <div className="setting-card-row__copy">
+                    <h3 className="setting-card-row__title">Quy trình của sách đang mở</h3>
+                    <p className="setting-card-row__description">
+                      {bookProfile
+                        ? `Đã nhận diện ${bookProfile.languageFlag} ${bookProfile.languageName} — quy trình "${workflowLabel(
+                            bookProfile
+                          )}". Xoá tiến trình để bắt đầu lại từ bước đầu.`
+                        : "Chưa có sách nào được mở."}
+                    </p>
+                  </div>
+                  <div className="setting-card-row__action">
+                    <button
+                      type="button"
+                      disabled={!bookProfile}
+                      onClick={() => {
+                        resetWorkflowState();
+                        toast.success("Đã xoá tiến trình quy trình của sách hiện tại");
+                      }}
+                      className="lg-button lg-button--secondary text-xs"
+                    >
+                      Xoá tiến trình
+                    </button>
                   </div>
                 </div>
 

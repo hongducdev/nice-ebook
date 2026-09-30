@@ -18,6 +18,12 @@ export interface StylePreset {
     cardBg: string;
   };
   cssTemplate: string;
+  /**
+   * Preset được suy ra từ chính cuốn sách đang mở ("Theo sách hiện tại").
+   * `generateEpubCss` dùng cờ này để chuyển sang chế độ ghi đè có chọn lọc
+   * thay vì phát ra nguyên một stylesheet mới.
+   */
+  derivedFromBook?: boolean;
 }
 
 export const STYLE_PRESETS: StylePreset[] = [

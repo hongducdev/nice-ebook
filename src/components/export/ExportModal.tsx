@@ -55,6 +55,7 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
     textAlign,
     sceneDivider,
     customCss,
+    bookStyleSignature,
     modifiedChapters,
     wordWiseSettings,
     xrayData,
@@ -104,6 +105,8 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
       customOverrides: customCss,
       isVietnamese: isVietnameseBook,
       fontFamily,
+      // Chế độ "theo sách hiện tại" chỉ ghi đè những token đọc được từ CSS gốc.
+      signature: bookStyleSignature,
     });
 
   /** Reads each chapter's current effective HTML (edited override, else the file on disk). */

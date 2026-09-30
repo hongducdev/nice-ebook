@@ -1230,3 +1230,356 @@ p[data-bilingual-for] {
 }
 
 
+
+/* ==========================================================================
+   Ingest Workflow Router - banner + stepper
+   Shown when a freshly ingested book is classified into a workflow
+   (translate / ocr / convert / polish).
+   ========================================================================== */
+
+.workflow-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--ui-radius-card);
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border));
+  background: color-mix(in srgb, var(--primary) 7%, var(--ui-card-panel-surface));
+  box-shadow: var(--ui-card-panel-shadow);
+  flex-shrink: 0;
+}
+
+.workflow-banner__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  border-radius: var(--ui-radius-button);
+  border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border));
+  background: color-mix(in srgb, var(--primary) 14%, var(--card));
+  color: var(--primary);
+}
+
+.workflow-banner__body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+}
+
+.workflow-banner__chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.workflow-banner__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--ui-radius-pill);
+  border: 0.5px solid var(--border);
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.workflow-banner__chip--lang {
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+  background: color-mix(in srgb, var(--primary) 14%, var(--card));
+  color: color-mix(in srgb, var(--primary) 85%, var(--foreground));
+}
+
+.workflow-banner__chip--workflow {
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+  background: color-mix(in srgb, var(--primary) 9%, var(--card));
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.workflow-banner__chip--warn {
+  border-color: color-mix(in srgb, var(--ui-warning) 35%, var(--border));
+  background: color-mix(in srgb, var(--ui-warning) 14%, var(--popover));
+  color: color-mix(in srgb, var(--ui-warning) 55%, var(--foreground));
+}
+
+.workflow-banner__chip-meta {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.workflow-banner__summary {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+}
+
+.workflow-banner__summary strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.workflow-banner__why {
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+
+.workflow-banner__why > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  list-style: none;
+  width: fit-content;
+  padding: 2px 4px;
+  border-radius: var(--ui-radius-button);
+}
+
+.workflow-banner__why > summary::-webkit-details-marker {
+  display: none;
+}
+
+.workflow-banner__why > summary:hover {
+  background: var(--secondary);
+  color: var(--foreground);
+}
+
+.workflow-banner__why[open] > summary svg {
+  transform: rotate(180deg);
+}
+
+.workflow-banner__reasons {
+  margin: 2px 0 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+
+.workflow-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.workflow-banner__dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--ui-radius-button);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.workflow-banner__dismiss:hover {
+  background: var(--secondary);
+  color: var(--foreground);
+}
+
+@media (max-width: 900px) {
+  .workflow-banner {
+    flex-wrap: wrap;
+  }
+  .workflow-banner__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+/* Pipeline stepper (workflow rail) */
+.pipeline-stepper {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 10px;
+  list-style: none;
+  border-radius: var(--ui-radius-card);
+  border: 1px solid var(--ui-card-panel-border);
+  background: var(--ui-card-panel-surface);
+  flex-shrink: 0;
+}
+
+.pipeline-stepper__item {
+  display: flex;
+  align-items: center;
+  flex: 1 1 130px;
+  min-width: 0;
+}
+
+.pipeline-stepper__button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: var(--ui-radius-button);
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.pipeline-stepper__button:hover {
+  background: var(--secondary);
+}
+
+.pipeline-stepper__marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: var(--ui-radius-pill);
+  border: 1px solid var(--border);
+  background: var(--secondary);
+  color: var(--muted-foreground);
+}
+
+.pipeline-stepper__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.pipeline-stepper__label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.pipeline-stepper__description {
+  font-size: 10.5px;
+  color: var(--muted-foreground);
+  opacity: 0.75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pipeline-stepper__connector {
+  width: 14px;
+  height: 1px;
+  flex-shrink: 0;
+  background: var(--border);
+}
+
+.pipeline-stepper__item[data-state="done"] .pipeline-stepper__marker {
+  border-color: color-mix(in srgb, var(--ui-success) 45%, var(--border));
+  background: color-mix(in srgb, var(--ui-success) 16%, var(--card));
+  color: color-mix(in srgb, var(--ui-success) 60%, var(--foreground));
+}
+
+.pipeline-stepper__item[data-state="done"] .pipeline-stepper__label {
+  color: color-mix(in srgb, var(--ui-success) 45%, var(--foreground));
+}
+
+.pipeline-stepper__item[data-state="done"] .pipeline-stepper__connector {
+  background: color-mix(in srgb, var(--ui-success) 40%, var(--border));
+}
+
+.pipeline-stepper__item[data-state="current"] .pipeline-stepper__button {
+  border-color: color-mix(in srgb, var(--primary) 32%, var(--border));
+  background: color-mix(in srgb, var(--primary) 10%, var(--card));
+}
+
+.pipeline-stepper__item[data-state="current"] .pipeline-stepper__marker {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  background: color-mix(in srgb, var(--primary) 18%, var(--card));
+  color: var(--primary);
+}
+
+.pipeline-stepper__item[data-state="current"] .pipeline-stepper__label {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.pipeline-stepper--compact {
+  padding: 3px 6px;
+  border: none;
+  background: transparent;
+}
+
+.pipeline-stepper--compact .pipeline-stepper__item {
+  flex: 0 0 auto;
+}
+
+.pipeline-stepper--compact .pipeline-stepper__marker {
+  width: 18px;
+  height: 18px;
+}
+
+/* Converter: file-scoped detection strip */
+.ingest-detect-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-radius: var(--ui-radius-card);
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+  background: color-mix(in srgb, var(--primary) 7%, var(--ui-card-panel-surface));
+}
+
+.ingest-detect-strip__label {
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+
+.ingest-detect-strip__steps {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+/* Translator: workflow context strip */
+.workflow-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 7px 9px;
+  border-radius: var(--ui-radius-card);
+  border: 1px dashed var(--ui-card-panel-border);
+  background: var(--ui-card-panel-surface);
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.workflow-context strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.workflow-banner__pipeline {
+  color: var(--foreground);
+  font-weight: 600;
+  font-size: 12px;
+}

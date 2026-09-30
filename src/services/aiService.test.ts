@@ -414,5 +414,37 @@ describe("AiService - OpenCode Free Model Routing", () => {
       expect(res.success).toBe(false);
       expect(res.message).toContain("Model not pulled");
     });
+
+    it("tests gateway model via HTTP and sends Authorization Bearer when apiKey is provided", async () => {
+      const originalFetch = globalThis.fetch;
+      const mockFetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve(""),
+      });
+      globalThis.fetch = mockFetch as any;
+
+      try {
+        const res = await AiService.testModel({
+          baseUrl: "http://127.0.0.1:20128/v1",
+          apiKey: "sk-mock-test-key",
+          model: "ag/gemini-3.8-flash",
+        });
+
+        expect(res.success).toBe(true);
+        expect(mockFetch).toHaveBeenCalledWith(
+          "http://127.0.0.1:20128/v1/chat/completions",
+          expect.objectContaining({
+            method: "POST",
+            headers: expect.objectContaining({
+              Authorization: "Bearer sk-mock-test-key",
+              "Content-Type": "application/json",
+            }),
+          })
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
   });
 });

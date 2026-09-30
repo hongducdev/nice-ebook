@@ -15,13 +15,15 @@ import {
   Bot
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
+import { isTranslationWorkflow } from "../../utils/bookTypeDetector";
+import type { ActiveTab } from "../../types/navigation";
 
 interface NavItem {
-  id: "books" | "reader" | "presets" | "editor" | "ai" | "settings" | "ai-editor" | "converter" | "kindle" | "translator" | "agent";
+  id: ActiveTab | "agent";
   label: string;
   icon: any;
   badge?: string | null;
-  badgeTone?: "success" | "neutral";
+  badgeTone?: "success" | "neutral" | "warning";
 }
 
 export function Sidebar() {
@@ -36,9 +38,27 @@ export function Sidebar() {
     modifiedChapters,
     toggleAgentDrawer,
     isAgentDrawerOpen,
+    bookProfile,
+    getTranslationCoverage,
+    pendingConverterFile,
+    translationConfig,
   } = useAppStore();
 
   const modifiedCount = Object.keys(modifiedChapters).length;
+
+  // One semantic for "translated" across every reader (sidebar badge, stepper,
+  // translator view): delegate to the store instead of re-deriving it here.
+  const { translated: translatedCount, total: totalChapters } = getTranslationCoverage();
+  const untranslatedCount = Math.max(0, totalChapters - translatedCount);
+  const needsTranslation = isTranslationWorkflow(bookProfile?.workflow);
+  const translationBadge = !needsTranslation
+    ? null
+    : untranslatedCount > 0
+    ? `${untranslatedCount} ch.`
+    : translatedCount > 0
+    ? "Đã dịch"
+    : null;
+  const bilingualActive = translationConfig.mode === "bilingual" && translatedCount > 0;
 
   const navigationGroups: { id: string; title: string; items: NavItem[] }[] = [
     {
@@ -55,13 +75,15 @@ export function Sidebar() {
           id: "converter" as const, 
           label: "Chuyển đổi Ebook", 
           icon: RefreshCw,
-          badge: "PDF / OCR",
-          badgeTone: "success"
+          badge: pendingConverterFile ? "Đang chờ" : "PDF / OCR",
+          badgeTone: pendingConverterFile ? "warning" : "success"
         },
         { 
           id: "reader" as const, 
           label: "Đọc thử & Soát lỗi", 
-          icon: BookOpenCheck 
+          icon: BookOpenCheck,
+          badge: bilingualActive ? "Song ngữ" : null,
+          badgeTone: "success"
         },
         { 
           id: "kindle" as const, 
@@ -103,8 +125,8 @@ export function Sidebar() {
           id: "translator" as const, 
           label: "Dịch thuật AI", 
           icon: Languages, 
-          badge: "Mới",
-          badgeTone: "success"
+          badge: translationBadge,
+          badgeTone: translationBadge === "Đã dịch" ? "neutral" : "success"
         },
         { 
           id: "agent" as const, 
@@ -174,8 +196,10 @@ export function Sidebar() {
 
                     {!isSidebarCollapsed && item.badge && (
                       <span className={`ml-auto app-badge text-[10px] h-[18px] px-1.5 ${
-                        item.badgeTone === "success" 
-                          ? "app-badge--success" 
+                        item.badgeTone === "success"
+                          ? "app-badge--success"
+                          : item.badgeTone === "warning"
+                          ? "app-badge--warning"
                           : "app-badge--neutral"
                       }`}>
                         {item.badge}

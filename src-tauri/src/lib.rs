@@ -3,7 +3,7 @@ pub mod jev;
 pub mod kindle;
 pub mod scanner;
 
-use epub::{CreateEpubOptions, EpubMetadata, EpubParser, EpubWriter, MetadataOverrides};
+use epub::{CreateEpubOptions, EpubMetadata, EpubParser, EpubWriter, MetadataOverrides, StylesheetEntry};
 use jev::{JevClassifier, JevDecision, JevVerdictChapterPlan, JevVerdictEngine};
 use kindle::{SdrExportResult, WordWisePayload, XRayPayload};
 use scanner::{DetectedGateway, GatewayScanner};
@@ -34,6 +34,22 @@ async fn read_chapter_bytes(bytes: Vec<u8>, href: String) -> Result<String, Stri
     tokio::task::spawn_blocking(move || EpubParser::read_chapter_content_bytes(&bytes, &href))
         .await
         .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+/// Reads every stylesheet inside the book so the frontend can derive a style
+/// that follows the book's own typography instead of replacing it.
+#[tauri::command]
+async fn read_epub_styles(
+    path: Option<String>,
+    bytes: Option<Vec<u8>>,
+) -> Result<Vec<StylesheetEntry>, String> {
+    tokio::task::spawn_blocking(move || match (path, bytes) {
+        (Some(p), _) => EpubParser::read_stylesheets(&p),
+        (None, Some(b)) => EpubParser::read_stylesheets_bytes(&b),
+        (None, None) => Err("Cần truyền path hoặc bytes của sách".to_string()),
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
 }
 
 #[tauri::command]
@@ -451,17 +467,36 @@ async fn call_ai_completion(options: CallAiCompletionOptions) -> Result<String, 
     let mut parsed_url =
         reqwest::Url::parse(raw_url).map_err(|e| format!("URL không hợp lệ: {}", e))?;
 
-    // Policy: HTTP is allowed ONLY for localhost/loopback (local AI models like Ollama, LM Studio, etc.)
-    // Remote servers MUST use HTTPS.
+    // Policy: HTTP is allowed ONLY for localhost/loopback or private/internal VPN networks (e.g. LAN, Tailscale)
+    // Public internet remote servers MUST use HTTPS.
     if parsed_url.scheme() == "http" {
         let host = parsed_url.host_str().unwrap_or("");
-        let is_loopback = host == "localhost"
+        let is_local_or_private = if host == "localhost"
             || host == "127.0.0.1"
             || host == "::1"
             || host == "0.0.0.0"
-            || host.starts_with("127.");
-        if !is_loopback {
-            return Err("Kết nối HTTP không mã hóa chỉ được phép cho máy chủ cục bộ (localhost/127.0.0.1). Với máy chủ từ xa, vui lòng dùng HTTPS.".to_string());
+            || host.starts_with("127.")
+        {
+            true
+        } else if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+            match ip {
+                std::net::IpAddr::V4(v4) => {
+                    v4.is_loopback()
+                        || v4.is_private()
+                        || v4.is_link_local()
+                        // RFC 6598 Carrier-Grade NAT (Tailscale: 100.64.0.0/10)
+                        || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xc0) == 64)
+                }
+                std::net::IpAddr::V6(v6) => {
+                    v6.is_loopback() || is_private_or_local_ip(std::net::IpAddr::V6(v6))
+                }
+            }
+        } else {
+            false
+        };
+
+        if !is_local_or_private {
+            return Err("Kết nối HTTP không mã hóa chỉ được phép cho máy chủ cục bộ hoặc mạng nội bộ/VPN (localhost, LAN, Tailscale). Với máy chủ từ xa, vui lòng dùng HTTPS.".to_string());
         }
     } else if parsed_url.scheme() != "https" {
         return Err(
@@ -764,6 +799,7 @@ pub fn run() {
             read_epub_bytes,
             read_chapter,
             read_chapter_bytes,
+            read_epub_styles,
             classify_text_jev,
             run_jev_verdict_chapter,
             scan_ai_gateways,
@@ -902,6 +938,102 @@ mod tests {
         assert!(res
             .unwrap_err()
             .contains("Kết nối HTTP không mã hóa chỉ được phép cho máy chủ cục bộ"));
+    }
+
+    #[tokio::test]
+    async fn test_call_ai_completion_allows_tailscale_http() {
+        let opts = CallAiCompletionOptions {
+            base_url: "http://100.118.3.52:20128/v1".to_string(),
+            api_key: Some("test-key".to_string()),
+            model: "test-model".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: "hello".to_string(),
+            }],
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: Some(1),
+        };
+
+        let res = call_ai_completion(opts).await;
+        // The policy check must pass without returning policy rejection
+        if let Err(err) = res {
+            assert!(!err.contains("Kết nối HTTP không mã hóa"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_call_ai_completion_cgnat_and_private_network_boundaries() {
+        // CGNAT min: 100.64.0.0 -> allowed
+        let res_min = call_ai_completion(CallAiCompletionOptions {
+            base_url: "http://100.64.0.0:20128/v1".to_string(),
+            api_key: None,
+            model: "m".into(),
+            messages: vec![],
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: Some(1),
+        })
+        .await;
+        if let Err(err) = res_min {
+            assert!(!err.contains("Kết nối HTTP không mã hóa"));
+        }
+
+        // CGNAT max: 100.127.255.255 -> allowed
+        let res_max = call_ai_completion(CallAiCompletionOptions {
+            base_url: "http://100.127.255.255:20128/v1".to_string(),
+            api_key: None,
+            model: "m".into(),
+            messages: vec![],
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: Some(1),
+        })
+        .await;
+        if let Err(err) = res_max {
+            assert!(!err.contains("Kết nối HTTP không mã hóa"));
+        }
+
+        // Just outside CGNAT lower: 100.63.255.255 -> rejected
+        let res_below = call_ai_completion(CallAiCompletionOptions {
+            base_url: "http://100.63.255.255:20128/v1".to_string(),
+            api_key: None,
+            model: "m".into(),
+            messages: vec![],
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: Some(1),
+        })
+        .await;
+        assert!(res_below.unwrap_err().contains("Kết nối HTTP không mã hóa"));
+
+        // Just outside CGNAT upper: 100.128.0.0 -> rejected
+        let res_above = call_ai_completion(CallAiCompletionOptions {
+            base_url: "http://100.128.0.0:20128/v1".to_string(),
+            api_key: None,
+            model: "m".into(),
+            messages: vec![],
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: Some(1),
+        })
+        .await;
+        assert!(res_above.unwrap_err().contains("Kết nối HTTP không mã hóa"));
+
+        // Userinfo trick: http://100.118.3.52@evil.com/v1 -> host is evil.com -> rejected
+        let res_userinfo = call_ai_completion(CallAiCompletionOptions {
+            base_url: "http://100.118.3.52@evil.com/v1".to_string(),
+            api_key: None,
+            model: "m".into(),
+            messages: vec![],
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: Some(1),
+        })
+        .await;
+        assert!(res_userinfo
+            .unwrap_err()
+            .contains("Kết nối HTTP không mã hóa"));
     }
 
     #[tokio::test]

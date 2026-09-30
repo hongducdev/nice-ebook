@@ -14,11 +14,13 @@ import {
   Search,
   UserCheck,
   X,
-  Loader2
+  Loader2,
+  Languages
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../../stores/useAppStore";
 import { generateEpubCss, injectCssIntoHtml } from "../../utils/cssGenerator";
+import { combinePreviewCss } from "../../utils/bookStyleAnalyzer";
 
 const CodeMirrorCss = lazy(() =>
   import("./CodeMirrorCss").then((m) => ({ default: m.CodeMirrorCss }))
@@ -41,7 +43,11 @@ export function EpubReaderViewer() {
     textAlign,
     sceneDivider,
     customCss,
+    bookStyleSignature,
+    bookStyleCss,
     modifiedChapters,
+    translatedChapters,
+    translationConfig,
     xrayData,
     runXRayExtraction,
     isAnalyzingXRay,
@@ -172,7 +178,15 @@ export function EpubReaderViewer() {
     customOverrides: customCss,
     isVietnamese: isVietnameseBook,
     fontFamily,
+    signature: bookStyleSignature,
   });
+
+  // Ở chế độ "theo sách hiện tại", iframe phải thấy CSS gốc trước rồi mới tới lớp
+  // phủ thích ứng — đúng thứ tự cascade của file EPUB đã xuất.
+  const previewCss = useMemo(
+    () => combinePreviewCss(bookStyleCss, fullCss),
+    [bookStyleCss, fullCss]
+  );
 
   // Inject CSS directly into iframe without reloading the iframe (instant Hot Reload)
   useEffect(() => {
@@ -186,8 +200,8 @@ export function EpubReaderViewer() {
       styleEl.id = "nice-ebook-dynamic-css";
       doc.head.appendChild(styleEl);
     }
-    styleEl.textContent = fullCss;
-  }, [fullCss, chapterHtml, mode]);
+    styleEl.textContent = previewCss;
+  }, [previewCss, chapterHtml, mode]);
 
   // Write content to iframe whenever chapterHtml changes
   useEffect(() => {
@@ -195,7 +209,7 @@ export function EpubReaderViewer() {
     const doc = iframeRef.current.contentDocument;
     if (!doc) return;
 
-    const fullDoc = injectCssIntoHtml(chapterHtml, fullCss);
+    const fullDoc = injectCssIntoHtml(chapterHtml, previewCss);
     doc.open();
     doc.write(fullDoc);
     doc.close();
@@ -436,6 +450,16 @@ export function EpubReaderViewer() {
             <span className="app-badge app-badge--success text-[10px] h-[18px] flex items-center gap-1" title="Chương này đã được biên tập và chuẩn hóa bằng AI">
               <Check size={10} />
               <span>Đã Biên Tập AI</span>
+            </span>
+          )}
+
+          {activeChapter && translatedChapters[activeChapter.href] && (
+            <span
+              className="app-badge app-badge--brand text-[10px] h-[18px] flex items-center gap-1"
+              title={`Chương này đã được dịch sang ${translationConfig.targetLang}`}
+            >
+              <Languages size={10} />
+              <span>Bản Dịch AI</span>
             </span>
           )}
         </div>

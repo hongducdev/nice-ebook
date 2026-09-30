@@ -17,10 +17,14 @@ import {
   Languages
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
+import { workflowLabel } from "../../utils/bookTypeDetector";
 import { detectBookWatermarks } from "../../utils/watermarkCleaner";
 import { open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import { MetadataModal } from "../metadata/MetadataModal";
+import { notifyIngestRoute } from "../workflow/ingestRouteToast";
+import { WorkflowBanner } from "../workflow/WorkflowBanner";
+import { BookPipelineStepper } from "../workflow/BookPipelineStepper";
 
 function formatLastOpened(timestamp: number): string {
   const diffSec = Math.floor((Date.now() - timestamp) / 1000);
@@ -61,6 +65,7 @@ export function BookView() {
     closeActiveProject,
     modifiedChapters,
     cleanWatermarksInBook,
+    bookProfile,
   } = useAppStore();
 
   const [isCleaningWatermarks, setIsCleaningWatermarks] = useState(false);
@@ -125,6 +130,7 @@ export function BookView() {
           const ok = await loadBookFromPath(selected);
           if (ok) {
             toast.success("Đã nạp sách thành công!", { id: "load-epub" });
+            notifyIngestRoute();
           } else {
             toast.error("Không thể đọc file EPUB này", { id: "load-epub" });
           }
@@ -157,6 +163,7 @@ export function BookView() {
       const ok = await loadBookFromBytes(bytes);
       if (ok) {
         toast.success(`Đã nạp sách "${file.name}" thành công!`, { id: "load-bytes" });
+        notifyIngestRoute();
       } else {
         toast.error("Không thể giải nén file EPUB này", { id: "load-bytes" });
       }
@@ -187,6 +194,7 @@ export function BookView() {
         const ok = await loadBookFromBytes(bytes);
         if (ok) {
           toast.success(`Đã nạp sách "${file.name}" thành công!`, { id: "load-bytes" });
+          notifyIngestRoute();
         } else {
           toast.error("Không thể giải nén file EPUB này", { id: "load-bytes" });
         }
@@ -403,6 +411,9 @@ export function BookView() {
         </div>
       )}
 
+      <WorkflowBanner />
+      <BookPipelineStepper />
+
       {/* Top 4 Stat Cards in LinguaGacha Grid */}
       <section className="workbench-page__stats-grid">
         <div className="card-surface workbench-page__stat-card">
@@ -420,10 +431,17 @@ export function BookView() {
           <p className="workbench-page__stat-card-value">
             {currentBook ? formatFileSize(currentBook.file_size_bytes) : "—"}
           </p>
-          <span className="workbench-page__stat-card-unit">
-            {currentBook 
-              ? isVietnameseBook 
-                ? "Ngôn ngữ: VI (🇻🇳 Font dấu chuẩn)" 
+          <span
+            className="workbench-page__stat-card-unit truncate"
+            title={bookProfile ? bookProfile.reasons.join("\n") : undefined}
+          >
+            {currentBook
+              ? bookProfile
+                ? `${bookProfile.languageFlag} ${bookProfile.languageCode.toUpperCase()} · ${workflowLabel(
+                    bookProfile
+                  )} · ${Math.round(bookProfile.languageConfidence * 100)}%`
+                : isVietnameseBook
+                ? "Ngôn ngữ: VI (🇻🇳 Font dấu chuẩn)"
                 : `Ngôn ngữ: ${currentBook.language.toUpperCase()}`
               : "định dạng EPUB"}
           </span>

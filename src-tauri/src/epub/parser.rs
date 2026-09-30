@@ -3,7 +3,7 @@ use quick_xml::reader::Reader;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Seek};
 use std::path::Path;
 use zip::ZipArchive;
 
@@ -14,6 +14,22 @@ pub struct ChapterItem {
     pub title: String,
     pub preview_text: String,
 }
+
+/// One stylesheet extracted verbatim from the EPUB archive.
+///
+/// Used by the "theo sách hiện tại" styling mode: the frontend derives the
+/// book's own typography/palette from these files instead of replacing them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StylesheetEntry {
+    pub href: String,
+    pub content: String,
+}
+
+/// Per-file cap. A stylesheet larger than this is a font/marketing blob, not
+/// typography we can learn from, and the frontend would choke on it.
+const MAX_STYLESHEET_BYTES: u64 = 512 * 1024;
+/// How many stylesheets we are willing to ship to the frontend.
+const MAX_STYLESHEETS: usize = 40;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EpubMetadata {
@@ -77,6 +93,64 @@ impl EpubParser {
             .read_to_string(&mut content)
             .map_err(|e| format!("Failed to read chapter content: {}", e))?;
         Ok(content)
+    }
+
+    /// Reads every `.css` entry of the archive, in zip order (which is also the
+    /// order the OPF declared them, for the vast majority of EPUBs).
+    pub fn read_stylesheets<P: AsRef<Path>>(file_path: P) -> Result<Vec<StylesheetEntry>, String> {
+        let file =
+            File::open(file_path.as_ref()).map_err(|e| format!("Cannot open file: {}", e))?;
+        let mut archive =
+            ZipArchive::new(file).map_err(|e| format!("Not a valid EPUB ZIP: {}", e))?;
+        Self::collect_stylesheets(&mut archive)
+    }
+
+    pub fn read_stylesheets_bytes(bytes: &[u8]) -> Result<Vec<StylesheetEntry>, String> {
+        let cursor = Cursor::new(bytes);
+        let mut archive =
+            ZipArchive::new(cursor).map_err(|e| format!("Not a valid EPUB ZIP: {}", e))?;
+        Self::collect_stylesheets(&mut archive)
+    }
+
+    fn collect_stylesheets<R: Read + Seek>(
+        archive: &mut ZipArchive<R>,
+    ) -> Result<Vec<StylesheetEntry>, String> {
+        let mut entries = Vec::new();
+
+        for i in 0..archive.len() {
+            if entries.len() >= MAX_STYLESHEETS {
+                break;
+            }
+
+            let mut file = archive
+                .by_index(i)
+                .map_err(|e| format!("Read zip error: {}", e))?;
+
+            if file.is_dir() {
+                continue;
+            }
+
+            let name = file.name().to_string();
+            if !name.to_ascii_lowercase().ends_with(".css") {
+                continue;
+            }
+            if file.size() > MAX_STYLESHEET_BYTES {
+                continue;
+            }
+
+            let mut content = String::new();
+            if file.read_to_string(&mut content).is_err() {
+                // Non-UTF8 stylesheets are rare and unreadable for our purposes.
+                continue;
+            }
+
+            entries.push(StylesheetEntry {
+                href: name,
+                content,
+            });
+        }
+
+        Ok(entries)
     }
 
     fn parse_archive<R: Read + std::io::Seek>(
@@ -468,5 +542,52 @@ mod tests {
         let bad_bytes = vec![0, 1, 2, 3, 4];
         let res = EpubParser::parse_bytes(&bad_bytes);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_read_stylesheets_bytes_finds_css_only() {
+        let mut buffer = Cursor::new(Vec::new());
+        {
+            let mut writer = ZipWriter::new(&mut buffer);
+            let def_opts =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+
+            writer.start_file("OEBPS/styles/book.css", def_opts).unwrap();
+            writer
+                .write_all(b"body { font-family: Lora, serif; color: #222; }")
+                .unwrap();
+
+            writer.start_file("OEBPS/styles/print.css", def_opts).unwrap();
+            writer.write_all(b"p { text-indent: 2em; }").unwrap();
+
+            // Non-CSS entries must be ignored.
+            writer.start_file("OEBPS/ch1.xhtml", def_opts).unwrap();
+            writer.write_all(b"<html><body><p>hi</p></body></html>").unwrap();
+
+            writer.finish().unwrap();
+        }
+
+        let bytes = buffer.into_inner();
+        let sheets = EpubParser::read_stylesheets_bytes(&bytes).expect("stylesheets read");
+        assert_eq!(sheets.len(), 2);
+        assert_eq!(sheets[0].href, "OEBPS/styles/book.css");
+        assert!(sheets[0].content.contains("font-family: Lora"));
+        assert!(sheets[1].content.contains("text-indent: 2em"));
+    }
+
+    #[test]
+    fn test_read_stylesheets_bytes_on_zip_without_css() {
+        let mut buffer = Cursor::new(Vec::new());
+        {
+            let mut writer = ZipWriter::new(&mut buffer);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            writer.start_file("mimetype", opts).unwrap();
+            writer.write_all(b"application/epub+zip").unwrap();
+            writer.finish().unwrap();
+        }
+
+        let bytes = buffer.into_inner();
+        let sheets = EpubParser::read_stylesheets_bytes(&bytes).expect("stylesheets read");
+        assert!(sheets.is_empty());
     }
 }

@@ -2,6 +2,14 @@ use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfiguredProviderInfo {
+    pub provider: String,
+    pub name: String,
+    pub is_active: bool,
+    pub test_status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetectedGateway {
     pub name: String,
     pub base_url: String,
@@ -10,6 +18,36 @@ pub struct DetectedGateway {
     pub models: Vec<String>,
     pub gateway_type: String,
     pub latency_ms: u64,
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub configured_providers: Vec<ConfiguredProviderInfo>,
+}
+
+#[derive(Deserialize)]
+struct ApiKeysResponse {
+    keys: Option<Vec<RawApiKeyItem>>,
+}
+
+#[derive(Deserialize)]
+struct RawApiKeyItem {
+    key: String,
+    #[serde(rename = "isActive", default)]
+    is_active: bool,
+}
+
+#[derive(Deserialize)]
+struct ProvidersApiResponse {
+    connections: Option<Vec<RawConnectionItem>>,
+}
+
+#[derive(Deserialize)]
+struct RawConnectionItem {
+    provider: Option<String>,
+    name: Option<String>,
+    #[serde(rename = "isActive", default)]
+    is_active: bool,
+    #[serde(rename = "testStatus")]
+    test_status: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -39,7 +77,13 @@ impl GatewayScanner {
         let targets = vec![
             (
                 20128,
-                "9Router (Chính)",
+                "9Router Server",
+                "9router",
+                "http://100.118.3.52:20128/v1",
+            ),
+            (
+                20128,
+                "9Router Local",
                 "9router",
                 "http://127.0.0.1:20128/v1",
             ),
@@ -72,7 +116,7 @@ impl GatewayScanner {
         ];
 
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_millis(350))
+            .timeout(Duration::from_millis(2500))
             .build()
             .unwrap_or_default();
 
@@ -147,6 +191,13 @@ impl GatewayScanner {
                         models,
                         gateway_type: "opencode".to_string(),
                         latency_ms: latency,
+                        api_key: None,
+                        configured_providers: vec![ConfiguredProviderInfo {
+                            provider: "opencode".to_string(),
+                            name: "OpenCode Free".to_string(),
+                            is_active: true,
+                            test_status: Some("active".to_string()),
+                        }],
                     });
                 }
             }
@@ -184,6 +235,80 @@ impl GatewayScanner {
                         models,
                         gateway_type: gw_type.to_string(),
                         latency_ms: latency,
+                        api_key: None,
+                        configured_providers: vec![ConfiguredProviderInfo {
+                            provider: "ollama".to_string(),
+                            name: "Ollama Local".to_string(),
+                            is_active: true,
+                            test_status: Some("active".to_string()),
+                        }],
+                    });
+                }
+            }
+        } else if gw_type == "9router" {
+            let check_url = format!("{}/models", base_url);
+
+            // Compute root URL from base_url (e.g. "http://100.118.3.52:20128/v1" -> "http://100.118.3.52:20128")
+            let root_url = base_url.trim_end_matches('/').trim_end_matches("/v1");
+
+            // Best-effort: query 9router API key
+            let keys_url = format!("{}/api/keys", root_url);
+            let mut api_key: Option<String> = None;
+            if let Ok(resp) = client.get(&keys_url).send().await {
+                if let Ok(parsed) = resp.json::<ApiKeysResponse>().await {
+                    if let Some(keys) = parsed.keys {
+                        api_key = keys.into_iter().find(|k| k.is_active).map(|k| k.key);
+                    }
+                }
+            }
+
+            // Best-effort: query configured active providers from 9router
+            let providers_url = format!("{}/api/providers", root_url);
+            let mut configured_providers = Vec::new();
+            if let Ok(resp) = client.get(&providers_url).send().await {
+                if let Ok(parsed) = resp.json::<ProvidersApiResponse>().await {
+                    if let Some(conns) = parsed.connections {
+                        for c in conns {
+                            if c.is_active {
+                                if let Some(provider) = c.provider {
+                                    configured_providers.push(ConfiguredProviderInfo {
+                                        provider,
+                                        name: c.name.unwrap_or_default(),
+                                        is_active: c.is_active,
+                                        test_status: c.test_status,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Query /v1/models with optional auth header (critical for remote 9router access!)
+            let mut req = client.get(&check_url);
+            if let Some(ref key) = api_key {
+                req = req.header("Authorization", format!("Bearer {}", key));
+            }
+
+            if let Ok(resp) = req.send().await {
+                if resp.status().is_success() {
+                    let latency = start.elapsed().as_millis() as u64;
+                    let mut models = Vec::new();
+                    if let Ok(parsed) = resp.json::<OpenAiModelsResponse>().await {
+                        if let Some(list) = parsed.data {
+                            models = list.into_iter().map(|m| m.id).collect();
+                        }
+                    }
+                    return Some(DetectedGateway {
+                        name: name.to_string(),
+                        base_url: base_url.to_string(),
+                        port,
+                        is_online: true,
+                        models,
+                        gateway_type: gw_type.to_string(),
+                        latency_ms: latency,
+                        api_key,
+                        configured_providers,
                     });
                 }
             }
@@ -206,6 +331,8 @@ impl GatewayScanner {
                         models,
                         gateway_type: gw_type.to_string(),
                         latency_ms: latency,
+                        api_key: None,
+                        configured_providers: Vec::new(),
                     });
                 }
             }

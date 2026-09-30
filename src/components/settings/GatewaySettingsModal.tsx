@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { X, CheckCircle2, AlertCircle, Zap, Shield, Cpu } from "lucide-react";
-import { useAppStore } from "../../stores/useAppStore";
+import { ConfiguredProviderInfo, useAppStore } from "../../stores/useAppStore";
 import { toast } from "sonner";
 
 export function GatewaySettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { activeGateway, selectedModel, setSelectedModel, selectGateway } = useAppStore();
 
-  const [baseUrl, setBaseUrl] = useState(activeGateway?.base_url || "http://127.0.0.1:20128/v1");
-  const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState(activeGateway?.base_url || "http://100.118.3.52:20128/v1");
+  const [apiKey, setApiKey] = useState(activeGateway?.api_key || "");
   const [customModel, setCustomModel] = useState(selectedModel || "claude-3-5-sonnet");
   const [isTesting, setIsTesting] = useState(false);
   const [testStatus, setTestStatus] = useState<"none" | "success" | "error">("none");
@@ -21,12 +21,30 @@ export function GatewaySettingsModal({ isOpen, onClose }: { isOpen: boolean; onC
 
     let url = baseUrl.trim();
     if (url.endsWith("/")) url = url.slice(0, -1);
+    const rootUrl = url.replace(/\/v1\/?$/, "");
     const testUrl = `${url}/models`;
 
     try {
+      let effectiveKey = apiKey.trim();
+      if (!effectiveKey) {
+        try {
+          const keyRes = await fetch(`${rootUrl}/api/keys`);
+          if (keyRes.ok) {
+            const keyData = await keyRes.json();
+            const activeKey = keyData.keys?.find((k: { isActive: boolean; key: string }) => k.isActive)?.key;
+            if (activeKey) {
+              effectiveKey = activeKey;
+              setApiKey(activeKey);
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       const headers: Record<string, string> = {};
-      if (apiKey.trim()) {
-        headers["Authorization"] = `Bearer ${apiKey.trim()}`;
+      if (effectiveKey) {
+        headers["Authorization"] = `Bearer ${effectiveKey}`;
       }
 
       const res = await fetch(testUrl, { headers });
@@ -37,19 +55,43 @@ export function GatewaySettingsModal({ isOpen, onClose }: { isOpen: boolean; onC
       const data = await res.json();
       const modelsList = data.data ? data.data.map((m: { id: string }) => m.id) : [];
 
+      let configuredProviders: ConfiguredProviderInfo[] = [];
+      try {
+        const provRes = await fetch(`${rootUrl}/api/providers`);
+        if (provRes.ok) {
+          const provData = await provRes.json();
+          if (provData.connections) {
+            configuredProviders = provData.connections.flatMap((c: { provider: string; name?: string; isActive: boolean; testStatus?: string }) =>
+              c.isActive
+                ? [{
+                    provider: c.provider,
+                    name: c.name || "",
+                    is_active: c.isActive,
+                    test_status: c.testStatus,
+                  }]
+                : []
+            );
+          }
+        }
+      } catch {
+        // ignore
+      }
+
       setTestStatus("success");
       setTestMessage(`Kết nối thành công! Tìm thấy ${modelsList.length} models.`);
       toast.success("Kết nối Gateway thành công!");
 
       // Update store active gateway
       selectGateway({
-        name: "Custom Gateway",
+        name: url.includes("100.118.3.52") ? "9Router Server" : "Custom Gateway",
         base_url: url,
         port: 0,
         is_online: true,
         models: modelsList,
-        gateway_type: "custom",
+        gateway_type: "9router",
         latency_ms: 15,
+        api_key: effectiveKey || undefined,
+        configured_providers: configuredProviders,
       });
 
       if (modelsList.length > 0) {
@@ -70,13 +112,14 @@ export function GatewaySettingsModal({ isOpen, onClose }: { isOpen: boolean; onC
     if (url.endsWith("/")) url = url.slice(0, -1);
 
     selectGateway({
-      name: "Custom Gateway",
+      name: url.includes("100.118.3.52") ? "9Router Server" : "Custom Gateway",
       base_url: url,
       port: 0,
       is_online: true,
       models: customModel ? [customModel] : [],
-      gateway_type: "custom",
+      gateway_type: "9router",
       latency_ms: 10,
+      api_key: apiKey.trim() ? apiKey.trim() : undefined,
     });
     setSelectedModel(customModel);
     toast.success("Đã lưu cấu hình AI Gateway");
@@ -111,11 +154,11 @@ export function GatewaySettingsModal({ isOpen, onClose }: { isOpen: boolean; onC
               type="text"
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="http://127.0.0.1:20128/v1 hoặc https://openrouter.ai/api/v1"
+              placeholder="http://100.118.3.52:20128/v1 hoặc http://127.0.0.1:20128/v1"
               className="w-full bg-[#1c1c22] border border-[#2e2e38] rounded-xl px-3.5 py-2 text-xs text-zinc-200 font-mono focus:outline-none focus:border-indigo-500"
             />
             <span className="text-[10px] text-[#71717a] mt-1 block">
-              Mặc định 9Router là <code className="text-indigo-400">http://127.0.0.1:20128/v1</code>, Cockpit là <code className="text-indigo-400">http://127.0.0.1:5000/v1</code>
+              Mặc định 9Router Server là <code className="text-indigo-400">http://100.118.3.52:20128/v1</code>, Local là <code className="text-indigo-400">http://127.0.0.1:20128/v1</code>
             </span>
           </div>
 

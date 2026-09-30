@@ -22,6 +22,15 @@ import {
   Trash2
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
+import type { EpubMetadata } from "../../stores/useAppStore";
+import {
+  type IngestKind,
+  buildWorkflowSteps,
+  detectBookProfile,
+  isTranslationWorkflow,
+  suggestOcrLanguage,
+  workflowLabel,
+} from "../../utils/bookTypeDetector";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
@@ -49,10 +58,10 @@ import { ChapterTransformer, ChapterEnhancePlan } from "../../utils/chapterTrans
 import { createNewEpub } from "../../services/converter/epubBuilder";
 import { ProgressModal, ProgressStage, ProgressStepItem } from "./ProgressModal";
 import { MetadataModal } from "../metadata/MetadataModal";
+import { notifyIngestRoute } from "../workflow/ingestRouteToast";
 
 export function ConverterView() {
   const { 
-    setActiveTab, 
     loadBookFromBytes, 
     pendingConverterFile, 
     setPendingConverterFile,
@@ -86,6 +95,61 @@ export function ConverterView() {
   const [isEnhancingJev, setIsEnhancingJev] = useState(false);
 
   const activeJev = extractedPdfData?.jevDecision || pdfSummary?.jevDecision;
+
+  /**
+   * File-scoped classification of the file being converted.
+   *
+   * Deliberately separate from `bookProfile` in the store: `bookProfile`
+   * describes the book currently open in the Studio, while this describes the
+   * file on the converter's workbench (usually a different file).
+   */
+  const sourceProfile = useMemo(() => {
+    if (!loadedFileName || (!extractedPdfData && !pdfSummary)) return null;
+    const isScanned =
+      (extractedPdfData?.scanInfo.isScanned ?? pdfSummary?.scanInfo.isScanned) === true;
+
+    const meta: EpubMetadata = {
+      title: extractedPdfData?.title || pdfSummary?.title || bookTitle || loadedFileName,
+      author: extractedPdfData?.author || pdfSummary?.author || bookAuthor || "",
+      language: extractedPdfData?.language || pdfSummary?.language || "",
+      description: null,
+      cover_data_url: null,
+      chapter_count: extractedPdfData?.chapters.length ?? 0,
+      file_size_bytes: fileSizeBytes,
+      chapters: [],
+      sample_text: extractedPdfData?.sampleText || "",
+    };
+
+    const kind: IngestKind =
+      fileType === "pdf" ? "pdf-digital" : fileType === "md" ? "md" : "txt";
+
+    return detectBookProfile(meta, { kind, isScannedPdf: isScanned });
+  }, [
+    loadedFileName,
+    extractedPdfData,
+    pdfSummary,
+    fileSizeBytes,
+    fileType,
+    bookTitle,
+    bookAuthor,
+  ]);
+
+  const sourceNeedsTranslation = isTranslationWorkflow(sourceProfile?.workflow);
+  const sourceSteps = useMemo(
+    () => buildWorkflowSteps(sourceProfile).map((step) => step.label),
+    [sourceProfile]
+  );
+
+  // Suggest the Tesseract language pack from the detected source language.
+  // Applied once per loaded file so a later manual choice is never overridden.
+  const ocrLanguageAppliedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sourceProfile || !loadedFileName) return;
+    if (ocrLanguageAppliedFor.current === loadedFileName) return;
+    ocrLanguageAppliedFor.current = loadedFileName;
+    if (sourceProfile.detectionSource === "unknown") return;
+    setOcrLanguage(suggestOcrLanguage(sourceProfile.languageCode));
+  }, [sourceProfile, loadedFileName]);
 
   // Global Progress Popup Modal State
   const [modalProgress, setModalProgress] = useState<{
@@ -863,7 +927,10 @@ export function ConverterView() {
 
       if (ok) {
         toast.success(`Đã nạp sách "${bookTitle}" vào Studio thành công!`);
-        setActiveTab("books");
+        // `loadBookFromBytes` already classified the produced EPUB and routed the
+        // user (foreign-language output leaves for the Translator). Do not force
+        // a tab here — surface the decision instead.
+        notifyIngestRoute();
       } else {
         toast.error("Không thể mở sách vừa tạo");
       }
@@ -1634,6 +1701,26 @@ export function ConverterView() {
         {/* ================= STEP 3: PREVIEW & GENERATE EPUB ================= */}
         {activeStep === "export" && (
           <div className="flex flex-col gap-6 animate-in fade-in duration-200">
+            {/* File-scoped detection: what this source file needs next */}
+            {sourceProfile && (
+              <div className="ingest-detect-strip" role="status" aria-live="polite">
+                <span className="ingest-detect-strip__label">Nhận diện nguồn:</span>
+                <span className="workflow-banner__chip workflow-banner__chip--lang">
+                  <span aria-hidden="true">{sourceProfile.languageFlag}</span>
+                  <span>{sourceProfile.languageName}</span>
+                  <span className="workflow-banner__chip-meta">
+                    {Math.round(sourceProfile.languageConfidence * 100)}%
+                  </span>
+                </span>
+                <span className="workflow-banner__chip workflow-banner__chip--workflow">
+                  {workflowLabel(sourceProfile)}
+                </span>
+                <span className="ingest-detect-strip__steps">
+                  {sourceSteps.join(" → ")}
+                </span>
+              </div>
+            )}
+
             {/* Summary Banner */}
             <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -1661,7 +1748,11 @@ export function ConverterView() {
                   className="app-button app-button--primary flex-1 md:flex-initial text-xs shadow-md"
                 >
                   <Sparkles size={14} />
-                  <span>Nạp Vào Studio Làm Đẹp</span>
+                  <span>
+                    {sourceNeedsTranslation
+                      ? "Nạp Vào Studio & Dịch Thuật"
+                      : "Nạp Vào Studio Làm Đẹp"}
+                  </span>
                 </button>
 
                 <button

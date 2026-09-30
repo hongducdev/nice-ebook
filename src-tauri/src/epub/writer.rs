@@ -1412,6 +1412,133 @@ mod tests {
     }
 
     #[test]
+    fn test_repackage_preserves_publisher_css_and_appends_override_last() {
+        // Hợp đồng của chế độ "theo sách hiện tại": CSS gốc của nhà xuất bản phải
+        // còn nguyên trong file xuất, và lớp phủ của app chỉ được CHÈN SAU để thắng
+        // theo cascade — không được xoá/thay thế CSS gốc.
+        const PUBLISHER_CSS: &str = "body { font-family: 'Lora', serif; color: #2b2b2b; }";
+        const OVERRIDE_CSS: &str = "p { text-indent: 1.5em; }";
+
+        let mut in_buffer = Cursor::new(Vec::new());
+        {
+            let mut writer = ZipWriter::new(&mut in_buffer);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            writer.start_file("mimetype", opts).unwrap();
+            writer.write_all(b"application/epub+zip").unwrap();
+
+            let def_opts =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            writer
+                .start_file("META-INF/container.xml", def_opts)
+                .unwrap();
+            writer
+                .write_all(
+                    br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#,
+                )
+                .unwrap();
+
+            writer.start_file("OEBPS/content.opf", def_opts).unwrap();
+            writer
+                .write_all(
+                    br#"<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <manifest>
+    <item id="pub-css" href="styles/publisher.css" media-type="text/css"/>
+    <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="ch1"/>
+  </spine>
+</package>"#,
+                )
+                .unwrap();
+
+            writer
+                .start_file("OEBPS/styles/publisher.css", def_opts)
+                .unwrap();
+            writer.write_all(PUBLISHER_CSS.as_bytes()).unwrap();
+
+            writer.start_file("OEBPS/ch1.xhtml", def_opts).unwrap();
+            writer
+                .write_all(
+                    r#"<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>Chương 1</title><link rel="stylesheet" type="text/css" href="styles/publisher.css" /></head>
+<body><h1>Chương 1</h1><p>Nội dung</p></body>
+</html>"#
+                        .as_bytes(),
+                )
+                .unwrap();
+
+            writer.finish().unwrap();
+        }
+
+        in_buffer.set_position(0);
+        let mut archive = ZipArchive::new(in_buffer).unwrap();
+        let mut out_buffer = Cursor::new(Vec::new());
+        EpubWriter::repackage_archive(
+            &mut archive,
+            &mut out_buffer,
+            OVERRIDE_CSS,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        out_buffer.set_position(0);
+        let mut result_archive = ZipArchive::new(out_buffer).unwrap();
+
+        // 1. CSS gốc vẫn còn nguyên nội dung
+        let mut publisher_css = result_archive
+            .by_name("OEBPS/styles/publisher.css")
+            .expect("publisher stylesheet must be preserved");
+        let mut read_publisher = String::new();
+        publisher_css.read_to_string(&mut read_publisher).unwrap();
+        assert_eq!(read_publisher, PUBLISHER_CSS);
+        drop(publisher_css);
+
+        // 2. Lớp phủ của app cũng có mặt
+        let mut override_css = result_archive
+            .by_name("OEBPS/nice-ebook-style.css")
+            .expect("override stylesheet must be written");
+        let mut read_override = String::new();
+        override_css.read_to_string(&mut read_override).unwrap();
+        assert_eq!(read_override, OVERRIDE_CSS);
+        drop(override_css);
+
+        // 3. Trong chương, link gốc đứng TRƯỚC link của app (thứ tự cascade)
+        let mut ch_entry = result_archive.by_name("OEBPS/ch1.xhtml").unwrap();
+        let mut read_ch = String::new();
+        ch_entry.read_to_string(&mut read_ch).unwrap();
+
+        let publisher_link_pos = read_ch
+            .find("href=\"styles/publisher.css\"")
+            .expect("original publisher link must survive");
+        let override_link_pos = read_ch
+            .find("href=\"nice-ebook-style.css\"")
+            .expect("override link must be injected");
+        assert!(
+            publisher_link_pos < override_link_pos,
+            "override link must come after the publisher link so it wins the cascade"
+        );
+        drop(ch_entry);
+
+        // 4. OPF khai báo cả hai stylesheet
+        let mut opf_entry = result_archive.by_name("OEBPS/content.opf").unwrap();
+        let mut read_opf = String::new();
+        opf_entry.read_to_string(&mut read_opf).unwrap();
+        assert!(read_opf.contains(r#"href="styles/publisher.css""#));
+        assert!(
+            read_opf.contains(r#"<item id="nice-ebook-custom-style" href="nice-ebook-style.css""#)
+        );
+    }
+
+    #[test]
     fn test_chapter_overrides_repackaging() {
         let mut in_buffer = Cursor::new(Vec::new());
         {

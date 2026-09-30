@@ -13,73 +13,10 @@ import { useAppStore } from "../../stores/useAppStore";
 import { GatewaySettingsModal } from "../settings/GatewaySettingsModal";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-
-interface ModelCategory {
-  id: string;
-  name: string;
-  description: string;
-  accent: string;
-  models: string[];
-}
-
-const DEFAULT_PROVIDER_CATALOG: Record<string, { name: string; description: string; accent: string; defaults: string[] }> = {
-  opencode: {
-    name: "OpenCode Free",
-    description: "Các mô hình AI miễn phí 100% không cần API key từ OpenCode CLI",
-    accent: "#ec4899",
-    defaults: [
-      "opencode/mimo-v2.6-flash-free",
-      "opencode/ling-3.0-flash-fin-free",
-      "opencode/nemotron-3.5-lightning-free",
-      "opencode/nemotron-3-ultra-free",
-      "opencode/muse-spark-1.3-contributor-free",
-      "opencode/muse-spark-1.2-contributor-free",
-      "opencode/big-pickle",
-    ],
-  },
-  openai: {
-    name: "OpenAI / ChatGPT",
-    description: "Mô hình GPT-4o, o1, o3-mini hàng đầu từ OpenAI",
-    accent: "#10a37f",
-    defaults: ["gpt-4o", "gpt-4o-mini", "o1-mini", "o1-preview", "gpt-4-turbo"],
-  },
-  anthropic: {
-    name: "Anthropic Claude",
-    description: "Dòng mô hình văn phong tự nhiên Claude 3.5 Sonnet & Haiku",
-    accent: "#d97757",
-    defaults: ["claude-3-5-sonnet", "claude-3-5-haiku", "claude-3-opus"],
-  },
-  google: {
-    name: "Google Gemini",
-    description: "Mô hình thế hệ mới tốc độ cao và ngữ cảnh cực lớn từ Google",
-    accent: "#1a73e8",
-    defaults: ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
-  },
-  deepseek: {
-    name: "DeepSeek",
-    description: "Mô hình suy luận mở DeepSeek V3 và R1 Reasoning",
-    accent: "#4d6bfe",
-    defaults: ["deepseek-chat", "deepseek-reasoner"],
-  },
-  llama: {
-    name: "Meta Llama",
-    description: "Dòng mã nguồn mở Llama 3.3, 3.1 triển khai cục bộ hoặc qua proxy",
-    accent: "#0081fb",
-    defaults: ["llama-3.3-70b", "llama-3.1-8b"],
-  },
-  qwen: {
-    name: "Qwen / Alibaba",
-    description: "Dòng mô hình đa ngôn ngữ Qwen 2.5 và QwQ Reasoning",
-    accent: "#615ced",
-    defaults: ["qwen-2.5-72b", "qwen-2.5-coder", "qwq-32b"],
-  },
-  other: {
-    name: "Mô hình khác / Local",
-    description: "Mô hình cục bộ phát hiện từ Ollama hoặc LM Studio",
-    accent: "#7a8491",
-    defaults: ["mistral-7b", "gemma-2-9b", "phi-3"],
-  },
-};
+import { 
+  categorizeGatewayModels, 
+  ModelCategory 
+} from "../../utils/gatewayModelCategorizer";
 
 export function GatewayView() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -176,67 +113,11 @@ export function GatewayView() {
     }
   }
 
-  // Group models from active gateway (or defaults) into clear provider categories
-  const categorizedModels = useMemo<ModelCategory[]>(() => {
-    const rawModels: string[] = 
-      activeGateway && activeGateway.models.length > 0 
-        ? activeGateway.models 
-        : Object.values(DEFAULT_PROVIDER_CATALOG).flatMap((c) => c.defaults);
-
-    const filtered = searchQuery.trim() 
-      ? rawModels.filter((m) => m.toLowerCase().includes(searchQuery.toLowerCase()))
-      : rawModels;
-
-    const buckets: Record<string, string[]> = {
-      opencode: [],
-      openai: [],
-      anthropic: [],
-      google: [],
-      deepseek: [],
-      llama: [],
-      qwen: [],
-      other: [],
-    };
-
-    for (const m of filtered) {
-      const lower = m.toLowerCase();
-      if (
-        lower.startsWith("opencode/") || 
-        lower.includes("opencode") || 
-        lower.includes("mimo") || 
-        lower.includes("nemotron") || 
-        lower.includes("muse-spark") || 
-        lower.includes("big-pickle") || 
-        lower.includes("ling-3.0")
-      ) {
-        buckets.opencode.push(m);
-      } else if (lower.includes("gpt") || lower.startsWith("o1") || lower.startsWith("o3") || lower.includes("chatgpt")) {
-        buckets.openai.push(m);
-      } else if (lower.includes("claude")) {
-        buckets.anthropic.push(m);
-      } else if (lower.includes("gemini") || lower.includes("gemma")) {
-        buckets.google.push(m);
-      } else if (lower.includes("deepseek")) {
-        buckets.deepseek.push(m);
-      } else if (lower.includes("qwen") || lower.includes("qwq")) {
-        buckets.qwen.push(m);
-      } else if (lower.includes("llama")) {
-        buckets.llama.push(m);
-      } else {
-        buckets.other.push(m);
-      }
-    }
-
-    return Object.entries(buckets)
-      .filter(([, list]) => list.length > 0)
-      .map(([id, list]) => ({
-        id,
-        name: DEFAULT_PROVIDER_CATALOG[id]?.name || id,
-        description: DEFAULT_PROVIDER_CATALOG[id]?.description || "",
-        accent: DEFAULT_PROVIDER_CATALOG[id]?.accent || "var(--primary)",
-        models: list,
-      }));
-  }, [activeGateway, searchQuery]);
+  // Group models strictly by the providers that are actually configured / active
+  const categorizedModels = useMemo<ModelCategory[]>(
+    () => categorizeGatewayModels(activeGateway, searchQuery),
+    [activeGateway, searchQuery]
+  );
 
   return (
     <div className="flex-1 flex flex-col p-4 overflow-y-auto select-none max-w-5xl mx-auto w-full gap-4">
@@ -452,122 +333,166 @@ export function GatewayView() {
       </div>
 
       {/* Provider Category Cards */}
-      <div className="model-page flex-shrink-0">
-        {categorizedModels.map((category) => (
-          <div key={category.id} className="card-surface model-page__category-card">
-            {/* Category Header */}
-            <div className="model-page__category-header">
-              <div className="model-page__category-main">
-                <div
-                  className="model-page__category-accent"
-                  style={{ backgroundColor: category.accent }}
-                  aria-hidden="true"
-                />
-                <div className="model-page__category-copy">
-                  <div className="flex items-center gap-2">
-                    <h4 className="model-page__category-title">{category.name}</h4>
-                    <span className="app-badge app-badge--neutral text-[10px] h-[18px]">
-                      {category.models.length}
-                    </span>
+      {categorizedModels.length > 0 ? (
+        <div className="model-page flex-shrink-0">
+          {categorizedModels.map((category) => (
+            <div key={category.id} className="card-surface model-page__category-card">
+              {/* Category Header */}
+              <div className="model-page__category-header">
+                <div className="model-page__category-main">
+                  <div
+                    className="model-page__category-accent"
+                    style={{ backgroundColor: category.accent }}
+                    aria-hidden="true"
+                  />
+                  <div className="model-page__category-copy">
+                    <div className="flex items-center gap-2">
+                      <h4 className="model-page__category-title">{category.name}</h4>
+                      {category.accountBadge && (
+                        <span className="app-badge app-badge--brand text-[9px] h-[18px]">
+                          {category.accountBadge}
+                        </span>
+                      )}
+                      <span className="app-badge app-badge--neutral text-[10px] h-[18px]">
+                        {category.models.length} mô hình
+                      </span>
+                    </div>
+                    <p className="model-page__category-description">{category.description}</p>
                   </div>
-                  <p className="model-page__category-description">{category.description}</p>
                 </div>
+
+                {/* Quick test the first model of this provider */}
+                {category.models.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleTestModel(category.models[0])}
+                    disabled={Boolean(testingModels[category.models[0]])}
+                    className="lg-button lg-button--secondary h-6 text-xs px-2 gap-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                    title={`Kiểm tra kết nối mô hình đầu tiên (${category.models[0]})`}
+                  >
+                    <Activity size={12} className={testingModels[category.models[0]] ? "animate-spin text-[var(--primary)]" : ""} />
+                    <span>Test nhanh</span>
+                  </button>
+                )}
               </div>
 
-              {/* Quick test the first model of this provider */}
-              {category.models.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => handleTestModel(category.models[0])}
-                  disabled={Boolean(testingModels[category.models[0]])}
-                  className="lg-button lg-button--secondary h-6 text-xs px-2 gap-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                  title={`Kiểm tra kết nối mô hình đầu tiên (${category.models[0]})`}
-                >
-                  <Activity size={12} className={testingModels[category.models[0]] ? "animate-spin text-[var(--primary)]" : ""} />
-                  <span>Test nhanh</span>
-                </button>
-              )}
-            </div>
+              {/* Models Flow List (Scrollable, max 180px so it NEVER breaks the page layout) */}
+              <div className="model-page__flow-list">
+                {category.models.map((model) => {
+                  const isSelected = selectedModel === model;
+                  const isTesting = Boolean(testingModels[model]);
+                  const testResult = modelTestResults[model];
+                  const isFallback = fallbackModels.includes(model);
 
-            {/* Models Flow List (Scrollable, max 180px so it NEVER breaks the page layout) */}
-            <div className="model-page__flow-list">
-              {category.models.map((model) => {
-                const isSelected = selectedModel === model;
-                const isTesting = Boolean(testingModels[model]);
-                const testResult = modelTestResults[model];
-                const isFallback = fallbackModels.includes(model);
+                  return (
+                    <div
+                      key={model}
+                      onClick={() => {
+                        setSelectedModel(model);
+                        toast.success(`Đã kích hoạt mô hình: ${model}`);
+                      }}
+                      data-selected={isSelected ? "true" : undefined}
+                      className="model-page__item-chip group"
+                      title={`Chọn mô hình ${model}${testResult ? ` • ${testResult.message}` : ""}`}
+                    >
+                      <span>{model}</span>
 
-                return (
-                  <div
-                    key={model}
-                    onClick={() => {
-                      setSelectedModel(model);
-                      toast.success(`Đã kích hoạt mô hình: ${model}`);
-                    }}
-                    data-selected={isSelected ? "true" : undefined}
-                    className="model-page__item-chip group"
-                    title={`Chọn mô hình ${model}${testResult ? ` • ${testResult.message}` : ""}`}
-                  >
-                    <span>{model}</span>
+                      {/* Test result status badge */}
+                      {testResult && (
+                        <span 
+                          className={`text-[9px] font-mono px-1 rounded ${
+                            testResult.success 
+                              ? "bg-emerald-500/20 text-emerald-400" 
+                              : "bg-red-500/20 text-red-400"
+                          }`}
+                          title={testResult.message}
+                        >
+                          {testResult.success ? `${testResult.latencyMs}ms` : "Lỗi"}
+                        </span>
+                      )}
 
-                    {/* Test result status badge */}
-                    {testResult && (
-                      <span 
-                        className={`text-[9px] font-mono px-1 rounded ${
-                          testResult.success 
-                            ? "bg-emerald-500/20 text-emerald-400" 
-                            : "bg-red-500/20 text-red-400"
-                        }`}
-                        title={testResult.message}
-                      >
-                        {testResult.success ? `${testResult.latencyMs}ms` : "Lỗi"}
-                      </span>
-                    )}
+                      {/* Fallback badge */}
+                      {isFallback && (
+                        <span className="app-badge app-badge--brand text-[8px] h-[16px] px-1 font-mono">
+                          Fallback
+                        </span>
+                      )}
 
-                    {/* Fallback badge */}
-                    {isFallback && (
-                      <span className="app-badge app-badge--brand text-[8px] h-[16px] px-1 font-mono">
-                        Fallback
-                      </span>
-                    )}
+                      {/* Action buttons inside Chip */}
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => handleSetAsFallback(model, e)}
+                          className="model-page__item-chip-test-btn"
+                          title={isFallback ? "Bỏ khỏi chuỗi fallback" : "Kiểm tra lỗi & đặt làm fallback"}
+                          aria-label={`Toggle fallback ${model}`}
+                        >
+                          <ShieldCheck size={11} className={isFallback ? "text-emerald-400" : "opacity-40 group-hover:opacity-100"} />
+                        </button>
 
-                    {/* Action buttons inside Chip */}
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={(e) => handleSetAsFallback(model, e)}
-                        className="model-page__item-chip-test-btn"
-                        title={isFallback ? "Bỏ khỏi chuỗi fallback" : "Kiểm tra lỗi & đặt làm fallback"}
-                        aria-label={`Toggle fallback ${model}`}
-                      >
-                        <ShieldCheck size={11} className={isFallback ? "text-emerald-400" : "opacity-40 group-hover:opacity-100"} />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleTestModel(model);
-                        }}
-                        disabled={isTesting}
-                        className="model-page__item-chip-test-btn"
-                        title="Kiểm tra kết nối và độ trễ của mô hình này"
-                        aria-label={`Test ${model}`}
-                      >
-                        {isTesting ? (
-                          <Activity size={11} className="animate-spin text-[var(--primary)]" />
-                        ) : (
-                          <Play size={10} className="opacity-70 group-hover:opacity-100" />
-                        )}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleTestModel(model);
+                          }}
+                          disabled={isTesting}
+                          className="model-page__item-chip-test-btn"
+                          title="Kiểm tra kết nối và độ trễ của mô hình này"
+                          aria-label={`Test ${model}`}
+                        >
+                          {isTesting ? (
+                            <Activity size={11} className="animate-spin text-[var(--primary)]" />
+                          ) : (
+                            <Play size={10} className="opacity-70 group-hover:opacity-100" />
+                          )}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
+          ))}
+        </div>
+      ) : (
+        <div className="card-surface p-8 text-center flex flex-col items-center justify-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-[var(--primary)]/10 text-[var(--primary)] flex items-center justify-center">
+            <Boxes size={24} />
           </div>
-        ))}
-      </div>
+          <div>
+            <h4 className="text-sm font-semibold text-[var(--foreground)]">
+              {activeGateway
+                ? `Chưa phát hiện mô hình hoặc Provider nào trong ${activeGateway.name}`
+                : "Chưa kích hoạt AI Gateway"}
+            </h4>
+            <p className="text-xs text-[var(--muted-foreground)] mt-1 max-w-md mx-auto leading-relaxed">
+              {activeGateway?.gateway_type === "9router"
+                ? "Chỉ các nhà cung cấp (Antigravity, Codex, Cline, Qoder...) đã được thiết lập và kết nối trong 9Router mới hiển thị tại đây. Vui lòng mở 9Router để cấu hình provider của bạn."
+                : "Vui lòng chọn hoặc quét lại Gateway ở danh sách trên để tải các mô hình của nhà cung cấp đã thiết lập."}
+            </p>
+          </div>
+          {activeGateway?.gateway_type === "9router" && (
+            <div className="flex items-center gap-2 mt-2">
+              <a
+                href={`${activeGateway.base_url.replace(/\/v1\/?$/, "")}/dashboard`}
+                target="_blank"
+                rel="noreferrer"
+                className="lg-button lg-button--secondary h-7 text-xs px-3"
+              >
+                Mở 9Router Dashboard
+              </a>
+              <button
+                type="button"
+                onClick={() => scanGateways()}
+                className="lg-button lg-button--primary h-7 text-xs px-3"
+              >
+                Quét lại Gateway
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <GatewaySettingsModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>

@@ -79,6 +79,29 @@
   - Vietnamese diacritic repair and OCR speckle cleaning.
 - 1-click Studio Integration: converts and directly loads new EPUB into NiceEbook Studio reader & Jev styling.
 
+### E. Ingest Workflow Router (Per-Book-Type Pipeline)
+- Single classification point for every ingested book: `src/utils/bookTypeDetector.ts` (pure, no I/O).
+- Inputs are observations only — origin kind (`epub` | `pdf-digital` | `pdf-scanned` | `txt` | `md`),
+  language from `LanguageDetector`, and watermark detection.
+- Output is `BookProfile` = observations + exactly one derived `BookWorkflow` enum:
+  `polish` | `translate` | `ocr` | `ocr-translate` | `convert` | `convert-translate`.
+- Workflow **steps** are never stored; `buildWorkflowSteps(profile)` derives them, so the plan cannot
+  drift from the profile. Watermark removal is a *step* (`cleanup`), not a workflow, so a scanned,
+  watermarked, foreign PDF has one unambiguous pipeline.
+- Language authority: `LanguageDetector` is canonical. Watermark tokens (pirate-site domains and
+  Vietnamese promo phrases) are stripped from the detection sample first, because a single
+  `Nguồn: truyenfull.vn` footer would otherwise flag a whole Chinese book as Vietnamese and skip
+  translation. `detectIsVietnameseBook()` remains only as a fallback when no evidence exists.
+- Routing gates, in order: auto-switch requested -> manual choice locked -> user preference off ->
+  confidence below threshold -> native Vietnamese -> switch tab. A foreign EPUB opens Dịch thuật AI,
+  a scanned PDF opens the converter; `openProject` never hijacks the tab.
+- Progress is tracked by *completed step ids* (not an index, which cannot represent branchy pipelines)
+  plus `translatedChapters: Record<href, timestamp>` so translation counters are O(1) and never read
+  chapter content. Both persist on `EbookProject` as optional fields (old projects need no migration).
+- UI surfaces: `WorkflowBanner` + `BookPipelineStepper` (pure `*View` components, store-wired
+  wrappers), dynamic sidebar badges, a compact status-bar chip, and a file-scoped detection strip in
+  the converter (deliberately separate from the book-scoped banner).
+
 ## 5. Style Preset Catalog
 1. **Wuxia / Xianxia (Tiên Hiệp - Cổ Phong):** Parchment tones, seal marks, classical header motifs.
 2. **Light Novel / Anime Vibe:** Clean sans-serif, relaxed line-height (1.75), distinctive dialogue blocks.

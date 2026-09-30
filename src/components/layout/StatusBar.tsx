@@ -1,8 +1,26 @@
-import { Cpu, Activity, Sparkles, Layers, Zap } from "lucide-react";
+import { Cpu, Activity, Sparkles, Layers, Zap, Route } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
+import {
+  WORKFLOW_TAB,
+  buildWorkflowSteps,
+  currentStepIndex,
+  workflowLabel,
+} from "../../utils/bookTypeDetector";
 
 export function StatusBar() {
-  const { activeGateway, jevDecision, activePreset } = useAppStore();
+  const {
+    activeGateway,
+    jevDecision,
+    activePreset,
+    bookProfile,
+    workflowCompletedSteps,
+    setActiveTab,
+  } = useAppStore();
+
+  const planSteps = buildWorkflowSteps(bookProfile);
+  const planIndex = currentStepIndex(planSteps, workflowCompletedSteps);
+  // A single chip fits the 28px bar far better than a full stepper would.
+  const planCounter = planSteps.length > 0 ? `${Math.min(planIndex + 1, planSteps.length)}/${planSteps.length}` : "";
 
   return (
     <footer className="h-7 border-t border-[var(--sidebar-border)] px-3 flex items-center justify-between bg-[var(--ui-titlebar-surface)] text-[11px] text-[var(--muted-foreground)] select-none flex-shrink-0 z-20">
@@ -50,6 +68,26 @@ export function StatusBar() {
             <span>{activePreset.name}</span>
           </span>
         </div>
+
+        {bookProfile && planSteps.length > 0 && (
+          <>
+            <span className="text-[var(--border)]">|</span>
+            <button
+              type="button"
+              onClick={() => setActiveTab(WORKFLOW_TAB[bookProfile.workflow])}
+              className="flex items-center gap-1.5 hover:text-[var(--foreground)] transition-colors"
+              title={`Quy trình: ${planSteps.map((step) => step.label).join(" → ")}`}
+            >
+              <span className="font-medium text-[var(--foreground)]">Quy trình:</span>
+              <span className="app-badge app-badge--brand h-[18px] text-[10px] px-1.5 font-mono">
+                <Route size={10} />
+                <span>
+                  {workflowLabel(bookProfile)} · {planCounter}
+                </span>
+              </span>
+            </button>
+          </>
+        )}
       </div>
 
       <div className="flex items-center gap-3 font-mono text-[10px] text-[var(--muted-foreground)]">

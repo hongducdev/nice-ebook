@@ -25,9 +25,15 @@ import {
   CheckSquare
 } from "lucide-react";
 import { useAppStore, AutoTranslationConfigResult } from "../../stores/useAppStore";
+import {
+  TranslationLogPanel,
+  filterLogs,
+  type LogFilterKey,
+} from "./TranslationLogPanel";
 import { TONE_DESCRIPTIONS, TranslationTone } from "../../services/prompts/bookTranslator";
 import { generateEpubCss, injectCssIntoHtml } from "../../utils/cssGenerator";
 import { LanguageDetectionResult } from "../../utils/languageDetector";
+import { WorkflowBanner } from "../workflow/WorkflowBanner";
 import { toast } from "sonner";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -73,6 +79,7 @@ export function BookTranslatorView() {
     activePreset,
     customCss,
     fontFamily,
+    bookStyleSignature,
     autoDetectSourceLanguage,
     isExtractingEntities,
     extractedCandidates,
@@ -82,6 +89,9 @@ export function BookTranslatorView() {
     generateBookResearchBrief,
     isAutoConfiguringAll,
     autoConfigureAllTranslationSettings,
+    bookProfile,
+    translatedChapters,
+    getTranslationCoverage,
   } = useAppStore();
 
   const [scope, setScope] = useState<"single" | "unprocessed" | "all">("single");
@@ -92,6 +102,9 @@ export function BookTranslatorView() {
 
   // Auto-detect & Research state
   const [autoConfigResult, setAutoConfigResult] = useState<AutoTranslationConfigResult | null>(null);
+  const [logFilter, setLogFilter] = useState<LogFilterKey>("all");
+  const [logSearch, setLogSearch] = useState("");
+  const [logAutoScroll, setLogAutoScroll] = useState(true);
   const [detectedLangInfo, setDetectedLangInfo] = useState<LanguageDetectionResult | null>(null);
   const [showEntityModal, setShowEntityModal] = useState(false);
   const [selectedEntityNames, setSelectedEntityNames] = useState<Record<string, boolean>>({});
@@ -105,6 +118,13 @@ export function BookTranslatorView() {
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const terminalEndRef = useRef<HTMLDivElement>(null);
+
+  // Detailed log view: filter/search so a long translation run stays readable
+  // instead of one endless wall of text.
+  const filteredLogs = useMemo(
+    () => filterLogs(terminalLogs, logFilter, logSearch),
+    [terminalLogs, logFilter, logSearch]
+  );
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fullCss = useMemo(() => {
@@ -119,6 +139,7 @@ export function BookTranslatorView() {
       customOverrides: customCss,
       isVietnamese: true,
       fontFamily,
+      signature: bookStyleSignature,
     });
     const bilingualRules = `
       .bilingual-original {
@@ -134,7 +155,7 @@ export function BookTranslatorView() {
       }
     `;
     return base + bilingualRules;
-  }, [activePreset, customCss, fontFamily]);
+  }, [activePreset, customCss, fontFamily, bookStyleSignature]);
 
   useEffect(() => {
     if (!iframeRef.current || rightTab !== "preview") return;
@@ -154,13 +175,15 @@ export function BookTranslatorView() {
 
   // Auto-scroll terminal log
   useEffect(() => {
-    if (rightTab === "terminal" && terminalEndRef.current) {
+    if (rightTab === "terminal" && logAutoScroll && terminalEndRef.current) {
       terminalEndRef.current.scrollIntoView({ behavior: "auto" });
     }
-  }, [terminalLogs, rightTab]);
+  }, [terminalLogs, rightTab, logAutoScroll, filteredLogs]);
 
   const activeChapter = currentBook?.chapters[activeChapterIndex];
-  const isCurrentChapterTranslated = Boolean(activeChapter && modifiedChapters[activeChapter.href]);
+  const isCurrentChapterTranslated = Boolean(
+    activeChapter && (modifiedChapters[activeChapter.href] || translatedChapters[activeChapter.href])
+  );
 
   // Load preview HTML whenever activeChapterIndex or modifiedChapters changes
   useEffect(() => {
@@ -210,12 +233,12 @@ export function BookTranslatorView() {
     };
   }, [activeChapterIndex, currentBook, currentFilePath, currentFileBytes, modifiedChapters]);
 
-  // Aggregate statistics
-  const totalChapters = currentBook?.chapter_count || 0;
-  const translatedCount = useMemo(() => {
-    if (!currentBook) return 0;
-    return currentBook.chapters.filter((ch) => Boolean(modifiedChapters[ch.href])).length;
-  }, [currentBook, modifiedChapters]);
+  // Aggregate statistics — single source of truth (see the store's
+  // getTranslationCoverage) so the badge, the stepper and this panel cannot
+  // disagree about what "translated" means.
+  const translationCoverage = getTranslationCoverage();
+  const totalChapters = translationCoverage.total;
+  const translatedCount = translationCoverage.translated;
 
   const unprocessedCount = totalChapters - translatedCount;
 
@@ -253,13 +276,17 @@ export function BookTranslatorView() {
 
   // Handle copy terminal logs
   function handleCopyLogs() {
-    if (terminalLogs.length === 0) return;
-    const text = terminalLogs
-      .map((l) => `[${new Date(l.timestamp).toLocaleTimeString()}] ${l.text}`)
+    if (filteredLogs.length === 0) return;
+    const text = filteredLogs
+      .map((l) => `[${new Date(l.timestamp).toLocaleTimeString()}] [${l.type.toUpperCase()}] ${l.text}`)
       .join("\n");
     navigator.clipboard.writeText(text);
     setCopiedLogs(true);
-    toast.success("Đã sao chép toàn bộ nhật ký log");
+    toast.success(
+      filteredLogs.length === terminalLogs.length
+        ? "Đã sao chép toàn bộ nhật ký log"
+        : `Đã sao chép ${filteredLogs.length}/${terminalLogs.length} dòng log đang hiển thị`
+    );
     copyTimerRef.current = setTimeout(() => setCopiedLogs(false), 2000);
   }
 
@@ -309,8 +336,12 @@ export function BookTranslatorView() {
       if (res.detectedLanguage) {
         setDetectedLangInfo(res.detectedLanguage);
       }
+      // Reveal the two panels the run just filled in, so the result is visible.
+      if (res.properNamesCount + res.termsCount > 0) setShowGlossary(true);
+      if (res.researchBriefGenerated) setShowResearchBrief(true);
+      setRightTab("terminal");
       toast.success(
-        `Đã tự động cấu hình toàn bộ: ${res.detectedLanguage?.languageName || "Ngôn ngữ"} ➔ ${res.toneLabel}!`,
+        `Đã tự động cấu hình: ${res.detectedLanguage?.languageName || "Ngôn ngữ"} ➔ ${res.toneLabel} • ${res.properNamesCount} tên riêng • ${res.termsCount} thuật ngữ!`,
         { id: "auto-config" }
       );
     } else {
@@ -453,10 +484,39 @@ export function BookTranslatorView() {
         </div>
       </header>
 
+      <div className="px-4 pt-3 flex-shrink-0">
+        <WorkflowBanner />
+      </div>
+
       {/* Main Body Split: Left Settings & Controls (360px), Right Preview / Logs (flex-1) */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Control Panel */}
         <div className="w-[360px] flex-shrink-0 border-r border-[var(--border)] bg-[var(--card)]/30 flex flex-col overflow-y-auto p-4 gap-4">
+          {/* Workflow context: what the ingest router detected for this book */}
+          {bookProfile && (
+            <div className="workflow-context">
+              <span aria-hidden="true">{bookProfile.languageFlag}</span>
+              <span>
+                Nhận diện: <strong>{bookProfile.languageName}</strong>
+              </span>
+              <span>·</span>
+              <span>{Math.round(bookProfile.languageConfidence * 100)}% tin cậy</span>
+              <span>·</span>
+              <span>
+                nguồn{" "}
+                <strong>
+                  {bookProfile.detectionSource === "combined"
+                    ? "metadata + văn bản"
+                    : bookProfile.detectionSource === "metadata"
+                    ? "metadata"
+                    : bookProfile.detectionSource === "heuristic"
+                    ? "văn bản"
+                    : "không rõ"}
+                </strong>
+              </span>
+            </div>
+          )}
+
           {/* One-Click Auto-Configure All Settings Button & Banner */}
           <div className="p-3 rounded-xl border border-[var(--primary)]/40 bg-[color-mix(in_srgb,var(--primary)_8%,var(--card))] flex flex-col gap-2 shadow-xs">
             <div className="flex items-center justify-between">
@@ -498,7 +558,13 @@ export function BookTranslatorView() {
                   Ngôn ngữ: <strong>{autoConfigResult.detectedLanguage?.languageName || "Tự động"}</strong> ➔ <strong>{translationConfig.targetLang}</strong>
                 </div>
                 <div className="text-[var(--muted-foreground)] leading-tight">
-                  Thuật ngữ: <strong>{autoConfigResult.entitiesExtractedCount} mục</strong> • Bối cảnh: <strong>{autoConfigResult.researchBriefGenerated ? "Đã lập" : "Bỏ qua"}</strong>
+                  Bộ thuật ngữ &amp; tên riêng: <strong className="text-[var(--primary)]">{autoConfigResult.properNamesCount} tên riêng</strong> + <strong className="text-[var(--primary)]">{autoConfigResult.termsCount} thuật ngữ</strong> = <strong>{Object.keys(translationConfig.glossary || {}).length} mục</strong>
+                </div>
+                <div className="text-[var(--muted-foreground)] leading-tight">
+                  Bộ dịch thuật: <strong className="font-mono text-[var(--foreground)]">{autoConfigResult.activeEngineLabel}</strong>
+                </div>
+                <div className="text-[var(--muted-foreground)] leading-tight">
+                  Bối cảnh: <strong>{autoConfigResult.researchBriefGenerated ? "Đã lập" : "Bỏ qua"}</strong> • Đã quét <strong>{autoConfigResult.entitiesExtractedCount} thực thể</strong>
                 </div>
               </div>
             )}
@@ -873,6 +939,29 @@ export function BookTranslatorView() {
 
           {/* Section 6: Action Execution */}
           <div className="mt-auto pt-4 border-t border-[var(--border)] flex flex-col gap-2.5">
+            {/* Course complete: whole book translated */}
+            {!isTranslating && totalChapters > 0 && translatedCount >= totalChapters && (
+              <div
+                className="p-2.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 flex flex-col gap-2 animate-in fade-in duration-200"
+                role="status"
+              >
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--foreground)]">
+                  <Check size={14} className="text-emerald-500" />
+                  <span>Đã dịch xong toàn bộ {totalChapters} chương</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("reader")}
+                    className="lg-button lg-button--primary flex-1 h-7 text-[11px] gap-1"
+                  >
+                    <BookOpenCheck size={12} />
+                    <span>Đọc bản dịch</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Progress Bar when translating */}
             {isTranslating && translationProgress && (
               <div className="p-2.5 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/5 flex flex-col gap-1.5 animate-in fade-in duration-200">
@@ -1040,36 +1129,17 @@ export function BookTranslatorView() {
                 </div>
               </div>
             ) : (
-              /* Terminal Log Window */
-              <div className="w-full h-full bg-[#0d0d11] p-3 overflow-y-auto font-mono text-[11px] leading-relaxed flex flex-col select-text">
-                {terminalLogs.length === 0 ? (
-                  <div className="flex-1 flex flex-col items-center justify-center text-[#555] gap-2 select-none">
-                    <Terminal size={24} className="opacity-40" />
-                    <span>Nhật ký hoạt động dịch AI sẽ xuất hiện tại đây...</span>
-                  </div>
-                ) : (
-                  <>
-                    {terminalLogs.map((log) => {
-                      const time = new Date(log.timestamp).toLocaleTimeString();
-                      let colorClass = "text-[#aaa]";
-                      if (log.type === "success") colorClass = "text-emerald-400";
-                      if (log.type === "warning") colorClass = "text-amber-400";
-                      if (log.type === "info") colorClass = "text-sky-300";
-                      if (log.type === "detail") colorClass = "text-[#777]";
-
-                      return (
-                        <div key={log.id} className="flex items-start gap-2 py-0.5 border-b border-[#1a1a24]/50">
-                          <span className="text-[#444] select-none shrink-0">[{time}]</span>
-                          <span className={`${colorClass} break-words whitespace-pre-wrap flex-1`}>
-                            {log.text}
-                          </span>
-                        </div>
-                      );
-                    })}
-                    <div ref={terminalEndRef} />
-                  </>
-                )}
-              </div>
+              /* Terminal Log Window — chi tiết hoá nhật ký dịch */
+              <TranslationLogPanel
+                logs={terminalLogs}
+                filter={logFilter}
+                search={logSearch}
+                autoScroll={logAutoScroll}
+                onFilterChange={setLogFilter}
+                onSearchChange={setLogSearch}
+                onToggleAutoScroll={() => setLogAutoScroll((v) => !v)}
+                endRef={terminalEndRef}
+              />
             )}
           </div>
         </div>
