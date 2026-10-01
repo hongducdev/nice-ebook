@@ -102,6 +102,61 @@
   wrappers), dynamic sidebar badges, a compact status-bar chip, and a file-scoped detection strip in
   the converter (deliberately separate from the book-scoped banner).
 
+### F. Chat Agent Tool Dispatch (Guardrailed Mutations)
+- `AgentToolDispatcher` splits tools into `isMutating: false` (executed automatically inside the
+  agent loop) and `isMutating: true` (may only produce an `ActionProposal` that a human must approve).
+  Mutating tools are structurally unreachable from the loop.
+- **A mutating tool must throw when it did not do the work.** Every branch of
+  `executeApprovedAction` verifies its result (boolean / count / non-empty payload) and rejects the
+  proposal with a specific reason otherwise. Returning a success string regardless of outcome was
+  the original "báo thực thi thành công nhưng chưa thực thi" defect: the user was told a save
+  happened when nothing had been written.
+- Model output is normalized, never trusted: parameter aliases (`title`/`book_title`/`ten_sach`,
+  `chapterIndex`/`chapter` 0- or 1-based) are resolved, an **empty string is treated as "not
+  provided"** so a half-filled echo cannot wipe a field, and enum values (`presetId`) are validated
+  against `STYLE_PRESETS` via `hasOwnProperty.call` (a bare `obj[key]` lookup resolves
+  `"constructor"` through the prototype chain).
+- `save_project` owns its own save and reports the *real* outcome; `confirmAgentAction` skips its
+  post-action save for that tool so the EPUB is not re-exported twice. A failed
+  `autoSaveMetadataToFile` produces a warning toast, never a success toast.
+- Long-running tools are **awaited**, not fire-and-forget, so a proposal cannot render as
+  "Đã thực thi" while work is still in flight. `ActionProposalCard` only shows the live state for
+  `status === "pending"` (or `executing`) and correlates a single-chapter job by `chapterIndex`, so
+  historical cards do not flip back to a spinner during an unrelated translation.
+
+### G. Chapter Title Persistence Invariant (easy to regress)
+- A chapter title lives **in the chapter HTML**, not in a dedicated field: `EbookProject` stores only
+  `modifiedChapters: Record<href, html>`, and both `openProject`
+  (`loadChaptersFromDb(id) || project.modifiedChapters`) and `EpubParser::extract_title_from_html`
+  re-derive the title from the chapter markup on every load.
+- Therefore a retitle is persisted **only** by rewriting the heading inside `modifiedChapters[href]`.
+  `updateChapterTitle` / `batchUpdateChapterTitles` read the chapter (via
+  `modifiedChapters[href] ?? readChapter`) and rewrite it, then write it back to the project DB and
+  the EPUB. Mutating only `currentBook.chapters[i].title` is discarded on the next load.
+- Heading precedence must mirror the Rust parser exactly: first **non-empty** of
+  `<h1>` → `<h2>` → `<title>`; when none exists an `<h1>` is inserted so the title becomes
+  discoverable. Never fabricate an override without reading the chapter - `modifiedChapters[href]`
+  is the *whole* chapter document, so a guessed value would delete the chapter body.
+- The rewrite uses `String.replace(regex, fn)` with an ES5-style callback and escapes `& < > "`.
+  A **template-string replacement is a bug**: `String.replace` expands `$&`, `$1`, `` $` `` and `$'`
+  inside a string replacement, which corrupts the output for any title containing `$`, and unescaped
+  markup would inject into the exported EPUB. The escape set matches
+  `EpubParser::strip_html_tags`' un-escape set so titles round-trip unchanged.
+
+### H. Network Security Policy (Rust commands)
+- `call_image_generation_api` (and `call_ai_completion`) allow plaintext HTTP **only** for
+  localhost / RFC1918 / RFC6598-CGNAT (Tailscale) targets; public hosts must use HTTPS.
+- The host test must operate on a **parsed** address or an exact hostname literal. A string-prefix
+  test such as `host.starts_with("127.")` is a security hole: WHATWG only converts a *complete*
+  IPv4 literal into an IP, so `127.0.0.1.attacker.example` stays a **domain**, passes the prefix
+  test, and receives `Authorization: Bearer <key>` in plaintext over HTTP.
+- Link-local (`169.254.0.0/16`, i.e. the cloud metadata range) is deliberately **excluded** from the
+  local allowance, matching `fetch_image_as_data_url` / `fetch_external_json`.
+- HTTPS endpoints additionally get `validate_safe_image_url` + DNS pinning (all resolved addresses
+  checked) to defeat DNS rebinding. Response bodies are read with an explicit byte cap
+  (64 MB here, 8 MB / 2 MB for the image and JSON fetchers) so a hostile endpoint cannot exhaust
+  memory.
+
 ## 5. Style Preset Catalog
 1. **Wuxia / Xianxia (Tiên Hiệp - Cổ Phong):** Parchment tones, seal marks, classical header motifs.
 2. **Light Novel / Anime Vibe:** Clean sans-serif, relaxed line-height (1.75), distinctive dialogue blocks.
