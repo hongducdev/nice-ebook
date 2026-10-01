@@ -57,6 +57,20 @@ export const DEFAULT_WATERMARK_KEYWORDS = [
   "truyencv",
   "vnvoc.com",
   "vforum.vn",
+  "69shu.com",
+  "69shuba.com",
+  "69shu.pro",
+  "69shu.me",
+  "69shu",
+  "biquge.com",
+  "biquge.tv",
+  "xbiquge.com",
+  "biquge",
+  "uukanshu.com",
+  "uukanshu.net",
+  "uukanshu",
+  "qidian.com",
+  "faloo.com",
 ];
 
 const GRAVE_MAP: Record<string, string> = {
@@ -114,6 +128,10 @@ const WATERMARK_PHRASE_REGEXES = [
   /\(?Truyện được chia sẻ tại [^\n<)]+\)?/gi,
   /\(?Chúc (?:các )?bạn đọc truyện vui vẻ\)?/gi,
   /\(?Ủng hộ tác giả bằng cách mua sách gốc\)?/gi,
+  /\b(?:https?:\/\/)?(?:www\.)?69shu\.(?:com|pro|me|net)\S*/gi,
+  /\b(?:https?:\/\/)?(?:www\.)?biquge\.(?:com|tv|net|info)\S*/gi,
+  /\b(?:https?:\/\/)?(?:www\.)?uukanshu\.(?:com|net)\S*/gi,
+  /^[（(【\[]?(?:本章完|全书完|完结)[）)】\]]?$/g,
 ];
 
 /**

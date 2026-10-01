@@ -3,6 +3,8 @@ import {
   buildSystemPrompt,
   buildUserPrompt,
   parseTranslationResponse,
+  cleanTranslatedText,
+  isUntranslatedEcho,
 } from "../prompts/bookTranslator";
 import { TranslationService } from "./translationService";
 
@@ -117,6 +119,61 @@ Hope this helps!`;
 
     const parsed = parseTranslationResponse(raw);
     expect(parsed["p_0"]).toBe("Bản dịch gốc của p_0");
+  });
+
+  it("cleans reasoning tokens, ID prefixes, prompt echoes, and leaked HTML wrappers", () => {
+    const dirty1 = "<think>Tôi đang suy nghĩ cách dịch đoạn này...</think>Đây là nội dung sách sạch sẽ.";
+    expect(cleanTranslatedText(dirty1)).toBe("Đây là nội dung sách sạch sẽ.");
+
+    const dirty2 = "p_0: Lời thoại của nhân vật chính.";
+    expect(cleanTranslatedText(dirty2)).toBe("Lời thoại của nhân vật chính.");
+
+    const dirty3 = "[p_12] - Đoạn văn bản tiếp theo.";
+    expect(cleanTranslatedText(dirty3)).toBe("Đoạn văn bản tiếp theo.");
+
+    const dirty4 = "Bản dịch: Gió bắc rít gào qua khe núi.";
+    expect(cleanTranslatedText(dirty4)).toBe("Gió bắc rít gào qua khe núi.");
+
+    const dirty5 = "<p>Đoạn văn bị bọc thẻ p thừa.</p>";
+    expect(cleanTranslatedText(dirty5)).toBe("Đoạn văn bị bọc thẻ p thừa.");
+
+    const dirty6 = "Hắn bước tới trước cửa phòng.\n\nLưu ý: Từ phòng ở đây chỉ tẩm cung.";
+    expect(cleanTranslatedText(dirty6)).toBe("Hắn bước tới trước cửa phòng.");
+  });
+
+  it("detects untranslated source echoes and Chinese text leakage accurately", () => {
+    // Chinese text remaining when translating to Vietnamese
+    const chineseEcho = isUntranslatedEcho("这正是玄天斩灵剑的威力", "这正是玄天斩灵剑的威力", "zh", "vi");
+    expect(chineseEcho).toBe(true);
+
+    // English verbatim echo
+    const englishEcho = isUntranslatedEcho(
+      "The cold wind was howling across the mountain.",
+      "The cold wind was howling across the mountain.",
+      "en",
+      "vi"
+    );
+    expect(englishEcho).toBe(true);
+
+    // Properly translated Vietnamese
+    const validVietnamese = isUntranslatedEcho(
+      "Gió lạnh rít gào qua đỉnh núi hiểm trở.",
+      "The cold wind was howling across the mountain.",
+      "en",
+      "vi"
+    );
+    expect(validVietnamese).toBe(false);
+  });
+
+  it("handles 1-based index shift when model returns 1..N instead of p_0..p_N-1", () => {
+    const rawOneBased = JSON.stringify([
+      { id: 1, text: "Bản dịch của khối đầu tiên (index 0)" },
+      { id: 2, text: "Bản dịch của khối thứ hai (index 1)" },
+    ]);
+
+    const parsed = parseTranslationResponse(rawOneBased, ["p_0", "p_1"]);
+    expect(parsed["p_0"]).toBe("Bản dịch của khối đầu tiên (index 0)");
+    expect(parsed["p_1"]).toBe("Bản dịch của khối thứ hai (index 1)");
   });
 });
 
@@ -323,5 +380,42 @@ describe("TranslationService", () => {
     expect(result.translatedHtml).toContain("Đoạn số không");
     expect(result.translatedHtml).toContain("Đoạn số một được bù");
     expect(mockInvoke).toHaveBeenCalledTimes(2);
+  });
+
+  it("guarantees 100% block recovery via Chapter-Wide Zero-Gap Pass when chunks leave missing blocks", async () => {
+    const mockInvoke = vi.mocked(invoke);
+    // Primary chunk response omits p_2
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify([
+        { id: "p_0", text: "Đoạn 0 đã dịch." },
+        { id: "p_1", text: "Đoạn 1 đã dịch." },
+        // p_2 omitted
+      ])
+    );
+    // In-chunk recovery call fails/returns empty
+    mockInvoke.mockResolvedValueOnce(JSON.stringify([]));
+    // Chapter-Wide Zero-Gap Pass sweeps p_2 and successfully recovers it
+    mockInvoke.mockResolvedValueOnce(
+      JSON.stringify([{ id: "p_2", text: "Đoạn 2 được quét vét bù thành công ở Zero-Gap Pass." }])
+    );
+
+    const chapterHtml = `<html><body><p>Paragraph 0</p><p>Paragraph 1</p><p>Paragraph 2</p></body></html>`;
+
+    const result = await TranslationService.translateChapter({
+      chapterHtml,
+      chapterTitle: "Chapter Zero Gap",
+      sourceLang: "English",
+      targetLang: "Vietnamese",
+      tone: "literary",
+      mode: "replace",
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-4o",
+    });
+
+    expect(result.totalBlocks).toBe(3);
+    expect(result.translatedBlocksCount).toBe(3);
+    expect(result.translatedHtml).toContain("Đoạn 0 đã dịch.");
+    expect(result.translatedHtml).toContain("Đoạn 1 đã dịch.");
+    expect(result.translatedHtml).toContain("Đoạn 2 được quét vét bù thành công ở Zero-Gap Pass.");
   });
 });

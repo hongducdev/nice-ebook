@@ -33,6 +33,7 @@ import { TONE_DESCRIPTIONS, TranslationTone } from "../../services/prompts/bookT
 import { generateEpubCss, injectCssIntoHtml } from "../../utils/cssGenerator";
 import { LanguageDetectionResult } from "../../utils/languageDetector";
 import { WorkflowBanner } from "../workflow/WorkflowBanner";
+import { AgentModelSelector } from "../agent/AgentModelSelector";
 import { toast } from "sonner";
 import { invoke } from "@tauri-apps/api/core";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
@@ -114,7 +115,6 @@ export function BookTranslatorView() {
     setActiveChapterIndex,
     setActiveTab,
     activeGateway,
-    selectedModel,
     modifiedChapters,
     translationConfig,
     setTranslationConfig,
@@ -125,7 +125,7 @@ export function BookTranslatorView() {
     stopTranslation,
     resetChapterTranslation,
     terminalLogs,
-    clearTerminalLogs,
+    clearTranslationLogs,
     activePreset,
     customCss,
     fontFamily,
@@ -169,11 +169,19 @@ export function BookTranslatorView() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const terminalEndRef = useRef<HTMLDivElement>(null);
 
+  const translationLogs = useMemo(
+    () =>
+      terminalLogs.filter(
+        (l) => l.category === "translation" || (!l.category && !l.text.includes("[Biên tập]") && !l.text.includes("[Tối ưu]"))
+      ),
+    [terminalLogs]
+  );
+
   // Detailed log view: filter/search so a long translation run stays readable
   // instead of one endless wall of text.
   const filteredLogs = useMemo(
-    () => filterLogs(terminalLogs, logFilter, logSearch),
-    [terminalLogs, logFilter, logSearch]
+    () => filterLogs(translationLogs, logFilter, logSearch),
+    [translationLogs, logFilter, logSearch]
   );
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -333,9 +341,9 @@ export function BookTranslatorView() {
     navigator.clipboard.writeText(text);
     setCopiedLogs(true);
     toast.success(
-      filteredLogs.length === terminalLogs.length
-        ? "Đã sao chép toàn bộ nhật ký log"
-        : `Đã sao chép ${filteredLogs.length}/${terminalLogs.length} dòng log đang hiển thị`
+      filteredLogs.length === translationLogs.length
+        ? "Đã sao chép toàn bộ nhật ký dịch"
+        : `Đã sao chép ${filteredLogs.length}/${translationLogs.length} dòng log đang hiển thị`
     );
     copyTimerRef.current = setTimeout(() => setCopiedLogs(false), 2000);
   }
@@ -539,13 +547,9 @@ export function BookTranslatorView() {
             <strong className="text-foreground">{translatedCount}/{totalChapters} ch.</strong>
           </Badge>
 
-          <Badge variant="secondary" className="h-7 gap-1.5 px-2.5 text-[11px] font-normal">
-            <Sparkles className="text-primary" />
-            <span className="text-muted-foreground">Model:</span>
-            <strong className="text-foreground font-mono text-[10px]">
-              {selectedModel || (activeGateway ? activeGateway.models[0] : "Ollama/Local")}
-            </strong>
-          </Badge>
+          <div className="flex items-center gap-1.5">
+            <AgentModelSelector compact={false} className="h-7" />
+          </div>
         </div>
       </header>
 
@@ -637,6 +641,26 @@ export function BookTranslatorView() {
               )}
             </CardContent>
           </Card>
+
+          {/* Section: AI Model & Gateway Selection */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Cổng AI &amp; Mô hình dịch
+              </span>
+              {activeGateway ? (
+                <Badge variant="outline" className="text-[9px] h-4 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 gap-1 font-mono">
+                  <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>{activeGateway.name}</span>
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="text-[9px] h-4">
+                  Lõi Cục Bộ
+                </Badge>
+              )}
+            </div>
+            <AgentModelSelector className="w-full" />
+          </div>
 
           {/* Section 1: Language Pairs */}
           <div className="flex flex-col gap-2">
@@ -1206,9 +1230,9 @@ export function BookTranslatorView() {
               <TabsTrigger value="terminal" className="px-3 text-xs">
                 <Terminal />
                 <span>Nhật Ký Terminal Log</span>
-                {terminalLogs.length > 0 && (
+                {translationLogs.length > 0 && (
                   <Badge variant="secondary" className="bg-primary/10 text-primary text-[9px] px-1 h-3.5 ml-1">
-                    {terminalLogs.length}
+                    {translationLogs.length}
                   </Badge>
                 )}
               </TabsTrigger>
@@ -1231,9 +1255,9 @@ export function BookTranslatorView() {
                   type="button"
                   variant="secondary"
                   size="sm"
-                  onClick={clearTerminalLogs}
-                  className="text-xs text-muted-foreground hover:text-red-400"
-                  title="Xóa nhật ký"
+                  onClick={clearTranslationLogs}
+                  className="text-xs text-muted-foreground hover:text-red-400 cursor-pointer"
+                  title="Xóa nhật ký dịch"
                 >
                   <Trash2 />
                   <span>Xóa</span>
@@ -1283,13 +1307,16 @@ export function BookTranslatorView() {
           {/* Terminal Log Window — chi tiết hoá nhật ký dịch */}
           <TabsContent value="terminal" className="flex-1 overflow-hidden relative">
             <TranslationLogPanel
-              logs={terminalLogs}
+              logs={translationLogs}
               filter={logFilter}
               search={logSearch}
               autoScroll={logAutoScroll}
               onFilterChange={setLogFilter}
               onSearchChange={setLogSearch}
               onToggleAutoScroll={() => setLogAutoScroll((v) => !v)}
+              onClearLogs={clearTranslationLogs}
+              onCopyLogs={handleCopyLogs}
+              isCopied={copiedLogs}
               endRef={terminalEndRef}
             />
           </TabsContent>

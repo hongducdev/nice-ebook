@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import {
   Wand2,
   Play,
@@ -9,7 +9,6 @@ import {
   Heading,
   PenTool,
   Trash2,
-  Copy,
   Sliders,
   Check,
   Cpu,
@@ -29,7 +28,6 @@ import {
   CardTitle,
 } from "../ui/card";
 import { Checkbox } from "../ui/checkbox";
-import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "../ui/empty";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Progress } from "../ui/progress";
@@ -38,6 +36,8 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Separator } from "../ui/separator";
 import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
+import { TranslationLogPanel, LogFilterKey, filterLogs } from "../translation/TranslationLogPanel";
+import { AgentModelSelector } from "../agent/AgentModelSelector";
 import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group";
 import { useAppStore } from "../../stores/useAppStore";
 import { toast } from "sonner";
@@ -62,7 +62,7 @@ const ENGINE_OPTIONS: Array<{ id: AiEngineMode; title: string; description: stri
   {
     id: "gateway",
     title: "🌐 Cloud AI Gateway Thuần",
-    description: "Gửi toàn bộ văn bản chương lên mô hình đám mây (Gemini, Claude, 9router).",
+    description: "Gửi toàn bộ văn bản chương lên mô hình đám mây (DeepSeek, Gemini, Claude).",
   },
 ];
 
@@ -90,7 +90,7 @@ export function ChapterEnhancerView() {
     isBatchEnhancing,
     enhanceProgress,
     terminalLogs,
-    clearTerminalLogs,
+    clearEnhancerLogs,
     resetChapterOverrides,
     enhanceSingleChapter,
     batchEnhanceChapters,
@@ -110,6 +110,9 @@ export function ChapterEnhancerView() {
   const [isProcessingSingle, setIsProcessingSingle] = useState(false);
   const [isCleaningWatermarks, setIsCleaningWatermarks] = useState(false);
   const [customWatermarkInput, setCustomWatermarkInput] = useState("dtv-ebook, dtv-ebook.com");
+  const [logFilter, setLogFilter] = useState<LogFilterKey>("all");
+  const [logSearch, setLogSearch] = useState("");
+  const [logAutoScroll, setLogAutoScroll] = useState(true);
 
   const terminalEndRef = useRef<HTMLDivElement>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -120,12 +123,33 @@ export function ChapterEnhancerView() {
     };
   }, []);
 
+  // Isolated enhancement logs to prevent translation logs leaking into editor
+  const enhancerLogs = useMemo(
+    () =>
+      terminalLogs.filter(
+        (l) =>
+          l.category === "enhancement" ||
+          (!l.category &&
+            (l.text.includes("[Biên tập]") ||
+              l.text.includes("[Tối ưu]") ||
+              l.text.includes("chính tả") ||
+              l.text.includes("H1") ||
+              l.text.includes("H2")))
+      ),
+    [terminalLogs]
+  );
+
+  const filteredEnhancerLogs = useMemo(
+    () => filterLogs(enhancerLogs, logFilter, logSearch),
+    [enhancerLogs, logFilter, logSearch]
+  );
+
   // Auto scroll terminal log to bottom on new lines without animation stutter
   useEffect(() => {
-    if (terminalEndRef.current) {
+    if (logAutoScroll && terminalEndRef.current) {
       terminalEndRef.current.scrollIntoView({ behavior: "auto" });
     }
-  }, [terminalLogs]);
+  }, [enhancerLogs, logAutoScroll]);
 
   // Aggregate statistics across reports
   const reportsList = Object.values(chapterEnhanceReports);
@@ -253,13 +277,19 @@ export function ChapterEnhancerView() {
   }
 
   function handleCopyLogs() {
-    if (terminalLogs.length === 0) return;
-    const text = terminalLogs.map((l) => l.text).join("\n");
+    if (enhancerLogs.length === 0) return;
+    const text = filteredEnhancerLogs
+      .map((l) => `[${new Date(l.timestamp).toLocaleTimeString()}] [${l.type.toUpperCase()}] ${l.text}`)
+      .join("\n");
     navigator.clipboard.writeText(text);
     setCopiedLogs(true);
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     copyTimerRef.current = setTimeout(() => setCopiedLogs(false), 2000);
-    toast.success("Đã sao chép log vào clipboard");
+    toast.success(
+      filteredEnhancerLogs.length === enhancerLogs.length
+        ? "Đã sao chép toàn bộ log biên tập"
+        : `Đã sao chép ${filteredEnhancerLogs.length}/${enhancerLogs.length} dòng log đang hiển thị`
+    );
   }
 
   return (
@@ -287,6 +317,7 @@ export function ChapterEnhancerView() {
 
         {/* Top actions */}
         <div className="flex items-center gap-2">
+          <AgentModelSelector compact className="h-7" />
           {modifiedCount > 0 && (
             <Button
               type="button"
@@ -499,11 +530,11 @@ export function ChapterEnhancerView() {
                   {activeGateway ? activeGateway.name : "9router (Local)"}
                 </span>
               </div>
-              <div className="text-muted-foreground flex items-center justify-between">
-                <span>Mô hình chỉ định:</span>
-                <span className="font-mono text-primary font-semibold truncate max-w-[180px]">
-                  {selectedModel || "gemini-3.6-flash"}
+              <div className="flex flex-col gap-1.5 pt-1 border-t border-border/40">
+                <span className="text-muted-foreground text-[10px] uppercase font-semibold tracking-wider">
+                  Mô hình chỉ định:
                 </span>
+                <AgentModelSelector className="w-full" />
               </div>
             </CardContent>
           </Card>
@@ -845,76 +876,30 @@ export function ChapterEnhancerView() {
                 </CardContent>
               </Card>
             </div>
-
-            <div className="flex items-center gap-1">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={handleCopyLogs}
-                title="Sao chép toàn bộ log"
-              >
-                {copiedLogs ? (
-                  <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" />
-                ) : (
-                  <Copy className="size-3.5" />
-                )}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={clearTerminalLogs}
-                title="Xóa màn hình console"
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
           </div>
 
-          {/* Console Log Area */}
-          <div
-            role="log"
-            aria-label="Nhật ký biên tập AI"
-            className="flex-1 p-4 font-mono text-xs overflow-y-auto flex flex-col gap-1.5 leading-relaxed selection:bg-primary/20"
-          >
-            {terminalLogs.length === 0 ? (
-              <Empty className="flex-1 select-none">
-                <EmptyMedia>
-                  <Wand2 className="size-7 opacity-40 text-muted-foreground" />
-                </EmptyMedia>
-                <EmptyTitle className="text-xs font-normal text-muted-foreground">
-                  Chưa có tiến trình biên tập nào được ghi lại.
-                </EmptyTitle>
-                <EmptyDescription className="text-[11px] opacity-75 max-w-sm">
-                  Chọn các tùy chọn bên trái rồi nhấn{" "}
-                  <span className="text-primary">"Bắt Đầu Xử Lý AI"</span> để chuẩn hóa H1, thêm heading
-                  H2/H3 và sửa lỗi chính tả.
-                </EmptyDescription>
-              </Empty>
-            ) : (
-              terminalLogs.map((log) => {
-                let colorClass = "text-foreground";
-                if (log.type === "warning") colorClass = "text-amber-600 dark:text-amber-400"; // Amber / Yellow
-                else if (log.type === "success") colorClass = "text-emerald-600 dark:text-emerald-400"; // Green
-                else if (log.type === "info") {
-                  if (log.text.includes("⌛")) colorClass = "text-foreground font-semibold";
-                  else if (log.text.includes("📌")) colorClass = "text-sky-600 dark:text-sky-400 font-semibold";
-                  else if (log.text.includes("✍️")) colorClass = "text-amber-500 font-semibold";
-                } else if (log.type === "detail") {
-                  if (log.text.includes("+ [H")) colorClass = "text-sky-600 dark:text-sky-300";
-                  else if (log.text.includes("* [p_")) colorClass = "text-foreground/90";
-                  else colorClass = "text-muted-foreground";
-                }
-
-                return (
-                  <div key={log.id} className={`${colorClass} whitespace-pre-wrap break-all`}>
-                    {log.text}
-                  </div>
-                );
-              })
-            )}
-            <div ref={terminalEndRef} />
+          {/* Console Log Area — Unified with TranslationLogPanel */}
+          <div className="flex-1 overflow-hidden relative flex flex-col">
+            <TranslationLogPanel
+              logs={enhancerLogs}
+              filter={logFilter}
+              search={logSearch}
+              autoScroll={logAutoScroll}
+              onFilterChange={setLogFilter}
+              onSearchChange={setLogSearch}
+              onToggleAutoScroll={() => setLogAutoScroll((v) => !v)}
+              onCopyLogs={handleCopyLogs}
+              onClearLogs={clearEnhancerLogs}
+              isCopied={copiedLogs}
+              emptyPlaceholder={{
+                title: "Chưa có tiến trình biên tập nào được ghi lại.",
+                description:
+                  'Chọn các tùy chọn bên trái rồi nhấn "Bắt Đầu Xử Lý AI" để chuẩn hóa H1, thêm heading H2/H3 và sửa lỗi chính tả.',
+                icon: Wand2,
+              }}
+              ariaLabel="Nhật ký biên tập AI"
+              endRef={terminalEndRef}
+            />
           </div>
         </div>
       </div>

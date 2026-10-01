@@ -4,6 +4,8 @@ import {
   buildSystemPrompt,
   buildUserPrompt,
   parseTranslationResponse,
+  cleanTranslatedText,
+  isUntranslatedEcho,
   TranslationTone,
 } from "../prompts/bookTranslator";
 import { getCircuitBreaker } from "../ai/circuitBreaker";
@@ -89,8 +91,8 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
         return cleanTitle;
       }
 
-      const trimmed = res.replace(/^["'«“]|["'»”]$/g, "").trim();
-      return trimmed || cleanTitle;
+      const cleaned = cleanTranslatedText(res).replace(/^["'«“]|["'»”]$/g, "").trim();
+      return cleaned || cleanTitle;
     } catch (err) {
       console.warn("Could not translate title:", err);
       return cleanTitle;
@@ -121,7 +123,7 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
       fallbackModels = [],
       temperature = 0.3,
       timeoutSecs = 90,
-      maxBlocksPerChunk = 12,
+      maxBlocksPerChunk = 10,
       abortSignal,
       onProgress,
       onLog,
@@ -147,8 +149,8 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
     }
 
     const chunks = ChapterTranslator.chunkBlocks(blocks, {
-      maxBlocks: maxBlocksPerChunk,
-      maxChars: 2200,
+      maxBlocks: Math.min(maxBlocksPerChunk, 10),
+      maxChars: 2000,
     });
 
     onLog?.({
@@ -236,14 +238,30 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
             allTranslations[k] = v;
           }
 
-          // Missing Block Recovery: If model returned a partial chunk (e.g. 10/12 blocks),
+          // Emit detailed logs for each translated block so they appear when "Chi tiết" filter is active
+          for (const b of chunk) {
+            const transText = allTranslations[b.id];
+            if (transText && transText.trim().length > 0) {
+              onLog?.({
+                type: "detail",
+                text: `📝 [${b.id}] ${transText}`,
+              });
+            }
+          }
+
+          // Missing Block Recovery: If model returned a partial chunk or untranslated echoes,
           // automatically attempt a targeted sub-pass for the omitted blocks to prevent
           // residual source language leaking into the chapter.
-          const missingInChunk = chunk.filter((b) => !allTranslations[b.id] || allTranslations[b.id].trim().length === 0);
-          if (missingInChunk.length > 0 && missingInChunk.length < chunk.length && !abortSignal?.aborted) {
+          const missingInChunk = chunk.filter(
+            (b) =>
+              !allTranslations[b.id] ||
+              allTranslations[b.id].trim().length === 0 ||
+              isUntranslatedEcho(allTranslations[b.id], b.originalText, sourceLang, targetLang)
+          );
+          if (missingInChunk.length > 0 && !abortSignal?.aborted) {
             onLog?.({
               type: "detail",
-              text: `ℹ️ [Mẻ ${cIdx + 1}] Phát hiện ${missingInChunk.length}/${chunk.length} đoạn chưa dịch, đang gửi yêu cầu dịch bổ sung...`,
+              text: `ℹ️ [Mẻ ${cIdx + 1}] Phát hiện ${missingInChunk.length}/${chunk.length} đoạn chưa dịch hoặc bị sót, đang gửi yêu cầu dịch bù...`,
             });
             try {
               const recoveryPrompt = buildUserPrompt({
@@ -271,12 +289,16 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
               });
               const parsedRecovery = parseTranslationResponse(rawRecovery, missingInChunk.map((b) => b.id));
               for (const [k, v] of Object.entries(parsedRecovery)) {
-                if (v && v.trim().length > 0) {
+                if (v && v.trim().length > 0 && !isUntranslatedEcho(v, missingInChunk.find((b) => b.id === k)?.originalText || "", sourceLang, targetLang)) {
                   allTranslations[k] = v;
+                  onLog?.({
+                    type: "detail",
+                    text: `🔄 [Bù ${k}] ${v}`,
+                  });
                 }
               }
-            } catch (recoveryErr) {
-              console.warn("Targeted missing blocks recovery pass skipped:", recoveryErr);
+            } catch {
+              // Targeted missing blocks recovery pass skipped
             }
           }
 
@@ -325,6 +347,97 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
       throw new DOMException("Thao tác dịch đã bị hủy bởi người dùng", "AbortError");
     }
 
+    // CHAPTER-WIDE ZERO-GAP VERIFICATION PASS
+    // Sweep entire chapter: detect any block that was omitted, empty, or an untranslated echo
+    const missingBlocks = blocks.filter((b) => {
+      const trans = allTranslations[b.id];
+      if (!trans || trans.trim().length === 0) return true;
+      return isUntranslatedEcho(trans, b.originalText, sourceLang, targetLang);
+    });
+
+    if (missingBlocks.length > 0 && !abortSignal?.aborted) {
+      onLog?.({
+        type: "warning",
+        text: `🔍 [Zero-Gap Pass]: Phát hiện ${missingBlocks.length}/${blocks.length} đoạn văn chưa được dịch. Bắt đầu quét bù triệt để từng đoạn...`,
+      });
+
+      // Split into small micro-chunks of 3 blocks to guarantee high LLM attention & compliance
+      const microChunks = ChapterTranslator.chunkBlocks(missingBlocks, {
+        maxBlocks: 3,
+        maxChars: 1200,
+      });
+
+      const MAX_SWEEP_REQUESTS = 15; // Bounded safety cap to prevent thrashing
+      let sweepRequests = 0;
+
+      for (let sIdx = 0; sIdx < microChunks.length && sweepRequests < MAX_SWEEP_REQUESTS; sIdx++) {
+        if (abortSignal?.aborted) break;
+
+        const subChunk = microChunks[sIdx];
+        sweepRequests++;
+
+        const subPrompt = buildUserPrompt({
+          sourceLangName: sourceLang,
+          targetLangName: targetLang,
+          tone,
+          blocks: subChunk.map((b) => ({ id: b.id, text: b.originalText })),
+          glossary,
+          bookTitle,
+          chapterTitle,
+          researchBrief,
+        });
+
+        for (const candidateModel of candidateModels) {
+          if (abortSignal?.aborted) break;
+
+          const modelBreaker = getCircuitBreaker(`${baseUrl || "gateway"}|${candidateModel}`);
+          if (!modelBreaker.canExecute()) continue;
+
+          try {
+            const rawRecovery = await modelBreaker.execute(async () => {
+              return await invoke<string>("call_ai_completion", {
+                options: {
+                  base_url: baseUrl,
+                  api_key: apiKey,
+                  model: candidateModel,
+                  messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: subPrompt },
+                  ],
+                  temperature,
+                  timeout_secs: Math.min(timeoutSecs, 45),
+                },
+              });
+            });
+
+            const parsed = parseTranslationResponse(rawRecovery, subChunk.map((b) => b.id));
+            let recoveredCount = 0;
+            for (const [k, v] of Object.entries(parsed)) {
+              const origBlock = subChunk.find((b) => b.id === k);
+              if (v && v.trim().length > 0 && !isUntranslatedEcho(v, origBlock?.originalText || "", sourceLang, targetLang)) {
+                allTranslations[k] = v;
+                recoveredCount++;
+                onLog?.({
+                  type: "detail",
+                  text: `🔄 [Zero-Gap ${k}] ${v}`,
+                });
+              }
+            }
+
+            if (recoveredCount > 0) {
+              break; // Micro-chunk recovered successfully
+            }
+          } catch {
+            // Soft failure on micro-chunk, continue to next candidate model or micro-chunk
+          }
+        }
+      }
+    }
+
+    if (abortSignal?.aborted) {
+      throw new DOMException("Thao tác dịch đã bị hủy bởi người dùng", "AbortError");
+    }
+
     // Determine translated chapter title:
     // 1. Look for explicit heading blocks (h1..h6) or title/chapter-classed blocks
     let translatedChapterTitle: string | undefined;
@@ -365,11 +478,14 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
     });
 
     const elapsedMs = Math.round(performance.now() - start);
-    const translatedCount = Object.keys(allTranslations).length;
+    const resolvedBlocksCount = blocks.filter(
+      (b) => Boolean(allTranslations[b.id] && allTranslations[b.id].trim().length > 0)
+    ).length;
+    const completenessPct = Math.round((resolvedBlocksCount / blocks.length) * 100);
 
     onLog?.({
-      type: "success",
-      text: `🎉 Hoàn tất dịch chương "${chapterTitle}" ➔ "${translatedChapterTitle || chapterTitle}" (${translatedCount}/${blocks.length} đoạn, thời gian: ${(
+      type: resolvedBlocksCount === blocks.length ? "success" : "warning",
+      text: `🎉 Hoàn tất dịch chương "${chapterTitle}" ➔ "${translatedChapterTitle || chapterTitle}" (${resolvedBlocksCount}/${blocks.length} đoạn, đạt ${completenessPct}% toàn vẹn nội dung, thời gian: ${(
         elapsedMs / 1000
       ).toFixed(1)}s, chế độ: ${mode === "bilingual" ? "Song ngữ" : "Thay thế"}).`,
     });
@@ -378,7 +494,7 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
       translatedHtml: finalHtml,
       translatedChapterTitle,
       totalBlocks: blocks.length,
-      translatedBlocksCount: translatedCount,
+      translatedBlocksCount: resolvedBlocksCount,
       elapsedMs,
       usedModel: successfulModel,
     };

@@ -259,4 +259,65 @@ describe("ChapterTranslator", () => {
     expect(blocks[0].originalText).toBe("Tiêu Đề Duy Nhất");
     expect(blocks[1].originalText).toBe("Nội Dung Duy Nhất");
   });
+
+  it("extracts table cells (td, th), captions, and preformatted blocks without missing them", () => {
+    const tableHtml = `<html><body>
+      <table>
+        <caption>Bảng thông số nhân vật</caption>
+        <thead>
+          <tr><th>Thuộc tính</th><th>Chỉ số</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Cảnh giới</td><td>Luyện Khí tầng 9</td></tr>
+        </tbody>
+      </table>
+      <pre>Bài thơ cổ phong ngũ ngôn</pre>
+    </body></html>`;
+
+    const blocks = ChapterTranslator.extractTranslatableBlocks(tableHtml);
+    expect(blocks.length).toBe(6);
+    expect(blocks[0].tag).toBe("caption");
+    expect(blocks[0].originalText).toBe("Bảng thông số nhân vật");
+    expect(blocks[1].tag).toBe("th");
+    expect(blocks[1].originalText).toBe("Thuộc tính");
+    expect(blocks[2].tag).toBe("th");
+    expect(blocks[2].originalText).toBe("Chỉ số");
+    expect(blocks[3].tag).toBe("td");
+    expect(blocks[3].originalText).toBe("Cảnh giới");
+    expect(blocks[4].tag).toBe("td");
+    expect(blocks[4].originalText).toBe("Luyện Khí tầng 9");
+    expect(blocks[5].tag).toBe("pre");
+    expect(blocks[5].originalText).toBe("Bài thơ cổ phong ngũ ngôn");
+  });
+
+  it("preserves <br /> line breaks in poetry and verses when translated", () => {
+    const poemHtml = `<html><body>
+      <p class="poem">Dòng thơ đầu tiên<br />Dòng thơ thứ hai<br/>Dòng thơ thứ ba</p>
+    </body></html>`;
+
+    const blocks = ChapterTranslator.extractTranslatableBlocks(poemHtml);
+    expect(blocks.length).toBe(1);
+    expect(blocks[0].originalText).toBe("Dòng thơ đầu tiên\nDòng thơ thứ hai\nDòng thơ thứ ba");
+
+    const translated = ChapterTranslator.applyTranslations(
+      poemHtml,
+      {
+        p_0: "First line of verse\nSecond line of verse\nThird line of verse",
+      },
+      { mode: "replace" }
+    );
+
+    expect(translated).toContain("First line of verse<br />Second line of verse<br />Third line of verse");
+  });
+
+  it("handles table cells cleanly in bilingual mode without breaking table markup", () => {
+    const tableHtml = `<html><body><table><tr><td>Character Realm</td></tr></table></body></html>`;
+    const translated = ChapterTranslator.applyTranslations(
+      tableHtml,
+      { p_0: "Cảnh giới nhân vật" },
+      { mode: "bilingual" }
+    );
+
+    expect(translated).toContain('<td><div class="bilingual-original">Character Realm</div><div class="bilingual-translated" data-bilingual-for="p_0">Cảnh giới nhân vật</div></td>');
+  });
 });

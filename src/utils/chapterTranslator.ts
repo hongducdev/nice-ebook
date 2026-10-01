@@ -41,6 +41,7 @@ export class ChapterTranslator {
    */
   public static stripHtmlToPlainText(html: string): string {
     return html
+      .replace(/<br\s*\/?>/gi, "\n")
       .replace(/<[^>]*>/g, " ")
       .replace(/&nbsp;/gi, " ")
       .replace(/&amp;/gi, "&")
@@ -48,7 +49,8 @@ export class ChapterTranslator {
       .replace(/&gt;/gi, ">")
       .replace(/&quot;/gi, '"')
       .replace(/&#39;/gi, "'")
-      .replace(/\s+/g, " ")
+      .replace(/[ \t]+/g, " ")
+      .replace(/ *\n */g, "\n")
       .trim();
   }
 
@@ -64,8 +66,8 @@ export class ChapterTranslator {
     const searchArea = bodyMatch ? bodyMatch[1] : html;
     const offsetBase = bodyMatch ? bodyMatch.index + bodyMatch[0].indexOf(">") + 1 : 0;
 
-    // 1. Matches standard block elements: <p>, <h1>..<h6>, <blockquote>, <li>, <dt>, <dd>, <figcaption>
-    const standardBlockRegex = /<((?:p|h[1-6]|blockquote|li|dt|dd|figcaption))\b([^>]*)>([\s\S]*?)<\/\1>/gi;
+    // 1. Matches standard block elements: <p>, <h1>..<h6>, <blockquote>, <li>, <dt>, <dd>, <figcaption>, <td>, <th>, <caption>, <pre>
+    const standardBlockRegex = /<((?:p|h[1-6]|blockquote|li|dt|dd|figcaption|td|th|caption|pre))\b([^>]*)>([\s\S]*?)<\/\1>/gi;
     let match: RegExpExecArray | null;
 
     while ((match = standardBlockRegex.exec(searchArea)) !== null) {
@@ -309,35 +311,49 @@ export class ChapterTranslator {
         ? `${translatedText}${missingFootnotes.join("")}`
         : translatedText;
 
+      // Preserve <br /> line breaks if original had <br> and translatedText has \n
+      let formattedTranslatedText = finalTranslatedText;
+      if (/<br\b[^>]*\/?>/i.test(block.originalInnerHtml) && formattedTranslatedText.includes("\n")) {
+        formattedTranslatedText = formattedTranslatedText.replace(/\n+/g, "<br />");
+      }
+
       if (mode === "replace") {
         // Surgically replace only inner content, keeping opening and closing tags + attributes intact
         const prefix = output.slice(0, block.innerStartIndex);
         const suffix = output.slice(block.innerEndIndex);
-        output = prefix + finalTranslatedText + suffix;
+        output = prefix + formattedTranslatedText + suffix;
       } else {
         // Bilingual mode:
-        // 1. Add class 'bilingual-original' to original tag
-        // 2. Insert sibling <p class="bilingual-translated">... right after </tag>
-        const originalOpenTag = `<${block.tag}${block.attributes}>`;
-        let updatedOpenTag = originalOpenTag;
-
-        if (/class=["']([^"']*)["']/i.test(block.attributes)) {
-          updatedOpenTag = originalOpenTag.replace(
-            /class=["']([^"']*)["']/i,
-            'class="$1 bilingual-original"'
-          );
+        if (block.tag === "td" || block.tag === "th") {
+          // Inside table cell: preserve table structure by keeping sibling inside cell
+          const prefix = output.slice(0, block.innerStartIndex);
+          const originalContent = output.slice(block.innerStartIndex, block.innerEndIndex);
+          const suffix = output.slice(block.innerEndIndex);
+          const cellContent = `<div class="bilingual-original">${originalContent}</div><div class="bilingual-translated" data-bilingual-for="${block.id}">${formattedTranslatedText}</div>`;
+          output = prefix + cellContent + suffix;
         } else {
-          updatedOpenTag = `<${block.tag} class="bilingual-original"${block.attributes}>`;
+          // Standard block element: insert sibling paragraph right after </tag>
+          const originalOpenTag = `<${block.tag}${block.attributes}>`;
+          let updatedOpenTag = originalOpenTag;
+
+          if (/class=["']([^"']*)["']/i.test(block.attributes)) {
+            updatedOpenTag = originalOpenTag.replace(
+              /class=["']([^"']*)["']/i,
+              'class="$1 bilingual-original"'
+            );
+          } else {
+            updatedOpenTag = `<${block.tag} class="bilingual-original"${block.attributes}>`;
+          }
+
+          const originalCloseTag = `</${block.tag}>`;
+          const translatedTag = `<p class="bilingual-translated" data-bilingual-for="${block.id}">${formattedTranslatedText}</p>`;
+
+          const prefix = output.slice(0, block.startIndex);
+          const originalContent = output.slice(block.innerStartIndex, block.innerEndIndex);
+          const suffix = output.slice(block.endIndex);
+
+          output = prefix + updatedOpenTag + originalContent + originalCloseTag + "\n" + translatedTag + suffix;
         }
-
-        const originalCloseTag = `</${block.tag}>`;
-        const translatedTag = `<p class="bilingual-translated" data-bilingual-for="${block.id}">${finalTranslatedText}</p>`;
-
-        const prefix = output.slice(0, block.startIndex);
-        const originalContent = output.slice(block.innerStartIndex, block.innerEndIndex);
-        const suffix = output.slice(block.endIndex);
-
-        output = prefix + updatedOpenTag + originalContent + originalCloseTag + "\n" + translatedTag + suffix;
       }
     }
 

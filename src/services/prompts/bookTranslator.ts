@@ -51,9 +51,10 @@ QUY TẮC CỐT LÕI BẮT BUỘC:
 1. Bạn sẽ nhận một mảng JSON các đoạn văn: [{"id": "p_0", "text": "..."}, {"id": "p_1", "text": "..."}].
 2. Bạn PHẢI trả về một mảng JSON có đúng cấu trúc: [{"id": "p_0", "text": "<bản dịch>"}, ...].
 3. DỊCH TRIỆT ĐỂ 100%: Dịch toàn bộ mọi đoạn văn và mọi tiêu đề, tuyệt đối KHÔNG bỏ sót bất kỳ đoạn nào. Không để sót chữ Hán hoặc ngôn ngữ nguồn chưa dịch trong văn bản tiếng Việt.
-4. Giữ NGUYÊN VẸN các mã ID ("id"), KHÔNG ĐƯỢC gộp, tách, xóa bỏ hay tự ý sinh thêm bất kỳ đoạn nào. Số lượng phần tử trả về phải khớp đúng số lượng phần tử đầu vào.
-5. Giữ nguyên các ký tự đặc biệt, dấu ngoặc kép, dấu chấm lửng (...), dấu gạch ngang thoại nếu có trong văn bản gốc.
-6. CHỈ TRẢ VỀ DUY NHẤT MÃ RAW JSON dạng mảng [...]. Tuyệt đối KHÔNG bọc trong \`\`\`json hoặc thêm bất kỳ lời chào/lời dẫn nào.`;
+4. Giữ NGUYÊN VẸN các mã ID ("id"), KHÔNG ĐƯỢC gộp, tách, xóa bỏ hay tự ý sinh thêm bất kỳ đoạn nào. Mỗi đoạn văn có mã 'id' riêng phải có một bản dịch tương ứng. Số lượng phần tử trả về phải khớp đúng số lượng phần tử đầu vào.
+5. Giữ nguyên các ký tự đặc biệt, dấu ngoặc kép, dấu chấm lửng (...), dấu gạch ngang thoại nếu có trong văn bản gốc. Nếu đoạn văn có dấu xuống dòng thơ ca, hãy giữ nguyên vị trí xuống dòng.
+6. DỊCH SẠCH HOÀN TOÀN: Tuyệt đối KHÔNG tự ý thêm lời dẫn (preamble), không thêm chú thích người dịch (translator's note), không thêm lời cảm ơn, không chèn watermark quảng cáo.
+7. CHỈ TRẢ VỀ DUY NHẤT MÃ RAW JSON dạng mảng [...]. Tuyệt đối KHÔNG bọc trong \`\`\`json hoặc thêm bất kỳ lời chào/lời dẫn nào.`;
 }
 
 export function buildUserPrompt(options: BuildTranslationPromptOptions): string {
@@ -93,6 +94,70 @@ export function buildUserPrompt(options: BuildTranslationPromptOptions): string 
 }
 
 /**
+ * Strips AI artifacts, thinking tokens, leaked block IDs, and conversational filler
+ * to ensure pristine, clean translated book text.
+ */
+export function cleanTranslatedText(rawText: string): string {
+  if (!rawText) return "";
+  let text = rawText.trim();
+
+  // 1. Strip <think>...</think> reasoning tags (e.g. DeepSeek R1, Qwen reasoning models)
+  text = text.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, "").trim();
+
+  // 2. Strip leaked outer <p>...</p>, <h1>...</h1>, or <div>...</div> tags inside the JSON string
+  text = text.replace(/^<([a-z0-9]+)\b[^>]*>([\s\S]*?)<\/\1>$/i, "$2").trim();
+
+  // 3. Strip block ID prefixes: "p_0:", "[p_0]", "p0 -", "p_12. ", "(p_3)"
+  text = text.replace(/^(?:\[?p_?\d+\]?|[pP]\d+)\s*[:.\-–—]\s*/, "");
+
+  // 4. Strip prompt echo prefixes: "Bản dịch:", "[Dịch]:", "Dịch nghĩa:", "Translation:"
+  text = text.replace(/^(?:\[?(?:Bản dịch|Dịch nghĩa|Dịch|Translation)\]?\s*[:：\-–—]\s*)/i, "");
+
+  // 5. Strip trailing translator notes at the end of block: "Note: ...", "Lưu ý: ..."
+  text = text.replace(/\n+\s*(?:\[?(?:Lưu ý|Ghi chú|Note|Lời dịch giả)\]?\s*[:：\-–—][\s\S]*)$/i, "");
+
+  return text.trim();
+}
+
+/**
+ * Detects if a translated block is an untranslated echo of the source language.
+ */
+export function isUntranslatedEcho(
+  translatedText: string,
+  originalText: string,
+  sourceLang?: string,
+  targetLang?: string
+): boolean {
+  const trans = translatedText.trim();
+  const orig = originalText.trim();
+  if (!trans) return true;
+  if (orig.length < 5) return false;
+
+  const isTargetVi = !targetLang || targetLang.toLowerCase().includes("vi");
+
+  // 1. Source contains Chinese/Japanese Hanzi, target is Vietnamese
+  const hasChineseSource =
+    Boolean(sourceLang && (sourceLang.toLowerCase().includes("zh") || sourceLang.toLowerCase().includes("trung") || sourceLang.toLowerCase().includes("chinese"))) ||
+    /[\u4e00-\u9fff]/.test(orig);
+
+  if (hasChineseSource && isTargetVi) {
+    const hanziMatches = trans.match(/[\u4e00-\u9fff]/g);
+    const hanziCount = hanziMatches?.length || 0;
+    // If output still contains > 20% Chinese characters, it is an untranslated echo
+    if (hanziCount > 0 && hanziCount / trans.length > 0.2) {
+      return true;
+    }
+  }
+
+  // 2. Exact verbatim echo for Latin source languages (> 15 chars)
+  if (trans.toLowerCase() === orig.toLowerCase() && orig.length > 15) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Normalizes an ID key like "p0", 0, "0", "P_0" to standard "p_0" format.
  */
 export function normalizeBlockId(rawId: unknown): string {
@@ -129,8 +194,10 @@ export function parseTranslationResponse(
     return result;
   }
 
+  // Strip <think>...</think> reasoning tags first
+  let clean = rawOutput.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, "").trim();
+
   // Clean markdown code blocks if the model wrapped output in ```json ... ```
-  let clean = rawOutput.trim();
   if (clean.startsWith("```json")) {
     clean = clean.slice(7);
   } else if (clean.startsWith("```")) {
@@ -156,7 +223,8 @@ export function parseTranslationResponse(
       for (const item of parsed) {
         if (item && typeof item === "object") {
           const rawId = (item as any).id;
-          const text = typeof (item as any).text === "string" ? (item as any).text.trim() : "";
+          const rawVal = typeof (item as any).text === "string" ? (item as any).text : "";
+          const text = cleanTranslatedText(rawVal);
           const normId = normalizeBlockId(rawId);
           // Collision Guard: Do not overwrite an existing ID with a collision
           if (normId && text.length > 0 && !result[normId]) {
@@ -164,6 +232,25 @@ export function parseTranslationResponse(
           }
           if (text.length > 0) {
             itemsWithText.push({ id: normId, text });
+          }
+        }
+      }
+
+      // Check for 1-based index shift:
+      // If expectedBlockIds starts with "p_0", but result has no "p_0" and has "p_{len}",
+      // it means the model output 1-based indices (1..N). Shift them by 1 to match 0-based IDs!
+      if (
+        expectedBlockIds &&
+        expectedBlockIds.length > 0 &&
+        expectedBlockIds[0] === "p_0" &&
+        !result["p_0"] &&
+        Boolean(result[`p_${expectedBlockIds.length}`])
+      ) {
+        for (let i = 0; i < expectedBlockIds.length; i++) {
+          const shiftedKey = `p_${i + 1}`;
+          if (result[shiftedKey]) {
+            result[`p_${i}`] = result[shiftedKey];
+            delete result[shiftedKey];
           }
         }
       }
@@ -200,7 +287,7 @@ export function parseTranslationResponse(
       const rawText = match[3];
       const normId = normalizeBlockId(rawId);
       try {
-        const text = JSON.parse(`"${rawText}"`);
+        const text = cleanTranslatedText(JSON.parse(`"${rawText}"`));
         if (normId && text) {
           if (!result[normId]) {
             result[normId] = text;
@@ -208,11 +295,29 @@ export function parseTranslationResponse(
           itemsWithText.push({ id: normId, text });
         }
       } catch {
-        if (normId && rawText) {
+        const cleanedRaw = cleanTranslatedText(rawText);
+        if (normId && cleanedRaw) {
           if (!result[normId]) {
-            result[normId] = rawText;
+            result[normId] = cleanedRaw;
           }
-          itemsWithText.push({ id: normId, text: rawText });
+          itemsWithText.push({ id: normId, text: cleanedRaw });
+        }
+      }
+    }
+
+    // 1-based index shift check in regex fallback
+    if (
+      expectedBlockIds &&
+      expectedBlockIds.length > 0 &&
+      expectedBlockIds[0] === "p_0" &&
+      !result["p_0"] &&
+      Boolean(result[`p_${expectedBlockIds.length}`])
+    ) {
+      for (let i = 0; i < expectedBlockIds.length; i++) {
+        const shiftedKey = `p_${i + 1}`;
+        if (result[shiftedKey]) {
+          result[`p_${i}`] = result[shiftedKey];
+          delete result[shiftedKey];
         }
       }
     }

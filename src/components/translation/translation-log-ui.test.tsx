@@ -97,4 +97,51 @@ describe("TranslationLogPanel", () => {
     expect(render({ autoScroll: true })).toContain("Tự cuộn");
     expect(render({ autoScroll: false })).toContain("Dừng cuộn");
   });
+
+  it("renders translated block text entries with highlighted block badge in detail mode", () => {
+    const detailLogs: TranslationLogEntry[] = [
+      {
+        id: "d1",
+        timestamp: 1700000005000,
+        type: "detail",
+        text: "📝 [p_0] Tiêu đề chương 1: Cậu bé sống sót",
+      },
+      {
+        id: "d2",
+        timestamp: 1700000006000,
+        type: "detail",
+        text: "🔄 [Bù p_1] Đoạn văn được quét vét thành công.",
+      },
+    ];
+
+    const html = render({ logs: detailLogs, filter: "detail" });
+    expect(html).toContain("p_0");
+    expect(html).toContain("Tiêu đề chương 1: Cậu bé sống sót");
+    expect(html).toContain("Bù p_1");
+    expect(html).toContain("Đoạn văn được quét vét thành công.");
+  });
+
+  it("renders copy and clear buttons when provided", () => {
+    const html = render({
+      onCopyLogs: () => {},
+      onClearLogs: () => {},
+      isCopied: true,
+    });
+
+    expect(html).toContain("Sao chép toàn bộ nhật ký");
+    expect(html).toContain("Xóa toàn bộ dòng nhật ký");
+  });
+
+  it("renders custom emptyPlaceholder when logs are empty", () => {
+    const html = render({
+      logs: [],
+      emptyPlaceholder: {
+        title: "Chưa có tiến trình biên tập nào",
+        description: "Bắt đầu xử lý AI để ghi log",
+      },
+    });
+
+    expect(html).toContain("Chưa có tiến trình biên tập nào");
+    expect(html).toContain("Bắt đầu xử lý AI để ghi log");
+  });
 });

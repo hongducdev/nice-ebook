@@ -1,8 +1,9 @@
-import { Search, Terminal } from "lucide-react";
+import React from "react";
+import { Search, Terminal, Copy, Check, Trash2 } from "lucide-react";
 import type { RefObject } from "react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { Empty, EmptyMedia, EmptyDescription } from "../ui/empty";
+import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "../ui/empty";
 
 /**
  * Shape of one terminal log line. Structurally identical to the store's
@@ -14,6 +15,7 @@ export interface TranslationLogEntry {
   timestamp: number;
   type: "info" | "warning" | "success" | "detail";
   text: string;
+  category?: "translation" | "enhancement" | "system";
 }
 
 export type LogFilterKey = "all" | "info" | "success" | "warning" | "detail";
@@ -24,7 +26,7 @@ export const LOG_FILTERS: Array<{ key: LogFilterKey; label: string; title: strin
   { key: "success", label: "Thành công", title: "Chỉ các bước hoàn tất" },
   { key: "info", label: "Thông tin", title: "Chỉ thông tin tiến trình" },
   { key: "warning", label: "Cảnh báo", title: "Chỉ lỗi / cảnh báo" },
-  { key: "detail", label: "Chi tiết", title: "Log chi tiết từng mẻ dịch, thực thể & tên riêng" },
+  { key: "detail", label: "Chi tiết", title: "Log chi tiết từng mẻ dịch, câu dịch & thực thể" },
 ];
 
 const BADGES: Record<TranslationLogEntry["type"], { badge: string; colorClass: string }> = {
@@ -69,13 +71,23 @@ export interface TranslationLogPanelProps {
   onFilterChange: (filter: LogFilterKey) => void;
   onSearchChange: (search: string) => void;
   onToggleAutoScroll: () => void;
+  onCopyLogs?: () => void;
+  onClearLogs?: () => void;
+  isCopied?: boolean;
+  emptyPlaceholder?: {
+    title?: string;
+    description?: string;
+    icon?: React.ElementType;
+  };
+  ariaLabel?: string;
   endRef?: RefObject<HTMLDivElement | null>;
 }
 
 /**
- * Detailed log viewer for a translation run: per-type filter chips with counts,
- * free-text search, and an auto-scroll toggle. Pure — all state lives with the
- * caller, so it can be rendered to static markup in tests.
+ * Detailed log viewer for a translation or AI enhancer run: per-type filter chips
+ * with counts, free-text search, auto-scroll toggle, copy/clear actions, and structured
+ * translated block inspection. Pure — all state lives with the caller, so it can be
+ * rendered to static markup in tests.
  */
 export function TranslationLogPanel({
   logs,
@@ -85,10 +97,16 @@ export function TranslationLogPanel({
   onFilterChange,
   onSearchChange,
   onToggleAutoScroll,
+  onCopyLogs,
+  onClearLogs,
+  isCopied = false,
+  emptyPlaceholder,
+  ariaLabel = "Nhật ký dịch chi tiết",
   endRef,
 }: TranslationLogPanelProps) {
   const counts = countLogs(logs);
   const visible = filterLogs(logs, filter, search);
+  const EmptyIcon = emptyPlaceholder?.icon || Terminal;
 
   return (
     <div className="w-full h-full flex flex-col bg-background">
@@ -102,7 +120,7 @@ export function TranslationLogPanel({
             onClick={() => onFilterChange(f.key)}
             aria-pressed={filter === f.key}
             title={f.title}
-            className={`shrink-0 h-5 px-2 rounded-full border text-[10px] font-medium ${
+            className={`shrink-0 h-5 px-2 rounded-full border text-[10px] font-medium cursor-pointer ${
               filter === f.key
                 ? "border-primary/50 text-primary bg-primary/10 hover:bg-primary/15"
                 : "border-border text-muted-foreground hover:text-foreground"
@@ -119,7 +137,7 @@ export function TranslationLogPanel({
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="Tìm trong log..."
-              aria-label="Tìm trong nhật ký dịch"
+              aria-label="Tìm kiếm trong nhật ký"
               className="w-28 focus:w-44 transition-all rounded pl-6 pr-2 h-5 text-[10px]"
             />
           </div>
@@ -130,7 +148,7 @@ export function TranslationLogPanel({
             onClick={onToggleAutoScroll}
             aria-pressed={autoScroll}
             title="Tự động cuộn xuống dòng mới nhất"
-            className={`h-5 px-2 rounded border text-[10px] font-medium ${
+            className={`h-5 px-2 rounded border text-[10px] font-medium cursor-pointer ${
               autoScroll
                 ? "border-primary/50 text-primary bg-primary/10 hover:bg-primary/15"
                 : "border-border text-muted-foreground hover:text-foreground"
@@ -138,21 +156,52 @@ export function TranslationLogPanel({
           >
             {autoScroll ? "⌄ Tự cuộn" : "‖ Dừng cuộn"}
           </Button>
+
+          {onCopyLogs && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onCopyLogs}
+              title="Sao chép toàn bộ nhật ký"
+              className="h-5 px-1.5 rounded border border-border text-muted-foreground hover:text-foreground cursor-pointer"
+            >
+              {isCopied ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
+            </Button>
+          )}
+
+          {onClearLogs && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onClearLogs}
+              title="Xóa toàn bộ dòng nhật ký"
+              className="h-5 px-1.5 rounded border border-border text-muted-foreground hover:text-destructive cursor-pointer"
+            >
+              <Trash2 size={11} />
+            </Button>
+          )}
         </div>
       </div>
 
       <div
         role="log"
-        aria-label="Nhật ký dịch chi tiết"
+        aria-label={ariaLabel}
         className="flex-1 overflow-y-auto p-3 font-mono text-[11px] leading-relaxed flex flex-col select-text"
       >
         {logs.length === 0 ? (
           <Empty className="flex-1 gap-2 select-none">
             <EmptyMedia>
-              <Terminal size={24} className="text-muted-foreground opacity-40" />
+              <EmptyIcon size={24} className="text-muted-foreground opacity-40" />
             </EmptyMedia>
+            {emptyPlaceholder?.title && (
+              <EmptyTitle className="text-xs font-normal text-muted-foreground">
+                {emptyPlaceholder.title}
+              </EmptyTitle>
+            )}
             <EmptyDescription className="text-[11px] text-muted-foreground">
-              Nhật ký hoạt động dịch AI sẽ xuất hiện tại đây...
+              {emptyPlaceholder?.description || "Nhật ký hoạt động dịch AI sẽ xuất hiện tại đây..."}
             </EmptyDescription>
           </Empty>
         ) : visible.length === 0 ? (
@@ -164,11 +213,61 @@ export function TranslationLogPanel({
             {visible.map((log) => {
               const time = new Date(log.timestamp).toLocaleTimeString();
               const { badge, colorClass } = BADGES[log.type];
+
+              // Check if line represents a translated block text (e.g. "📝 [p_0] ..." or "🔄 [Bù p_1] ...")
+              const blockMatch = /^\s*(?:📝|🔄)\s*\[([^\]]+)\]\s*([\s\S]*)/.exec(log.text);
+
+              if (blockMatch) {
+                const blockTag = blockMatch[1];
+                const blockContent = blockMatch[2];
+                const isRecovery = log.text.includes("🔄");
+
+                return (
+                  <div
+                    key={log.id}
+                    className={`flex items-start gap-2 py-1 px-2 my-0.5 rounded-md border transition-colors ${
+                      isRecovery
+                        ? "border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10"
+                        : "border-primary/20 bg-primary/5 hover:bg-primary/10"
+                    }`}
+                  >
+                    <span className="text-[#555] dark:text-[#777] select-none shrink-0 font-mono text-[10px] mt-0.5">
+                      [{time}]
+                    </span>
+                    <span
+                      className={`select-none shrink-0 font-mono text-[10px] font-semibold px-1.5 py-0.5 rounded border mt-0.5 ${
+                        isRecovery
+                          ? "text-amber-500 bg-amber-500/10 border-amber-500/20"
+                          : "text-primary bg-primary/10 border-primary/20"
+                      }`}
+                    >
+                      {blockTag}
+                    </span>
+                    <span className="text-foreground/90 break-words whitespace-pre-wrap flex-1 text-xs leading-relaxed font-sans select-text">
+                      {blockContent}
+                    </span>
+                  </div>
+                );
+              }
+
+              // Color enhancement for specific log markers
+              let enhancedClass = colorClass;
+              if (log.type === "info") {
+                if (log.text.includes("⌛")) enhancedClass = "text-foreground font-semibold";
+                else if (log.text.includes("📌")) enhancedClass = "text-sky-400 font-semibold";
+                else if (log.text.includes("✍️")) enhancedClass = "text-amber-400 font-semibold";
+              } else if (log.type === "detail") {
+                if (log.text.includes("+ [H")) enhancedClass = "text-sky-400";
+                else if (log.text.includes("* [p_")) enhancedClass = "text-foreground/90";
+              }
+
               return (
-                <div key={log.id} className="flex items-start gap-2 py-0.5 border-b border-[#1a1a24]/50">
-                  <span className="text-[#444] select-none shrink-0">[{time}]</span>
-                  <span className={`select-none shrink-0 w-8 ${colorClass}`}>{badge}</span>
-                  <span className={`${colorClass} break-words whitespace-pre-wrap flex-1`}>
+                <div key={log.id} className="flex items-start gap-2 py-0.5 border-b border-border/30">
+                  <span className="text-[#555] dark:text-[#777] select-none shrink-0 text-[10px]">
+                    [{time}]
+                  </span>
+                  <span className={`select-none shrink-0 w-8 ${enhancedClass}`}>{badge}</span>
+                  <span className={`${enhancedClass} break-words whitespace-pre-wrap flex-1`}>
                     {log.text}
                   </span>
                 </div>
