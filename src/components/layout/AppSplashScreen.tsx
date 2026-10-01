@@ -46,11 +46,11 @@ export function AppSplashScreen({
       {/* Brand Icon & Glow */}
       <div className="relative mb-6">
         <div className="absolute -inset-2 rounded-3xl bg-primary/20 blur-xl animate-pulse" />
-        <div className="relative w-20 h-20 rounded-2xl bg-card border border-primary/40 flex items-center justify-center p-3 shadow-2xl">
+        <div className="relative w-20 h-20 rounded-2xl bg-card border border-primary/40 flex items-center justify-center p-2.5 shadow-2xl overflow-hidden">
           <img
             src="/app-icon.png"
             alt="NiceEbook Studio"
-            className="w-full h-full object-contain filter drop-shadow-sm"
+            className="w-full h-full object-contain rounded-xl filter drop-shadow-sm"
           />
         </div>
       </div>

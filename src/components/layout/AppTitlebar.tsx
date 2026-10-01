@@ -116,7 +116,7 @@ export function AppTitlebar({ onOpenExport }: AppTitlebarProps) {
         </Button>
 
         <div className="topbar__brand flex items-center gap-2">
-          <img src="/app-icon.png" alt="NiceEbook Studio" className="size-5 rounded object-contain shadow-2xs" />
+          <img src="/app-icon.png" alt="NiceEbook Studio" className="size-5 rounded-md object-contain shadow-2xs" />
           <strong className="tracking-tight text-foreground font-semibold text-xs">NiceEbook Studio</strong>
           <Badge variant="outline" className="text-[10px] px-1.5 h-4.5 font-mono border-primary/40 text-primary">
             v0.1.0

@@ -286,7 +286,7 @@ export function Sidebar() {
 
         {/* LinguaGacha Profile / Brand Card */}
         <div className="sidebar-profile">
-          <div className="size-6 rounded flex items-center justify-center bg-card border border-primary/30 overflow-hidden shrink-0">
+          <div className="size-6 rounded-md flex items-center justify-center bg-card border border-primary/30 overflow-hidden shrink-0">
             <img src="/app-icon.png" alt="NiceEbook Studio" className="w-full h-full object-contain" />
           </div>
           {!isSidebarCollapsed && (
