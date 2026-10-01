@@ -5,7 +5,6 @@ import {
   Send,
   Trash2,
   Sparkles,
-  Sliders,
   Loader2,
   Check,
   ChevronRight,
@@ -21,9 +20,10 @@ import {
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { useAppStore } from "../../stores/useAppStore";
-import { ActionProposal } from "../../services/agent/agentTools";
 import { ChatMessageContent } from "./ChatMessageContent";
 import { AgentModelSelector } from "./AgentModelSelector";
+import { ActionProposalCard } from "./ActionProposalCard";
+import { AgentActiveTaskMonitor } from "./AgentActiveTaskMonitor";
 import { toast } from "sonner";
 
 const DEFAULT_QUICK_ACTIONS = [
@@ -199,6 +199,8 @@ export function BookAgentDrawer() {
         </SheetHeader>
         {/* Messages Scroll Area */}
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+          <AgentActiveTaskMonitor />
+
           {agentMessages.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-6 select-none">
               <div className="size-12 rounded-2xl bg-secondary border border-border flex items-center justify-center text-primary mb-3 shadow-xs">
@@ -345,93 +347,5 @@ export function BookAgentDrawer() {
         </footer>
       </SheetContent>
     </Sheet>
-  );
-}
-
-interface ActionProposalCardProps {
-  proposal: ActionProposal;
-  status: "pending" | "approved" | "rejected" | "executed";
-  onConfirm: (approved: boolean) => void;
-}
-
-function ActionProposalCard({ proposal, status, onConfirm }: ActionProposalCardProps) {
-  return (
-    <div className="mt-2.5 p-3 rounded-lg border border-amber-500/40 bg-amber-500/5 text-foreground flex flex-col gap-2 shadow-xs animate-in fade-in duration-150">
-      {/* Proposal Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5 font-semibold text-[11px] text-amber-500">
-          <Sliders size={13} />
-          <span>{proposal.title}</span>
-        </div>
-
-        {status === "executed" && (
-          <Badge variant="secondary" className="text-[9px] px-1.5 h-3.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-            Đã thực thi
-          </Badge>
-        )}
-        {status === "rejected" && (
-          <Badge variant="outline" className="text-[9px] px-1.5 h-3.5 text-muted-foreground">
-            Đã bỏ qua
-          </Badge>
-        )}
-        {status === "pending" && (
-          <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 text-[9px] px-1.5 h-3.5">
-            Chờ xác nhận
-          </Badge>
-        )}
-      </div>
-
-      <p className="text-[10px] text-muted-foreground leading-tight">
-        {proposal.description}
-      </p>
-
-      {/* Diffs / Changes Summary */}
-      {proposal.diffSummary && proposal.diffSummary.length > 0 && (
-        <div className="border border-border rounded bg-card/80 overflow-hidden mt-0.5">
-          <table className="w-full text-[10px] text-left">
-            <tbody className="divide-y divide-border/60">
-              {proposal.diffSummary.map((d, i) => (
-                <tr key={i} className="hover:bg-secondary/30">
-                  <td className="p-1.5 font-medium text-muted-foreground w-24">
-                    {d.field}
-                  </td>
-                  <td className="p-1.5 text-muted-foreground line-through">
-                    {d.before || "(Trống)"}
-                  </td>
-                  <td className="p-1.5 text-center w-4 text-primary">➔</td>
-                  <td className="p-1.5 font-semibold text-primary">
-                    {d.after}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Action Decision Buttons */}
-      {status === "pending" && (
-        <div className="flex items-center justify-end gap-2 pt-1 mt-1 border-t border-amber-500/20">
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            onClick={() => onConfirm(false)}
-            className="text-[10px] h-6 px-2 text-muted-foreground hover:text-foreground"
-          >
-            Bỏ qua
-          </Button>
-          <Button
-            type="button"
-            size="xs"
-            onClick={() => onConfirm(true)}
-            className="text-[10px] h-6 px-2.5 gap-1 font-medium shadow-xs"
-          >
-            <Check size={11} />
-            <span>Chấp nhận thực thi</span>
-          </Button>
-        </div>
-      )}
-    </div>
   );
 }

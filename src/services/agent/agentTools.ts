@@ -75,6 +75,7 @@ export interface ReadOnlyStoreContext {
   setActiveTab: (tab: ActiveTab) => void;
   setActiveChapterIndex: (index: number) => void;
   openExportModal?: () => void;
+  cavemanMode?: "off" | "lite" | "full" | "ultra";
 }
 
 export interface MutatingStoreContext {
