@@ -26,6 +26,7 @@ import {
   ChevronDown,
   CheckCircle2,
   Image as ImageIcon,
+  ArrowDown,
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import {
@@ -128,7 +129,6 @@ export function BookTranslatorView() {
     translateSingleChapter,
     batchTranslateChapters,
     stopTranslation,
-    resetChapterTranslation,
     terminalLogs,
     clearTranslationLogs,
     activePreset,
@@ -152,7 +152,7 @@ export function BookTranslatorView() {
     getTranslationCoverage,
   } = useAppStore();
 
-  const [scope, setScope] = useState<"single" | "unprocessed" | "all">("single");
+  const [scope, setScope] = useState<"single" | "unprocessed" | "all">("unprocessed");
   const [rightTab, setRightTab] = useState<"preview" | "terminal">("preview");
   const [copiedLogs, setCopiedLogs] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string>("");
@@ -173,9 +173,12 @@ export function BookTranslatorView() {
   const [newTermKey, setNewTermKey] = useState("");
   const [newTermVal, setNewTermVal] = useState("");
   const [showGlossary, setShowGlossary] = useState(false);
+  const [autoFollowPreview, setAutoFollowPreview] = useState(true);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const terminalEndRef = useRef<HTMLDivElement>(null);
+  const scrollRafRef = useRef<number | null>(null);
+  const isProgrammaticScrollRef = useRef<boolean>(false);
 
   const translationLogs = useMemo(
     () =>
@@ -219,6 +222,16 @@ export function BookTranslatorView() {
         font-weight: 500 !important;
         margin-bottom: 1.2em !important;
       }
+      @keyframes liveTranslatePulse {
+        0% { background-color: rgba(249, 115, 22, 0.28); outline: 2px solid rgba(249, 115, 22, 0.6); }
+        50% { background-color: rgba(249, 115, 22, 0.12); outline: 1px solid rgba(249, 115, 22, 0.3); }
+        100% { background-color: transparent; outline: none; }
+      }
+      .live-translating-block {
+        animation: liveTranslatePulse 2s ease-out;
+        border-radius: 4px;
+        transition: background-color 0.3s;
+      }
     `;
 
     // Guarantee that reading paper surface is never pitch-black from dark-mode shell bleed
@@ -252,14 +265,88 @@ export function BookTranslatorView() {
 
   const scrollPosRef = useRef<number>(0);
 
+  const performAutoScroll = () => {
+    if (!autoFollowPreview || !isTranslating) return;
+    if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
+
+    scrollRafRef.current = requestAnimationFrame(() => {
+      const doc = iframeRef.current?.contentDocument;
+      if (!doc || !doc.body) return;
+
+      try {
+        isProgrammaticScrollRef.current = true;
+        setTimeout(() => {
+          isProgrammaticScrollRef.current = false;
+        }, 400);
+
+        // 1. Bilingual mode: find newest translated element and scroll to it
+        const bilingualEls = doc.querySelectorAll(".bilingual-translated");
+        if (bilingualEls.length > 0) {
+          const lastEl = bilingualEls[bilingualEls.length - 1] as HTMLElement;
+          lastEl.classList.add("live-translating-block");
+          lastEl.scrollIntoView({ behavior: "smooth", block: "center" });
+          return;
+        }
+
+        // 2. Specific block ID match
+        const latestBlockId = translationProgress?.latestBlockId;
+        if (latestBlockId) {
+          const targetEl = doc.querySelector(
+            `[data-block-id="${latestBlockId}"], [data-bilingual-for="${latestBlockId}"], #${latestBlockId}`
+          ) as HTMLElement | null;
+          if (targetEl) {
+            targetEl.classList.add("live-translating-block");
+            targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
+            return;
+          }
+        }
+
+        // 3. Proportional scroll down based on block translation progress
+        if (translationProgress && translationProgress.totalBlocks > 0 && translationProgress.currentBlock > 0) {
+          const ratio = translationProgress.currentBlock / translationProgress.totalBlocks;
+          const maxScroll = (doc.documentElement?.scrollHeight || 0) - (doc.documentElement?.clientHeight || 0);
+          if (maxScroll > 0) {
+            const targetScroll = Math.min(maxScroll, maxScroll * ratio);
+            doc.documentElement.scrollTo({
+              top: targetScroll,
+              behavior: "smooth",
+            });
+          }
+        }
+      } catch {
+        // ignore scroll error
+      }
+    });
+  };
+
   const handleIframeLoad = () => {
-    if (scrollPosRef.current > 0 && iframeRef.current?.contentDocument) {
+    if (iframeRef.current?.contentDocument) {
       const doc = iframeRef.current.contentDocument;
       try {
-        if (doc.documentElement) doc.documentElement.scrollTop = scrollPosRef.current;
-        if (doc.body) doc.body.scrollTop = scrollPosRef.current;
+        // Add scroll listener inside iframe to detect user manual scrolling and pause auto-follow
+        const onUserScroll = () => {
+          if (!isTranslating || isProgrammaticScrollRef.current) return;
+          const currentScroll = doc.documentElement?.scrollTop || doc.body?.scrollTop || 0;
+          const maxScroll = (doc.documentElement?.scrollHeight || 0) - (doc.documentElement?.clientHeight || 0);
+          // If user scrolled up significantly (> 220px away from bottom), pause auto-follow
+          if (maxScroll - currentScroll > 220) {
+            setAutoFollowPreview(false);
+          }
+        };
+        doc.addEventListener("scroll", onUserScroll, { passive: true });
+
+        if (isTranslating && autoFollowPreview) {
+          performAutoScroll();
+          return;
+        }
+
+        // Default: restore previous scroll position
+        if (scrollPosRef.current > 0) {
+          if (doc.documentElement) doc.documentElement.scrollTop = scrollPosRef.current;
+          if (doc.body) doc.body.scrollTop = scrollPosRef.current;
+        }
       } catch {
-        // ignore
+        // ignore iframe access errors in sandbox
       }
     }
   };
@@ -276,6 +363,13 @@ export function BookTranslatorView() {
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     };
   }, []);
+
+  // When activeChapterIndex or translation chapter advances, cleanly reset scroll to top for the new chapter
+  useEffect(() => {
+    scrollPosRef.current = 0;
+    setAutoFollowPreview(true);
+    setIsViewingCover(false);
+  }, [activeChapterIndex, translationProgress?.currentChapterHref]);
 
   // Auto-scroll terminal log
   useEffect(() => {
@@ -393,7 +487,23 @@ export function BookTranslatorView() {
   const totalChapters = translationCoverage.total;
   const translatedCount = translationCoverage.translated;
 
-  const unprocessedCount = totalChapters - translatedCount;
+  // Untranslated chapters identification (precise list)
+  const untranslatedChapterIndices = useMemo(() => {
+    if (!currentBook) return [];
+    return currentBook.chapters
+      .map((ch, idx) => ({ ch, idx }))
+      .filter(
+        ({ ch }) =>
+          !translatedChapters[ch.href] &&
+          !(Object.keys(translatedChapters).length === 0 && modifiedChapters[ch.href])
+      )
+      .map(({ idx }) => idx);
+  }, [currentBook, translatedChapters, modifiedChapters]);
+
+  const unprocessedCount = untranslatedChapterIndices.length;
+  const nextUntranslatedIndex =
+    untranslatedChapterIndices.find((idx) => idx > activeChapterIndex) ??
+    untranslatedChapterIndices[0];
 
   // Handle start translation
   async function handleStartTranslation() {
@@ -402,13 +512,18 @@ export function BookTranslatorView() {
       return;
     }
 
+    // Switch to preview tab and exit cover mode so user immediately sees live translation!
+    setRightTab("preview");
+    setIsViewingCover(false);
+    scrollPosRef.current = 0;
+
     if (scope === "single") {
       const ok = await translateSingleChapter(activeChapterIndex);
       if (!ok) {
         toast.error("Quá trình dịch bị lỗi hoặc đã dừng.");
       }
     } else if (scope === "unprocessed") {
-      const ok = await batchTranslateChapters(undefined, true);
+      const ok = await batchTranslateChapters(untranslatedChapterIndices, true);
       if (ok) {
         toast.success("Đã hoàn thành lượt dịch hàng loạt!");
       }
@@ -916,6 +1031,20 @@ export function BookTranslatorView() {
               />
               <span>Dịch cả tên truyện &amp; tiêu đề các chương</span>
             </Label>
+
+            <Label
+              htmlFor="toggle-convert-currency"
+              className="flex items-center gap-1.5 text-[11px] font-normal text-foreground cursor-pointer select-none"
+            >
+              <Checkbox
+                id="toggle-convert-currency"
+                checked={translationConfig.convertCurrency !== false}
+                onCheckedChange={(checked) =>
+                  setTranslationConfig({ convertCurrency: Boolean(checked) })
+                }
+              />
+              <span>Quy đổi tiền tệ sang VNĐ (VD: 5000 NDT ➔ 5000 NDT (19.3 triệu VND))</span>
+            </Label>
           </div>
 
           {/* Section 3: Tone Presets */}
@@ -1301,7 +1430,7 @@ export function BookTranslatorView() {
                         </SelectItem>
                       )}
                       {currentBook.chapters.map((ch, idx) => {
-                        const isDone = Boolean(modifiedChapters[ch.href]);
+                        const isDone = Boolean(translatedChapters[ch.href] || modifiedChapters[ch.href]);
                         return (
                           <SelectItem key={ch.href} value={String(idx)}>
                             {isDone ? "✓ " : ""}{idx + 1}. {ch.title}
@@ -1360,51 +1489,101 @@ export function BookTranslatorView() {
             {/* Buttons */}
             <div className="flex items-center gap-2">
               {!isTranslating ? (
-                <Button
-                  type="button"
-                  size="lg"
-                  onClick={handleStartTranslation}
-                  className="flex-1 text-xs font-semibold shadow-sm"
-                >
-                  <Play className="fill-current" />
-                  <span>
-                    {scope === "single"
-                      ? "Bắt Đầu Dịch Chương Này"
-                      : scope === "unprocessed"
-                      ? `Dịch ${unprocessedCount} Chương Chưa Dịch`
-                      : `Dịch Toàn Bộ ${totalChapters} Chương`}
-                  </span>
-                </Button>
+                <>
+                  {scope === "single" && isCurrentChapterTranslated && nextUntranslatedIndex !== undefined ? (
+                    <Button
+                      type="button"
+                      size="lg"
+                      onClick={() => {
+                        setRightTab("preview");
+                        setIsViewingCover(false);
+                        scrollPosRef.current = 0;
+                        setActiveChapterIndex(nextUntranslatedIndex);
+                        void translateSingleChapter(nextUntranslatedIndex);
+                      }}
+                      className="flex-1 text-xs font-semibold shadow-sm cursor-pointer"
+                      title={`Dịch tiếp chương ${nextUntranslatedIndex + 1}: ${currentBook.chapters[nextUntranslatedIndex]?.title}`}
+                    >
+                      <Play className="fill-current" />
+                      <span>Dịch Tiếp: Chương {nextUntranslatedIndex + 1}</span>
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="lg"
+                      onClick={handleStartTranslation}
+                      disabled={scope === "unprocessed" && unprocessedCount === 0}
+                      className="flex-1 text-xs font-semibold shadow-sm cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <Play className="fill-current" />
+                      <span>
+                        {scope === "single"
+                          ? isCurrentChapterTranslated ? "Dịch Lại Chương Này" : "Bắt Đầu Dịch Chương Này"
+                          : scope === "unprocessed"
+                          ? unprocessedCount > 0
+                            ? `Dịch ${unprocessedCount} Chương Chưa Dịch`
+                            : "Tất Cả Chương Đã Dịch Xong"
+                          : `Dịch Toàn Bộ ${totalChapters} Chương`}
+                      </span>
+                    </Button>
+                  )}
+
+                  {isCurrentChapterTranslated && scope === "single" && (
+                    <Button
+                      type="button"
+                      size="lg"
+                      variant="outline"
+                      onClick={handleStartTranslation}
+                      className="text-xs px-3 text-muted-foreground hover:text-foreground cursor-pointer gap-1.5"
+                      title="Dịch lại chương này từ nguyên tác ban đầu"
+                    >
+                      <RotateCcw className="size-3.5" />
+                      <span>Dịch Lại</span>
+                    </Button>
+                  )}
+                </>
               ) : (
                 <Button
                   type="button"
                   size="lg"
                   variant="destructive"
                   onClick={stopTranslation}
-                  className="flex-1 text-xs font-semibold shadow-sm"
+                  className="flex-1 text-xs font-semibold shadow-sm cursor-pointer"
                 >
                   <Square className="fill-current" />
                   <span>Dừng / Hủy Bỏ</span>
                 </Button>
               )}
-
-              {isCurrentChapterTranslated && !isTranslating && (
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="secondary"
-                  onClick={() => {
-                    if (activeChapter) {
-                      resetChapterTranslation(activeChapter.href);
-                    }
-                  }}
-                  className="text-muted-foreground hover:text-red-400"
-                  title="Khôi phục chương này về nguyên tác ban đầu"
-                >
-                  <RotateCcw />
-                </Button>
-              )}
             </div>
+
+            {/* Scope guidance hints */}
+            {!isTranslating && scope === "single" && unprocessedCount > 0 && (
+              <p className="text-[10px] text-muted-foreground text-center">
+                Còn <strong className="text-foreground">{unprocessedCount}</strong> chương chưa dịch. Chuyển phạm vi sang{" "}
+                <button
+                  type="button"
+                  onClick={() => setScope("unprocessed")}
+                  className="text-primary underline hover:opacity-80 font-medium cursor-pointer"
+                >
+                  "Chưa dịch ({unprocessedCount})"
+                </button>{" "}
+                để dịch hàng loạt.
+              </p>
+            )}
+
+            {!isTranslating && scope === "unprocessed" && unprocessedCount === 0 && totalChapters > 0 && (
+              <p className="text-[10px] text-muted-foreground text-center">
+                Tất cả các chương đã có bản dịch. Chọn{" "}
+                <button
+                  type="button"
+                  onClick={() => setScope("all")}
+                  className="text-primary underline hover:opacity-80 font-medium cursor-pointer"
+                >
+                  "Toàn bộ ({totalChapters})"
+                </button>{" "}
+                nếu bạn muốn dịch lại toàn bộ sách.
+              </p>
+            )}
 
             <Button
               type="button"
@@ -1495,8 +1674,21 @@ export function BookTranslatorView() {
                     <span>Trang Bìa Tác Phẩm (Cover)</span>
                   </span>
                 ) : activeChapter ? (
-                  <span>
-                    Chương {activeChapterIndex + 1}: <strong className="text-foreground">{activeChapter.title}</strong>
+                  <span className="flex items-center gap-1.5 truncate">
+                    {isTranslating && (
+                      <span className="relative flex size-2 shrink-0">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                        <span className="relative inline-flex rounded-full size-2 bg-primary" />
+                      </span>
+                    )}
+                    <span>
+                      Chương {activeChapterIndex + 1}: <strong className="text-foreground">{activeChapter.title}</strong>
+                    </span>
+                    {isTranslating && translationProgress && translationProgress.percent > 0 && (
+                      <Badge variant="outline" className="text-[9px] h-4 font-mono text-primary border-primary/30 px-1 ml-0.5">
+                        {translationProgress.percent}%
+                      </Badge>
+                    )}
                   </span>
                 ) : null}
               </div>
@@ -1533,6 +1725,24 @@ export function BookTranslatorView() {
                       Không có nội dung để hiển thị.
                     </EmptyDescription>
                   </Empty>
+                )}
+
+                {/* Floating button to resume auto-following translation if paused by user scroll */}
+                {isTranslating && !autoFollowPreview && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      setAutoFollowPreview(true);
+                      performAutoScroll();
+                    }}
+                    className="absolute bottom-4 right-4 z-20 shadow-md border border-primary/40 text-xs gap-1.5 animate-in fade-in bg-card/95 hover:bg-card cursor-pointer"
+                    title="Tiếp tục tự động cuộn theo các đoạn văn đang dịch"
+                  >
+                    <ArrowDown className="size-3.5 text-primary animate-bounce" />
+                    <span>Cuộn theo tiến trình dịch</span>
+                  </Button>
                 )}
               </div>
             </div>

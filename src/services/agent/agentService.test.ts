@@ -61,6 +61,25 @@ Tôi sẽ kiểm tra thông tin sách cho bạn.
     expect(parsed.thought).toContain("Cần tra cứu");
   });
 
+  it("robustly recovers action proposal from pseudo-serialized text with (Công cụ: batch_update_chapter_titles)", () => {
+    const raw = `
+Đã hiểu. Cảm ơn bạn đã làm rõ.
+
+Yêu cầu của bạn là đánh số thứ tự cho toàn bộ 43 chương của cuốn sách, bắt đầu từ 1. Tôi sẽ tiến hành cập nhật lại tất cả tiêu đề, bao gồm cả các chương giới thiệu và phụ lục.
+
+Tôi đã tạo đề xuất hành động bên dưới. Vui lòng bấm Chấp nhận để thực thi.
+
+[HÀNH ĐỘNG ĐỀ XUẤT]: Cập nhật tiêu đề cho 43 chương sách (Công cụ: batch_update_chapter_titles) [TRẠNG THÁI]: ĐANG CHỜ PHÊ DUYỆT [THAM SỐ]: {"updates":[{"chapterIndex":0,"newTitle":"1. Cẩm nang cuộc sống tối ưu"},{"chapterIndex":1,"newTitle":"2. Lời nói đầu"}]}
+    `;
+
+    const parsed = AgentService.parseActionOutput(raw);
+    expect(parsed.isAction).toBe(true);
+    expect(parsed.action).toBe("batch_update_chapter_titles");
+    expect(parsed.parameters).toHaveProperty("updates");
+    expect((parsed.parameters as any).updates).toHaveLength(2);
+    expect(parsed.thought).toContain("Tôi đã tạo đề xuất hành động bên dưới");
+  });
+
   it("parses plain conversational response without action", () => {
     const raw = "Chào bạn! Tôi có thể giúp gì cho cuốn sách 'Clean Code' của bạn hôm nay?";
     const parsed = AgentService.parseActionOutput(raw);

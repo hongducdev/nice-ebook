@@ -35,12 +35,26 @@ export function ActionProposalCardView({
 }: ActionProposalCardViewProps) {
   const isProposalExecuting = status === "executing";
 
+  // A single-chapter translation is only "related" to THIS proposal when the live
+  // progress is on the same chapter; otherwise an old card would display another
+  // chapter's percentage. Batch jobs legitimately span every chapter.
+  const proposalChapterIndex = proposal.parameters?.chapterIndex;
+  const progressMatchesProposal =
+    typeof proposalChapterIndex !== "number" ||
+    translationProgress?.currentChapterIndex === proposalChapterIndex + 1;
+
   // Check if related background task is currently active for this tool
   const isRelatedTaskActive =
-    (proposal.toolName === "translate_chapter" && isTranslating) ||
+    ((proposal.toolName === "translate_chapter" || proposal.toolName === "batch_translate_chapters") &&
+      isTranslating &&
+      (proposal.toolName === "batch_translate_chapters" || progressMatchesProposal)) ||
     (proposal.toolName === "enhance_chapter" && isBatchEnhancing) ||
     (proposal.toolName === "extract_xray_entities" && isExtractingEntities);
 
+  // Only a still-pending proposal may be "live" through a related task. Requiring
+  // `status === "pending"` stops historical cards (executed/rejected) from flipping
+  // back to "Đang thực thi..." and losing their finished badge whenever any
+  // unrelated translation happens to be running.
   const isActive = isProposalExecuting || (status === "pending" && isRelatedTaskActive);
 
   return (
@@ -58,7 +72,7 @@ export function ActionProposalCardView({
       {/* Proposal Header */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 font-semibold text-[11px] min-w-0">
-          {proposal.toolName === "translate_chapter" ? (
+          {proposal.toolName === "translate_chapter" || proposal.toolName === "batch_translate_chapters" ? (
             <Languages size={13} className="text-primary shrink-0" />
           ) : proposal.toolName === "enhance_chapter" ? (
             <Wand2 size={13} className="text-primary shrink-0" />
@@ -131,7 +145,7 @@ export function ActionProposalCardView({
       {/* Live Real-time Progress Display when Active */}
       {isActive && (
         <div className="p-2 rounded border border-primary/20 bg-background/60 flex flex-col gap-1.5 animate-in fade-in duration-150">
-          {proposal.toolName === "translate_chapter" ? (
+          {proposal.toolName === "translate_chapter" || proposal.toolName === "batch_translate_chapters" ? (
             <>
               <div className="flex items-center justify-between text-[10px]">
                 <span className="font-semibold text-foreground truncate max-w-[180px]">

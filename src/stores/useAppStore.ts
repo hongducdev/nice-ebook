@@ -39,6 +39,7 @@ import { AgentToolDispatcher, ReadOnlyStoreContext, MutatingStoreContext } from 
 import { WorkflowJobService } from "../services/workflow/workflowJobService";
 import { type CavemanMode } from "../utils/cavemanOptimizer";
 import { loadConfiguredProviders } from "../services/ai/linguaGachaProviders";
+import { toast } from "sonner";
 
 export type { CavemanMode };
 
@@ -197,6 +198,7 @@ export interface TranslationConfig {
   concurrency?: 1 | 2 | 3;
   enableSlidingContext?: boolean;
   enableAdaptiveDownsizing?: boolean;
+  convertCurrency?: boolean;
 }
 
 export interface TranslationProgress {
@@ -207,6 +209,7 @@ export interface TranslationProgress {
   currentBlock: number;
   totalBlocks: number;
   percent: number;
+  latestBlockId?: string;
 }
 
 export interface AutoTranslationConfigResult {
@@ -440,7 +443,7 @@ export interface AppState {
   setTranslationConfig: (config: Partial<TranslationConfig>) => void;
   translationProgress: TranslationProgress | null;
   isTranslating: boolean;
-  translateSingleChapter: (chapterIndex: number) => Promise<boolean>;
+  translateSingleChapter: (chapterIndex: number, options?: { isPartOfBatch?: boolean; abortSignal?: AbortSignal }) => Promise<boolean>;
   batchTranslateChapters: (chapterIndices?: number[], skipAlreadyTranslated?: boolean) => Promise<boolean>;
   stopTranslation: () => void;
   resetChapterTranslation: (chapterHref: string) => void;
@@ -462,6 +465,8 @@ export interface AppState {
   removeWorkflowJob: (id: string) => void;
   clearCompletedWorkflowJobs: () => void;
   setChapterHtml: (chapterHref: string, html: string) => void;
+  updateChapterTitle: (chapterIndex: number, newTitle: string) => Promise<boolean>;
+  batchUpdateChapterTitles: (updates: Array<{ chapterIndex: number; newTitle: string }>) => Promise<number>;
 
   // AI Chat Agent State & Actions
   agentMessages: AgentChatMessage[];
@@ -570,6 +575,7 @@ const defaultTranslationConfig: TranslationConfig = {
   concurrency: 1,
   enableSlidingContext: true,
   enableAdaptiveDownsizing: true,
+  convertCurrency: true,
 };
 
 /** Joins entity names for the terminal log, truncating very long scans. */
@@ -608,6 +614,118 @@ function nativeStylePatch(
 let metadataFileDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let isAutoSavingFile = false;
 let hasPendingAutoSave = false;
+
+/**
+ * Escapes text for insertion into HTML text content.
+ *
+ * The escape set mirrors exactly what `EpubParser::strip_html_tags` un-escapes
+ * (&amp;, &lt;, &gt;, &quot;) so a title round-trips unchanged through a re-parse.
+ * Without this, a title containing `<` would inject markup into the chapter HTML
+ * that we write back into the exported EPUB.
+ */
+function escapeHtmlText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Rewrites the heading that the EPUB parser treats as a chapter's title.
+ *
+ * `EpubParser::extract_title_from_html` reads the first NON-EMPTY of
+ * `<h1>` -> `<h2>` -> `<title>`, so the same order must be used here or the new
+ * title will not survive a re-parse. When no usable heading exists, an `<h1>` is
+ * inserted so the title becomes discoverable at all.
+ *
+ * The replacement uses a callback rather than a template string: `String.replace`
+ * expands `$&`, `$1`, `` $` `` and `$'` inside a string replacement, which would
+ * corrupt the output for any title containing a `$`.
+ */
+/** Heading patterns in the exact precedence order the Rust parser uses. */
+const CHAPTER_HEADING_PATTERNS: ReadonlyArray<{ tag: "h1" | "h2" | "title"; re: RegExp }> = [
+  { tag: "h1", re: /<h1\b[^>]*>[\s\S]*?<\/h1>/i },
+  { tag: "h2", re: /<h2\b[^>]*>[\s\S]*?<\/h2>/i },
+  { tag: "title", re: /<title\b[^>]*>[\s\S]*?<\/title>/i },
+];
+
+function rewriteChapterHeading(html: string, title: string): string {
+  const escaped = escapeHtmlText(title);
+
+  for (const { tag, re } of CHAPTER_HEADING_PATTERNS) {
+    const match = re.exec(html);
+    if (!match) continue;
+
+    const openEnd = match[0].indexOf(">");
+    const openTag = match[0].slice(0, openEnd + 1);
+
+    // The parser skips headings whose text is empty; mirror that.
+    if (tag !== "title") {
+      const innerText = match[0]
+        .slice(openEnd + 1)
+        .replace(/<\/[^>]*>$/, "")
+        .replace(/<[^>]*>/g, "")
+        .trim();
+      if (innerText === "") continue;
+    }
+
+    const replaced = `${openTag}${escaped}</${tag}>`;
+    return html.slice(0, match.index) + replaced + html.slice(match.index + match[0].length);
+  }
+
+  // No usable heading anywhere: inject one so the title is discoverable.
+  const bodyMatch = /<body\b[^>]*>/i.exec(html);
+  if (bodyMatch) {
+    const at = bodyMatch.index + bodyMatch[0].length;
+    return `${html.slice(0, at)}\n<h1>${escaped}</h1>${html.slice(at)}`;
+  }
+  return `<h1>${escaped}</h1>\n${html}`;
+}
+
+/** Reads a chapter's raw HTML, preferring the on-disk EPUB over memory. */
+async function readChapterHtml(
+  href: string,
+  filePath: string | null,
+  fileBytes: number[] | null
+): Promise<string> {
+  try {
+    if (filePath) {
+      return await invoke<string>("read_chapter", { path: filePath, href });
+    }
+    if (fileBytes) {
+      return await invoke<string>("read_chapter_bytes", { bytes: fileBytes, href });
+    }
+  } catch (err) {
+    console.warn(`Could not read chapter ${href} while editing its title:`, err);
+  }
+  return "";
+}
+
+/**
+ * Builds the `modifiedChapters` overrides required to persist chapter-title
+ * changes, returning only the entries that were actually rewritten.
+ */
+async function buildChapterTitleOverrides(
+  modified: Record<string, string>,
+  titles: Array<{ href: string; title: string }>,
+  source: { currentFilePath: string | null; currentFileBytes: number[] | null }
+): Promise<{ overrides: Record<string, string>; persisted: string[] }> {
+  const overrides = { ...modified };
+  const persisted: string[] = [];
+
+  for (const { href, title } of titles) {
+    let html = overrides[href];
+    if (!html) {
+      html = await readChapterHtml(href, source.currentFilePath, source.currentFileBytes);
+    }
+    if (!html) continue;
+    overrides[href] = rewriteChapterHeading(html, title);
+    persisted.push(href);
+  }
+
+  return { overrides, persisted };
+}
 
 export const useAppStore = create<AppState>((set, get) => ({
   activeTab: "books",
@@ -2457,7 +2575,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   translationProgress: null,
   isTranslating: false,
 
-  translateSingleChapter: async (chapterIndex: number) => {
+  translateSingleChapter: async (chapterIndex: number, options?: { isPartOfBatch?: boolean; abortSignal?: AbortSignal }) => {
     const {
       currentBook,
       currentFilePath,
@@ -2480,9 +2598,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     let rawHtml = "";
     try {
-      if (modifiedChapters[chapter.href]) {
-        rawHtml = modifiedChapters[chapter.href];
-      } else if (currentFilePath) {
+      if (currentFilePath) {
         rawHtml = await invoke<string>("read_chapter", {
           path: currentFilePath,
           href: chapter.href,
@@ -2492,20 +2608,49 @@ export const useAppStore = create<AppState>((set, get) => ({
           bytes: currentFileBytes,
           href: chapter.href,
         });
+      } else if (modifiedChapters[chapter.href]) {
+        rawHtml = modifiedChapters[chapter.href];
       }
     } catch (err) {
-      console.error("Could not read chapter:", err);
-      get().addTerminalLog({
-        type: "warning",
-        text: `❌ Không thể đọc chương "${chapter.title}" (${chapter.href}): ${err}`,
-      });
-      return false;
+      if (modifiedChapters[chapter.href]) {
+        rawHtml = modifiedChapters[chapter.href];
+      } else {
+        console.error("Could not read chapter:", err);
+        get().addTerminalLog({
+          type: "warning",
+          text: `❌ Không thể đọc chương "${chapter.title}" (${chapter.href}): ${err}`,
+        });
+        return false;
+      }
     }
 
     if (!rawHtml) return false;
 
-    translationAbortController = new AbortController();
-    set({ isTranslating: true });
+    // A batch owns its own controller and passes its signal down, so stopping a
+    // batch stays possible even though `stopTranslation` aborts the shared one.
+    // A standalone run creates a fresh controller (never reusing an aborted one).
+    if (!options?.isPartOfBatch) {
+      translationAbortController = new AbortController();
+    }
+    const abortSignal = options?.abortSignal ?? translationAbortController?.signal;
+    const wasAborted = () => abortSignal?.aborted === true;
+
+    const currentTotalChapters = get().translationProgress?.totalChapters || 1;
+    const currentChNum = get().translationProgress?.currentChapterIndex || (chapterIndex + 1);
+
+    set({
+      activeChapterIndex: chapterIndex,
+      isTranslating: true,
+      translationProgress: {
+        currentChapterIndex: currentChNum,
+        totalChapters: currentTotalChapters,
+        currentChapterHref: chapter.href,
+        currentChapterTitle: chapter.title,
+        currentBlock: 0,
+        totalBlocks: 0,
+        percent: get().translationProgress?.percent || 0,
+      },
+    });
 
     const translateJobId = WorkflowJobService.startJob(
       "translation",
@@ -2538,32 +2683,45 @@ export const useAppStore = create<AppState>((set, get) => ({
         enableSlidingContext: translationConfig.enableSlidingContext ?? true,
         enableAdaptiveDownsizing: translationConfig.enableAdaptiveDownsizing ?? true,
         translateChapterTitle: translationConfig.translateTitles !== false,
-        abortSignal: translationAbortController.signal,
+        convertCurrency: translationConfig.convertCurrency !== false,
+        abortSignal,
         onProgress: (p) => {
+          const totalChs = get().translationProgress?.totalChapters || 1;
+          const chNum = get().translationProgress?.currentChapterIndex || (chapterIndex + 1);
           set({
+            activeChapterIndex: chapterIndex,
             translationProgress: {
-              currentChapterIndex: chapterIndex + 1,
-              totalChapters: 1,
+              currentChapterIndex: chNum,
+              totalChapters: totalChs,
               currentChapterHref: chapter.href,
               currentChapterTitle: chapter.title,
               currentBlock: p.currentBlock,
               totalBlocks: p.totalBlocks,
               percent: p.percent,
+              latestBlockId: get().translationProgress?.latestBlockId,
             },
           });
           WorkflowJobService.updateProgress(
             translateJobId,
             p.percent,
-            `Chương ${chapterIndex + 1}/1 • Đoạn ${p.currentBlock}/${p.totalBlocks} (${p.percent}%)`
+            `Chương ${chNum}/${totalChs} • Đoạn ${p.currentBlock}/${p.totalBlocks} (${p.percent}%)`
           );
         },
-        onPartialUpdate: ({ partialHtml }) => {
+        onPartialUpdate: ({ partialHtml, latestTranslatedBlockIds }) => {
           // Real-time incremental preview: update modifiedChapters continuously so preview updates live
+          const lastBlockId = latestTranslatedBlockIds?.[latestTranslatedBlockIds.length - 1];
           set((state) => ({
+            activeChapterIndex: chapterIndex,
             modifiedChapters: {
               ...state.modifiedChapters,
               [chapter.href]: partialHtml,
             },
+            translationProgress: state.translationProgress
+              ? {
+                  ...state.translationProgress,
+                  latestBlockId: lastBlockId || state.translationProgress.latestBlockId,
+                }
+              : null,
           }));
         },
         onLog: (log) => get().addTerminalLog(log),
@@ -2634,8 +2792,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         currentBook: updatedBook,
         modifiedChapters: updatedModified,
         translatedChapters: updatedTranslated,
-        isTranslating: false,
-        translationProgress: null,
+        activeChapterIndex: chapterIndex,
+        isTranslating: options?.isPartOfBatch ? !wasAborted() : false,
+        translationProgress: options?.isPartOfBatch && !wasAborted() ? get().translationProgress : null,
       });
 
       if (activeProjectId) {
@@ -2655,7 +2814,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           ? "Đã dừng dịch theo yêu cầu người dùng"
           : err instanceof Error ? err.message : String(err)
       );
-      set({ isTranslating: false, translationProgress: null });
+      if (!options?.isPartOfBatch) {
+        set({ isTranslating: false, translationProgress: null });
+      }
       if (err instanceof DOMException && err.name === "AbortError") {
         get().addTerminalLog({
           type: "warning",
@@ -2670,10 +2831,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       return false;
     } finally {
-      translationAbortController = null;
+      if (!options?.isPartOfBatch) {
+        translationAbortController = null;
+      }
     }
   },
-
   batchTranslateChapters: async (chapterIndices?: number[], skipAlreadyTranslated = false) => {
     const { currentBook, modifiedChapters, translationConfig, activeGateway, selectedModel } = get();
     if (!currentBook || currentBook.chapters.length === 0) return false;
@@ -2682,8 +2844,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       ? chapterIndices
       : currentBook.chapters.map((_, i) => i);
 
+    const isChapterTranslated = (href: string) => {
+      const transMap = get().translatedChapters;
+      if (transMap[href]) return true;
+      if (Object.keys(transMap).length === 0 && modifiedChapters[href]) return true;
+      return false;
+    };
+
     const pending = skipAlreadyTranslated
-      ? targets.filter((i) => !modifiedChapters[currentBook.chapters[i]?.href])
+      ? targets.filter((i) => !isChapterTranslated(currentBook.chapters[i]?.href))
       : targets;
 
     if (pending.length === 0) {
@@ -2695,7 +2864,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     set({ isTranslating: true });
-    translationAbortController = new AbortController();
+    // The batch owns this controller and passes its signal to every chapter. It is
+    // deliberately captured in a local: `stopTranslation` nulls the shared
+    // `translationAbortController`, which previously made every later abort check
+    // read `undefined` and left the batch running unabortably to the end.
+    const batchController = new AbortController();
+    translationAbortController = batchController;
+    const isBatchAborted = () => batchController.signal.aborted;
 
     get().addTerminalLog({
       type: "info",
@@ -2737,67 +2912,80 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const failedChapters: Array<{ index: number; title: string; href: string }> = [];
 
-    for (let pIdx = 0; pIdx < pending.length; pIdx++) {
-      if (translationAbortController?.signal.aborted) {
-        break;
-      }
-      const chIdx = pending[pIdx];
-      const liveBook = get().currentBook || currentBook;
-      const ch = liveBook.chapters[chIdx];
-      if (!ch) continue;
-
-      set({
-        translationProgress: {
-          currentChapterIndex: pIdx + 1,
-          totalChapters: pending.length,
-          currentChapterHref: ch.href,
-          currentChapterTitle: ch.title,
-          currentBlock: 0,
-          totalBlocks: 0,
-          percent: Math.round((pIdx / pending.length) * 100),
-        },
-      });
-
-      let ok = await get().translateSingleChapter(chIdx);
-      // Auto-retry once on transient failure (timeout/rate-limit) before skipping
-      if (!ok && !translationAbortController?.signal.aborted) {
-        get().addTerminalLog({
-          type: "warning",
-          text: `⚠️ Chương ${chIdx + 1}: "${ch.title}" gặp sự cố, tự động thử dịch lại lần 2...`,
-        });
-        ok = await get().translateSingleChapter(chIdx);
-      }
-
-      if (!ok) {
-        if (translationAbortController?.signal.aborted) {
+    try {
+      for (let pIdx = 0; pIdx < pending.length; pIdx++) {
+        if (isBatchAborted()) {
           break;
         }
-        failedChapters.push({ index: chIdx, title: ch.title, href: ch.href });
+        const chIdx = pending[pIdx];
+        const liveBook = get().currentBook || currentBook;
+        const ch = liveBook.chapters[chIdx];
+        if (!ch) continue;
+
+        set({
+          activeChapterIndex: chIdx,
+          translationProgress: {
+            currentChapterIndex: pIdx + 1,
+            totalChapters: pending.length,
+            currentChapterHref: ch.href,
+            currentChapterTitle: ch.title,
+            currentBlock: 0,
+            totalBlocks: 0,
+            percent: Math.round((pIdx / pending.length) * 100),
+          },
+        });
+
+        let ok = await get().translateSingleChapter(chIdx, {
+          isPartOfBatch: true,
+          abortSignal: batchController.signal,
+        });
+        // Auto-retry once on transient failure (timeout/rate-limit) before skipping
+        if (!ok && !isBatchAborted()) {
+          get().addTerminalLog({
+            type: "warning",
+            text: `⚠️ Chương ${chIdx + 1}: "${ch.title}" gặp sự cố, tự động thử dịch lại lần 2...`,
+          });
+          ok = await get().translateSingleChapter(chIdx, {
+            isPartOfBatch: true,
+            abortSignal: batchController.signal,
+          });
+        }
+
+        if (!ok) {
+          if (isBatchAborted()) {
+            break;
+          }
+          failedChapters.push({ index: chIdx, title: ch.title, href: ch.href });
+          get().addTerminalLog({
+            type: "warning",
+            text: `❌ Bỏ qua chương ${chIdx + 1}: "${ch.title}" sau 2 lượt thử không thành công.`,
+          });
+        }
+      }
+
+      if (failedChapters.length > 0 && !isBatchAborted()) {
         get().addTerminalLog({
           type: "warning",
-          text: `❌ Bỏ qua chương ${chIdx + 1}: "${ch.title}" sau 2 lượt thử không thành công.`,
+          text: `⚠️ [Kết thúc lượt dịch]: Có ${failedChapters.length}/${pending.length} chương chưa dịch được:\n` +
+            failedChapters.map((f) => `  • Chương ${f.index + 1}: "${f.title}"`).join("\n") +
+            `\n👉 Bạn hãy chọn phạm vi "Chưa dịch" để thử dịch lại các chương trên.`,
         });
       }
-    }
 
-    if (failedChapters.length > 0 && !translationAbortController?.signal.aborted) {
-      get().addTerminalLog({
-        type: "warning",
-        text: `⚠️ [Kết thúc lượt dịch]: Có ${failedChapters.length}/${pending.length} chương chưa dịch được:\n` +
-          failedChapters.map((f) => `  • Chương ${f.index + 1}: "${f.title}"`).join("\n") +
-          `\n👉 Bạn hãy chọn phạm vi "Chưa dịch" để thử dịch lại các chương trên.`,
-      });
+      // Only mark the workflow step done when the WHOLE book is translated.
+      const aborted = isBatchAborted();
+      const coverage = get().getTranslationCoverage();
+      if (!aborted && coverage.total > 0 && coverage.translated >= coverage.total && failedChapters.length === 0) {
+        get().markWorkflowStepComplete("translate");
+      }
+    } finally {
+      set({ isTranslating: false, translationProgress: null });
+      // Only clear the shared handle if it still points at this batch's controller,
+      // so a run started meanwhile is not accidentally detached.
+      if (translationAbortController === batchController) {
+        translationAbortController = null;
+      }
     }
-
-    // Only mark the workflow step done when the WHOLE book is translated.
-    const aborted = translationAbortController?.signal.aborted === true;
-    const coverage = get().getTranslationCoverage();
-    if (!aborted && coverage.total > 0 && coverage.translated >= coverage.total && failedChapters.length === 0) {
-      get().markWorkflowStepComplete("translate");
-    }
-
-    set({ isTranslating: false, translationProgress: null });
-    translationAbortController = null;
     return true;
   },
 
@@ -3448,6 +3636,88 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().saveActiveProject();
     }
   },
+
+  updateChapterTitle: async (chapterIndex, newTitle) => {
+    const { currentBook, activeProjectId, modifiedChapters, currentFilePath, currentFileBytes } =
+      get();
+    if (!currentBook || !currentBook.chapters[chapterIndex]) return false;
+
+    const trimmed = newTitle.trim();
+    if (!trimmed) return false;
+
+    const target = currentBook.chapters[chapterIndex];
+    const updatedChapters = [...currentBook.chapters];
+    updatedChapters[chapterIndex] = { ...target, title: trimmed };
+
+    // A chapter title only survives a re-open (and only reaches the EPUB) when it
+    // is written into the chapter HTML: both `openProject` and the Rust parser
+    // re-derive titles from <h1>/<h2>/<title> on every load. Mutating the
+    // in-memory chapter list alone is silently discarded.
+    const { overrides, persisted } = await buildChapterTitleOverrides(
+      modifiedChapters,
+      [{ href: target.href, title: trimmed }],
+      { currentFilePath, currentFileBytes }
+    );
+
+    set({
+      currentBook: { ...currentBook, chapters: updatedChapters },
+      modifiedChapters: overrides,
+    });
+
+    if (activeProjectId) {
+      saveChaptersToDb(activeProjectId, overrides);
+      get().saveActiveProject();
+    }
+    if (currentFilePath) {
+      await get().autoSaveMetadataToFile();
+    }
+
+    return persisted.length > 0;
+  },
+
+  batchUpdateChapterTitles: async (updates) => {
+    const { currentBook, activeProjectId, modifiedChapters, currentFilePath, currentFileBytes } =
+      get();
+    if (!currentBook || currentBook.chapters.length === 0 || !updates || updates.length === 0) {
+      return 0;
+    }
+
+    const updatedChapters = [...currentBook.chapters];
+    const requested: Array<{ href: string; title: string }> = [];
+
+    for (const u of updates) {
+      const idx = Number(u.chapterIndex);
+      const title = String(u.newTitle || "").trim();
+      if (!isNaN(idx) && idx >= 0 && idx < updatedChapters.length && title) {
+        const target = updatedChapters[idx];
+        updatedChapters[idx] = { ...target, title };
+        requested.push({ href: target.href, title });
+      }
+    }
+
+    if (requested.length === 0) return 0;
+
+    const { overrides, persisted } = await buildChapterTitleOverrides(
+      modifiedChapters,
+      requested,
+      { currentFilePath, currentFileBytes }
+    );
+
+    set({
+      currentBook: { ...currentBook, chapters: updatedChapters },
+      modifiedChapters: overrides,
+    });
+
+    if (activeProjectId) {
+      saveChaptersToDb(activeProjectId, overrides);
+      get().saveActiveProject();
+    }
+    if (currentFilePath) {
+      await get().autoSaveMetadataToFile();
+    }
+
+    return persisted.length;
+  },
   // AI Chat Agent Implementation
   agentMessages: [],
   isAgentDrawerOpen: false,
@@ -3677,13 +3947,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       updateTypography,
       setTranslationConfig,
       setChapterHtml: get().setChapterHtml,
+      updateChapterTitle: get().updateChapterTitle,
+      batchUpdateChapterTitles: get().batchUpdateChapterTitles,
       translateSingleChapter: get().translateSingleChapter,
+      batchTranslateChapters: get().batchTranslateChapters,
       enhanceSingleChapter: get().enhanceSingleChapter,
       runXRayExtraction: get().runXRayExtraction,
       embedXRayAppendixToBook: get().embedXRayAppendixToBook,
       cleanWatermarksInBook: get().cleanWatermarksInBook,
       openExportModal: () => set({ isExportOpen: true }),
       setActiveTab: (t) => get().setActiveTab(t),
+      saveActiveProject: get().saveActiveProject,
+      autoSaveMetadataToFile: get().autoSaveMetadataToFile,
+      currentFilePath: get().currentFilePath,
       currentBook: get().currentBook,
       readChapterText: (chIdx: number) => {
         const { currentBook: book, modifiedChapters: mods, currentFilePath: fp, currentFileBytes: fb } = get();
@@ -3715,11 +3991,34 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ agentMessages: latestMessages });
       }
 
-      if (activeProjectId) {
-        get().saveActiveProject();
-      }
-      if (get().currentFilePath) {
-        void get().autoSaveMetadataToFile();
+      // `save_project` performs its own save and reports the real outcome; every
+      // other tool relies on the post-action save below. Skipping the duplicate
+      // here keeps one action from re-exporting the whole EPUB twice.
+      if (proposal.toolName !== "save_project") {
+        let projectId = activeProjectId;
+        const bookAtSaveTime = get().currentBook;
+        if (!projectId && bookAtSaveTime) {
+          projectId = get().createProject(bookAtSaveTime, { filePath: get().currentFilePath });
+          set({ activeProjectId: projectId });
+        }
+        if (projectId) {
+          get().saveActiveProject();
+        }
+
+        if (get().currentFilePath) {
+          const saved = await get().autoSaveMetadataToFile();
+          if (saved) {
+            toast.success("Đã tự động lưu toàn bộ thay đổi trực tiếp vào file sách!");
+          } else {
+            // `autoSaveMetadataToFile` swallows its error and returns false, so a
+            // failed write must NOT be reported as a successful save.
+            toast.warning(
+              "Đã lưu thay đổi vào dự án, nhưng chưa ghi được vào file sách trên đĩa. Hãy kiểm tra file có đang bị khóa hoặc đã bị di chuyển không."
+            );
+          }
+        } else {
+          toast.success("Đã tự động lưu toàn bộ thay đổi vào dự án sách!");
+        }
       }
     } catch (execErr: unknown) {
       const msg = execErr instanceof Error ? execErr.message : String(execErr);

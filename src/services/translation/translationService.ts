@@ -21,6 +21,7 @@ export interface TranslateChapterOptions {
   glossary?: Record<string, string>;
   researchBrief?: string;
   translateChapterTitle?: boolean;
+  convertCurrency?: boolean;
   baseUrl: string;
   apiKey?: string;
   model: string;
@@ -136,6 +137,7 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
       concurrency = 1,
       enableSlidingContext = true,
       enableAdaptiveDownsizing = true,
+      convertCurrency = true,
       abortSignal,
       onProgress,
       onLog,
@@ -177,7 +179,7 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
       }
     }
 
-    const systemPrompt = buildSystemPrompt(tone, sourceLang, targetLang);
+    const systemPrompt = buildSystemPrompt(tone, sourceLang, targetLang, { convertCurrency });
     const allTranslations: Record<string, string> = {};
     let processedBlocksCount = 0;
     let completedChunksCount = 0;
@@ -214,6 +216,7 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
         bookTitle,
         chapterTitle,
         researchBrief,
+        convertCurrency,
       });
 
       let lastErr: Error | null = null;

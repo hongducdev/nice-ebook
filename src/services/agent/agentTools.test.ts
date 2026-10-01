@@ -121,15 +121,58 @@ describe("AgentToolDispatcher", () => {
 
     const proposal = AgentToolDispatcher.createActionProposal(
       "apply_style_preset",
-      { presetId: "light-novel", fontSize: 18 },
+      { presetId: "lightnovel-clean", fontSize: 18 },
       mockReadOnlyCtx
     );
 
     const result = await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
 
-    expect(result).toContain('Đã áp dụng phong cách "light-novel"');
-    expect(mockMutatingCtx.selectPreset).toHaveBeenCalledWith("light-novel");
+    expect(result).toContain('Đã áp dụng phong cách "lightnovel-clean"');
+    expect(mockMutatingCtx.selectPreset).toHaveBeenCalledWith("lightnovel-clean");
     expect(mockMutatingCtx.updateTypography).toHaveBeenCalledWith({ fontSize: 18 });
+  });
+
+  it("refuses to apply a preset that does not exist instead of silently falling back", async () => {
+    const mockMutatingCtx: MutatingStoreContext = {
+      updateBookMetadata: vi.fn(),
+      selectPreset: vi.fn(),
+      updateTypography: vi.fn(),
+      setTranslationConfig: vi.fn(),
+    };
+
+    const proposal = AgentToolDispatcher.createActionProposal(
+      "apply_style_preset",
+      { presetId: "light-novel" },
+      mockReadOnlyCtx
+    );
+
+    // Previously `selectPreset("light-novel")` fell back to STYLE_PRESETS[0] and the
+    // agent still reported "đã áp dụng thành công" - a false success.
+    await expect(
+      AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx)
+    ).rejects.toThrow(/không tồn tại/i);
+    expect(mockMutatingCtx.selectPreset).not.toHaveBeenCalled();
+  });
+
+  it("does not read prototype members as preset aliases", async () => {
+    const mockMutatingCtx: MutatingStoreContext = {
+      updateBookMetadata: vi.fn(),
+      selectPreset: vi.fn(),
+      updateTypography: vi.fn(),
+      setTranslationConfig: vi.fn(),
+    };
+
+    const proposal = AgentToolDispatcher.createActionProposal(
+      "apply_style_preset",
+      { presetId: "constructor" },
+      mockReadOnlyCtx
+    );
+
+    // `presetAliases["constructor"]` returned `Object` through the prototype chain,
+    // which was then interpolated into the reply as function source.
+    await expect(
+      AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx)
+    ).rejects.toThrow(/không tồn tại/i);
   });
   it("executes get_workflow_status to inspect running and completed background jobs", async () => {
     const ctxWithJobs: ReadOnlyStoreContext = {
@@ -447,6 +490,269 @@ describe("AgentToolDispatcher", () => {
       const result = await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
       expect(mockOpenExportModal).toHaveBeenCalled();
       expect(result).toContain("EPUB");
+    });
+
+    it("proposes and executes update_chapter_title action", async () => {
+      const mockUpdateChapterTitle = vi.fn().mockResolvedValue(true);
+      const mockMutatingCtx: MutatingStoreContext = {
+        updateBookMetadata: vi.fn(),
+        selectPreset: vi.fn(),
+        updateTypography: vi.fn(),
+        setTranslationConfig: vi.fn(),
+        updateChapterTitle: mockUpdateChapterTitle,
+      };
+
+      const proposal = AgentToolDispatcher.createActionProposal(
+        "update_chapter_title",
+        { chapterIndex: 0, newTitle: "Chương 1: Bữa Tiệc Bất Ngờ" },
+        mockReadOnlyCtx
+      );
+
+      expect(proposal.toolName).toBe("update_chapter_title");
+      expect(proposal.diffSummary?.[0].before).toBe("An Unexpected Party");
+      expect(proposal.diffSummary?.[0].after).toBe("Chương 1: Bữa Tiệc Bất Ngờ");
+
+      const result = await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
+      expect(mockUpdateChapterTitle).toHaveBeenCalledWith(0, "Chương 1: Bữa Tiệc Bất Ngờ");
+      expect(result).toContain("Chương 1: Bữa Tiệc Bất Ngờ");
+    });
+
+    it("proposes and executes batch_update_chapter_titles action", async () => {
+      // The real store action resolves with the number of chapters whose heading was
+      // actually rewritten and persisted.
+      const mockBatchUpdateChapterTitles = vi.fn().mockResolvedValue(2);
+      const mockMutatingCtx: MutatingStoreContext = {
+        updateBookMetadata: vi.fn(),
+        selectPreset: vi.fn(),
+        updateTypography: vi.fn(),
+        setTranslationConfig: vi.fn(),
+        batchUpdateChapterTitles: mockBatchUpdateChapterTitles,
+      };
+
+      const updates = [
+        { chapterIndex: 0, newTitle: "Chương 1: Bữa Tiệc Bất Ngờ" },
+        { chapterIndex: 1, newTitle: "Chương 2: Cừu Nướng" },
+      ];
+
+      const proposal = AgentToolDispatcher.createActionProposal(
+        "batch_update_chapter_titles",
+        { updates },
+        mockReadOnlyCtx
+      );
+
+      expect(proposal.toolName).toBe("batch_update_chapter_titles");
+      expect(proposal.diffSummary?.length).toBe(2);
+
+      const result = await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
+      expect(mockBatchUpdateChapterTitles).toHaveBeenCalledWith(updates);
+      expect(result).toContain("2 chương");
+    });
+
+    it("proposes and executes batch_translate_chapters action", async () => {
+      const mockBatchTranslateChapters = vi.fn().mockResolvedValue(true);
+      const mockMutatingCtx: MutatingStoreContext = {
+        updateBookMetadata: vi.fn(),
+        selectPreset: vi.fn(),
+        updateTypography: vi.fn(),
+        setTranslationConfig: vi.fn(),
+        batchTranslateChapters: mockBatchTranslateChapters,
+      };
+
+      const proposal = AgentToolDispatcher.createActionProposal(
+        "batch_translate_chapters",
+        { scope: "unprocessed" },
+        mockReadOnlyCtx
+      );
+
+      expect(proposal.toolName).toBe("batch_translate_chapters");
+      const result = await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
+      expect(mockBatchTranslateChapters).toHaveBeenCalledWith(undefined, true);
+      // Awaited (not fire-and-forget), so the card cannot claim "đã thực thi" early.
+      expect(result).toContain("hoàn tất lượt dịch");
+    });
+
+    it("proposes and executes save_project action", async () => {
+      const mockSaveActiveProject = vi.fn();
+      const mockAutoSave = vi.fn().mockResolvedValue(true);
+      const mockMutatingCtx: MutatingStoreContext = {
+        updateBookMetadata: vi.fn(),
+        selectPreset: vi.fn(),
+        updateTypography: vi.fn(),
+        setTranslationConfig: vi.fn(),
+        saveActiveProject: mockSaveActiveProject,
+        autoSaveMetadataToFile: mockAutoSave,
+        // A book opened from a real file: only then can the EPUB be written.
+        currentFilePath: "C:\\books\\test.epub",
+      };
+
+      const proposal = AgentToolDispatcher.createActionProposal(
+        "save_project",
+        {},
+        mockReadOnlyCtx
+      );
+
+      expect(proposal.toolName).toBe("save_project");
+      const result = await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
+      expect(mockSaveActiveProject).toHaveBeenCalled();
+      expect(mockAutoSave).toHaveBeenCalled();
+      expect(result).toContain("EPUB");
+    });
+
+    it("does not claim a file write for a book opened from memory", async () => {
+      const mockAutoSave = vi.fn().mockResolvedValue(false);
+      const mockMutatingCtx: MutatingStoreContext = {
+        updateBookMetadata: vi.fn(),
+        selectPreset: vi.fn(),
+        updateTypography: vi.fn(),
+        setTranslationConfig: vi.fn(),
+        saveActiveProject: vi.fn(),
+        autoSaveMetadataToFile: mockAutoSave,
+        currentFilePath: null,
+      };
+
+      const proposal = AgentToolDispatcher.createActionProposal(
+        "save_project",
+        {},
+        mockReadOnlyCtx
+      );
+
+      const result = await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
+      // Must not touch the (nonexistent) file, nor promise that it did.
+      expect(mockAutoSave).not.toHaveBeenCalled();
+      expect(result).toContain("không có file trên đĩa");
+    });
+
+    it("reports a failed EPUB write instead of a false success", async () => {
+      const mockMutatingCtx: MutatingStoreContext = {
+        updateBookMetadata: vi.fn(),
+        selectPreset: vi.fn(),
+        updateTypography: vi.fn(),
+        setTranslationConfig: vi.fn(),
+        saveActiveProject: vi.fn(),
+        autoSaveMetadataToFile: vi.fn().mockResolvedValue(false),
+        currentFilePath: "C:\\books\\locked.epub",
+      };
+
+      const proposal = AgentToolDispatcher.createActionProposal(
+        "save_project",
+        {},
+        mockReadOnlyCtx
+      );
+
+      const result = await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
+      expect(result).toContain("KHÔNG ghi được");
+    });
+
+    it("does not wipe metadata fields when a model echoes them as empty strings", async () => {
+      const mockUpdateBookMetadata = vi.fn();
+      const mockMutatingCtx: MutatingStoreContext = {
+        updateBookMetadata: mockUpdateBookMetadata,
+        selectPreset: vi.fn(),
+        updateTypography: vi.fn(),
+        setTranslationConfig: vi.fn(),
+      };
+
+      const proposal = AgentToolDispatcher.createActionProposal(
+        "update_metadata",
+        { title: "Tên Mới", author: "", description: "   " },
+        mockReadOnlyCtx
+      );
+
+      await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
+
+      // Only the real value is forwarded: `""` means "not provided", not "erase".
+      expect(mockUpdateBookMetadata).toHaveBeenCalledWith({ title: "Tên Mới" });
+    });
+
+    it("throws when update_metadata carries no usable field at all", async () => {
+      const mockMutatingCtx: MutatingStoreContext = {
+        updateBookMetadata: vi.fn(),
+        selectPreset: vi.fn(),
+        updateTypography: vi.fn(),
+        setTranslationConfig: vi.fn(),
+      };
+
+      const proposal = AgentToolDispatcher.createActionProposal(
+        "update_metadata",
+        { publisher: "", genre: "  " },
+        mockReadOnlyCtx
+      );
+
+      await expect(
+        AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx)
+      ).rejects.toThrow(/không có trường thông tin/i);
+      expect(mockMutatingCtx.updateBookMetadata).not.toHaveBeenCalled();
+    });
+
+    it("reports failure when a chapter title could not be persisted", async () => {
+      const mockMutatingCtx: MutatingStoreContext = {
+        updateBookMetadata: vi.fn(),
+        selectPreset: vi.fn(),
+        updateTypography: vi.fn(),
+        setTranslationConfig: vi.fn(),
+        // The store resolves `false` when the chapter HTML could not be read, so no
+        // heading was rewritten. Reporting success there was the reported bug.
+        updateChapterTitle: vi.fn().mockResolvedValue(false),
+      };
+
+      const proposal = AgentToolDispatcher.createActionProposal(
+        "update_chapter_title",
+        { chapterIndex: 0, newTitle: "Không Lưu Được" },
+        mockReadOnlyCtx
+      );
+
+      await expect(
+        AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx)
+      ).rejects.toThrow(/không đọc được nội dung chương/i);
+    });
+
+    it("throws error in executeApprovedAction if translateSingleChapter returns false", async () => {
+      const mockMutatingCtx: MutatingStoreContext = {
+        updateBookMetadata: vi.fn(),
+        selectPreset: vi.fn(),
+        updateTypography: vi.fn(),
+        setTranslationConfig: vi.fn(),
+        translateSingleChapter: vi.fn().mockResolvedValue(false),
+      };
+
+      const proposal = AgentToolDispatcher.createActionProposal(
+        "translate_chapter",
+        { chapterIndex: 0 },
+        mockReadOnlyCtx
+      );
+
+      await expect(
+        AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx)
+      ).rejects.toThrow(/thất bại/);
+    });
+
+    it("normalizes alias keys in batch_update_chapter_titles", async () => {
+      const mockBatchUpdate = vi.fn().mockResolvedValue(2);
+      const mockMutatingCtx: MutatingStoreContext = {
+        updateBookMetadata: vi.fn(),
+        selectPreset: vi.fn(),
+        updateTypography: vi.fn(),
+        setTranslationConfig: vi.fn(),
+        batchUpdateChapterTitles: mockBatchUpdate,
+      };
+
+      const proposal = AgentToolDispatcher.createActionProposal(
+        "batch_update_chapter_titles",
+        {
+          updates: [
+            { chapter: 1, title: "Tiêu đề chuẩn 1" },
+            { index: 1, new_title: "Tiêu đề chuẩn 2" },
+          ],
+        },
+        mockReadOnlyCtx
+      );
+
+      const result = await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
+      expect(mockBatchUpdate).toHaveBeenCalledWith([
+        { chapterIndex: 0, newTitle: "Tiêu đề chuẩn 1" },
+        { chapterIndex: 1, newTitle: "Tiêu đề chuẩn 2" },
+      ]);
+      expect(result).toContain("2 chương");
     });
   });
 });

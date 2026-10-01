@@ -14,6 +14,7 @@ export interface BuildTranslationPromptOptions {
   bookTitle?: string;
   chapterTitle?: string;
   researchBrief?: string;
+  convertCurrency?: boolean;
 }
 
 /**
@@ -68,8 +69,29 @@ export const TONE_DESCRIPTIONS: Record<TranslationTone, { name: string; descript
   },
 };
 
-export function buildSystemPrompt(tone: TranslationTone, sourceLang: string, targetLang: string): string {
+export function buildSystemPrompt(
+  tone: TranslationTone,
+  sourceLang: string,
+  targetLang: string,
+  options?: { convertCurrency?: boolean }
+): string {
   const toneInfo = TONE_DESCRIPTIONS[tone] || TONE_DESCRIPTIONS.literary;
+  const isTargetVietnamese = targetLang.toLowerCase().includes("việt") || targetLang.toLowerCase() === "vi";
+  const shouldConvertCurrency = options?.convertCurrency !== false && isTargetVietnamese;
+
+  const currencyRule = shouldConvertCurrency
+    ? `\n11. NGUYÊN TẮC QUY ĐỔI TIỀN TỆ SANG VNĐ (CURRENCY CONVERSION):
+- Khi văn bản xuất hiện các số tiền ngoại tệ (như Nhân Dân Tệ / NDT / RMB / 元 / 块, Đô la Mỹ / USD / $, Yên Nhật / JPY / 円, Won Hàn Quốc / KRW / 원, Bảng Anh / GBP / £, Euro / EUR / €...):
+- BẠN HÃY GIỮ NGUYÊN mệnh giá tiền gốc và mở ngoặc đơn ghi kèm ước lượng quy đổi sang tiền Việt Nam (VND) để độc giả dễ hình dung giá trị thực tế.
+- Định dạng chuẩn: "<Số tiền gốc> (khoảng <Số tiền quy đổi> VND)" hoặc "<Số tiền gốc> (<Số tiền quy đổi> VND)".
+- Tỷ giá ước lượng thực tế phổ biến:
+  * 1 NDT (Nhân Dân Tệ / 元 / 块) ≈ 3.500 - 3.860 VND (Ví dụ: "5000 NDT" hoặc "5000元" ➔ "5000 NDT (19.3 triệu VND)" hoặc "5.000 NDT (khoảng 19,3 triệu VND)", "10万" ➔ "100.000 NDT (khoảng 380 triệu VND)").
+  * 1 USD ($) ≈ 25.400 VND (Ví dụ: "1000 USD" hoặc "$1000" ➔ "1.000 USD (khoảng 25,4 triệu VND)").
+  * 1 JPY (Yên / 円) ≈ 170 VND (Ví dụ: "100万日元" ➔ "1 triệu Yên (khoảng 170 triệu VND)").
+  * 1 KRW (Won / 원) ≈ 18,5 VND (Ví dụ: "1000万韩元" ➔ "10 triệu Won (khoảng 185 triệu VND)").
+- Dùng các đơn vị tiền Việt quen thuộc: "nghìn VND", "triệu VND", "tỷ VND".
+- Đảm bảo diễn đạt tự nhiên, giữ nguyên ngữ cảnh và không làm ngắt quãng câu thoại.`
+    : "";
 
   return `Bạn là một dịch giả sách xuất sắc, chuyên nghiệp và giàu kinh nghiệm, chuyên dịch các tác phẩm sách điện tử từ ${sourceLang} sang ${targetLang}.
 Nhiệm vụ của bạn là dịch danh sách các đoạn văn bản (blocks) được cung cấp sang ${targetLang} với chất lượng xuất bản cao cấp.
@@ -95,7 +117,7 @@ QUY TẮC CỐT LÕI BẮT BUỘC:
 - Nếu văn bản có chứa các cặp thẻ giữ chỗ dạng ⟦TAG_N⟧văn bản⟦/TAG_N⟧ (đại diện cho đường link hoặc thẻ trang trí đặc biệt):
 - BẠN BẮT BUỘC PHẢI DỊCH NỘI DUNG VĂN BẢN NẰM BÊN TRONG CẶP THẺ ĐÓ SANG ${targetLang.toUpperCase()}.
 - Giữ nguyên cặp mã mở ⟦TAG_N⟧ và mã đóng ⟦/TAG_N⟧ bao bọc xung quanh văn bản vừa dịch (Ví dụ: "Read ⟦TAG_0⟧Chapter Two: The Vanishing Glass⟦/TAG_0⟧" ➔ "Đọc ⟦TAG_0⟧Chương 2: Chiếc gương biến mất⟦/TAG_0⟧" hoặc "⟦TAG_1⟧第一章 降临⟦/TAG_1⟧" ➔ "⟦TAG_1⟧Chương 1: Giáng lâm⟦/TAG_1⟧").
-- Tuyệt đối KHÔNG bỏ sót văn bản bên trong các thẻ link hay thẻ trang trí.`;
+- Tuyệt đối KHÔNG bỏ sót văn bản bên trong các thẻ link hay thẻ trang trí.${currencyRule}`;
 }
 
 export function buildUserPrompt(options: BuildTranslationPromptOptions): string {
@@ -119,6 +141,10 @@ export function buildUserPrompt(options: BuildTranslationPromptOptions): string 
     if (bookTitle) prompt += ` Tác phẩm: "${bookTitle}".`;
     if (chapterTitle) prompt += ` Tiêu đề chương: "${chapterTitle}".`;
     prompt += `\n`;
+  }
+
+  if (options.convertCurrency !== false && (targetLangName.toLowerCase().includes("việt") || targetLangName.toLowerCase() === "vi")) {
+    prompt += `\n[Lưu ý quy đổi tiền tệ]: Các số tiền ngoại tệ (như NDT/元/块, USD, Yên, Won...) hãy giữ nguyên giá trị gốc kèm ước lượng quy đổi sang VND trong ngoặc đơn (Ví dụ: "5000 NDT" ➔ "5000 NDT (19.3 triệu VND)").\n`;
   }
 
   // 1. Sliding Context Window (LinguaGacha style: bounded to last 3-4 blocks, max 600 chars)

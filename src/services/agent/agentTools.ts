@@ -10,6 +10,7 @@
  */
 
 import { maskSecrets } from "../../utils/secretScrubber";
+import { STYLE_PRESETS } from "../../presets/styles";
 import type { ActiveTab } from "../../types/navigation";
 
 export type ToolVerdict = "allow" | "warn" | "block";
@@ -26,7 +27,15 @@ export interface ToolDefinition {
   isMutating: boolean;
   parameters: {
     type: "object";
-    properties: Record<string, { type: string; description: string; enum?: string[] }>;
+    properties: Record<
+      string,
+      {
+        type: string;
+        description: string;
+        enum?: string[];
+        items?: Record<string, unknown>;
+      }
+    >;
     required?: string[];
   };
 }
@@ -84,13 +93,20 @@ export interface MutatingStoreContext {
   updateTypography: (typo: Record<string, unknown>) => void;
   setTranslationConfig: (config: Record<string, unknown>) => void;
   setChapterHtml?: (chapterHref: string, html: string) => void;
+  updateChapterTitle?: (chapterIndex: number, newTitle: string) => Promise<boolean>;
+  batchUpdateChapterTitles?: (updates: Array<{ chapterIndex: number; newTitle: string }>) => Promise<number>;
+  /** Null when the book was loaded from bytes; used to report saves accurately. */
+  currentFilePath?: string | null;
   translateSingleChapter?: (chapterIndex: number) => Promise<boolean>;
+  batchTranslateChapters?: (chapterIndices?: number[], skipAlreadyTranslated?: boolean) => Promise<boolean>;
   enhanceSingleChapter?: (chapterIndex: number, features?: Record<string, unknown>) => Promise<boolean>;
   runXRayExtraction?: () => Promise<unknown>;
   embedXRayAppendixToBook?: () => Promise<boolean>;
   cleanWatermarksInBook?: (keywords?: string[]) => Promise<unknown>;
   setActiveTab?: (tab: ActiveTab) => void;
   openExportModal?: () => void;
+  saveActiveProject?: () => void;
+  autoSaveMetadataToFile?: () => Promise<boolean>;
   currentBook?: {
     title: string;
     author: string;
@@ -271,6 +287,58 @@ export const AGENT_TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: "batch_translate_chapters",
+    description: "Kích hoạt tiến trình dịch thuật AI tự động cho toàn bộ sách hoặc tất cả các chương chưa dịch. Yêu cầu người dùng phê duyệt.",
+    isMutating: true,
+    parameters: {
+      type: "object",
+      properties: {
+        scope: {
+          type: "string",
+          enum: ["unprocessed", "all"],
+          description: "Phạm vi dịch: 'unprocessed' (các chương chưa dịch) hoặc 'all' (toàn bộ sách)",
+        },
+      },
+      required: ["scope"],
+    },
+  },
+  {
+    name: "update_chapter_title",
+    description: "Đề xuất đổi hoặc sửa tiêu đề của một chương trong sách. Yêu cầu người dùng phê duyệt.",
+    isMutating: true,
+    parameters: {
+      type: "object",
+      properties: {
+        chapterIndex: { type: "number", description: "Chỉ số chương cần đổi tiêu đề (bắt đầu từ 0)" },
+        newTitle: { type: "string", description: "Tiêu đề mới cho chương" },
+      },
+      required: ["chapterIndex", "newTitle"],
+    },
+  },
+  {
+    name: "batch_update_chapter_titles",
+    description: "Đề xuất đổi hoặc dịch tiêu đề hàng loạt cho nhiều chương sách cùng lúc. Yêu cầu người dùng phê duyệt.",
+    isMutating: true,
+    parameters: {
+      type: "object",
+      properties: {
+        updates: {
+          type: "array",
+          description: "Danh sách các chương cần cập nhật tiêu đề",
+          items: {
+            type: "object",
+            properties: {
+              chapterIndex: { type: "number", description: "Chỉ số chương (bắt đầu từ 0)" },
+              newTitle: { type: "string", description: "Tiêu đề mới của chương" },
+            },
+            required: ["chapterIndex", "newTitle"],
+          },
+        },
+      },
+      required: ["updates"],
+    },
+  },
+  {
     name: "enhance_chapter",
     description: "Đề xuất chuẩn hóa định dạng chương: sửa lỗi chính tả, chuẩn hóa tiêu đề H1 và xóa rác/watermark. Yêu cầu người dùng phê duyệt.",
     isMutating: true,
@@ -309,6 +377,15 @@ export const AGENT_TOOLS: ToolDefinition[] = [
         },
       },
       required: ["format"],
+    },
+  },
+  {
+    name: "save_project",
+    description: "Lưu toàn bộ thay đổi của cuốn sách (tên sách, tác giả, metadata, kiểu dáng, nội dung các chương) vào dự án và trực tiếp ghi an toàn vào file sách trên máy tính.",
+    isMutating: true,
+    parameters: {
+      type: "object",
+      properties: {},
     },
   },
   {
@@ -751,6 +828,59 @@ export class AgentToolDispatcher {
         };
       }
 
+      case "batch_translate_chapters": {
+        const scope = params.scope === "all" ? "all" : "unprocessed";
+        const total = ctx.currentBook?.chapters.length || ctx.currentBook?.chapter_count || 0;
+        return {
+          id: proposalId,
+          toolName,
+          title: scope === "all" ? `Dịch toàn bộ ${total} chương sách` : "Dịch tất cả các chương chưa dịch",
+          description: `Đề xuất kích hoạt tiến trình dịch thuật AI nền cho ${scope === "all" ? "toàn bộ cuốn sách" : "các chương còn thiếu"}.`,
+          parameters: { ...params, scope },
+          diffSummary: [
+            { field: "Phạm vi dịch", before: "Thủ công", after: scope === "all" ? "Toàn bộ sách" : "Các chương chưa dịch" },
+            { field: "Ngôn ngữ đích", before: ctx.translationConfig.targetLang || "vi", after: ctx.translationConfig.targetLang || "vi" },
+          ],
+          createdAt: Date.now(),
+        };
+      }
+
+      case "update_chapter_title": {
+        const chIdx = Number(params.chapterIndex);
+        const newTitle = String(params.newTitle || "").trim();
+        const oldTitle = ctx.currentBook?.chapters[chIdx]?.title || `Chương ${chIdx + 1}`;
+        return {
+          id: proposalId,
+          toolName,
+          title: `Đổi tiêu đề chương ${chIdx + 1}`,
+          description: `Đề xuất đổi tên chương thành "${newTitle}".`,
+          parameters: { ...params, chapterIndex: chIdx, newTitle },
+          diffSummary: [
+            { field: `Chương ${chIdx + 1}`, before: oldTitle, after: newTitle },
+          ],
+          createdAt: Date.now(),
+        };
+      }
+
+      case "batch_update_chapter_titles": {
+        const rawUpdates = (params.updates as Array<{ chapterIndex: number; newTitle: string }>) || [];
+        const diffs: Array<{ field: string; before: string; after: string }> = [];
+        for (const u of rawUpdates) {
+          const idx = Number(u.chapterIndex);
+          const oldTitle = ctx.currentBook?.chapters[idx]?.title || `Chương ${idx + 1}`;
+          diffs.push({ field: `Chương ${idx + 1}`, before: oldTitle, after: String(u.newTitle || "").trim() });
+        }
+        return {
+          id: proposalId,
+          toolName,
+          title: `Cập nhật tiêu đề cho ${diffs.length} chương sách`,
+          description: `Đề xuất cập nhật/dịch tiêu đề hàng loạt cho ${diffs.length} chương.`,
+          parameters: { ...params, updates: rawUpdates },
+          diffSummary: diffs.slice(0, 10),
+          createdAt: Date.now(),
+        };
+      }
+
       case "enhance_chapter": {
         const chIdx =
           params.chapterIndex !== undefined && !isNaN(Number(params.chapterIndex))
@@ -800,6 +930,20 @@ export class AgentToolDispatcher {
         };
       }
 
+      case "save_project": {
+        return {
+          id: proposalId,
+          toolName,
+          title: "Lưu dự án & ghi file sách",
+          description: "Lưu toàn bộ thay đổi vào bộ nhớ dự án và cập nhật an toàn vào file EPUB",
+          parameters: params,
+          diffSummary: [
+            { field: "Tự động lưu", before: "Chưa lưu đĩa", after: "Ghi đè file sách & cập nhật dự án" },
+          ],
+          createdAt: Date.now(),
+        };
+      }
+
       case "import_content_snippet": {
         const chIdx = Number(params.chapterIndex);
         const snippet = String(params.snippet || "");
@@ -835,15 +979,88 @@ export class AgentToolDispatcher {
 
     switch (toolName) {
       case "update_metadata": {
-        ctx.updateBookMetadata(parameters);
-        return `Đã cập nhật thông tin sách thành công.`;
+        // Accept the aliases models actually emit, and treat an empty string as
+        // "not provided". Forwarding `""` verbatim would silently WIPE a field
+        // whenever a model echoes a half-filled metadata object.
+        const text = (value: unknown): string | undefined => {
+          if (value === undefined || value === null) return undefined;
+          const trimmed = String(value).trim();
+          return trimmed === "" ? undefined : trimmed;
+        };
+
+        const resolved: Record<string, string | undefined> = {
+          title: text(parameters.title ?? parameters.book_title ?? parameters.bookTitle ?? parameters.name ?? parameters.tieu_de ?? parameters.ten_sach),
+          author: text(parameters.author ?? parameters.book_author ?? parameters.authorName ?? parameters.tac_gia),
+          description: text(parameters.description ?? parameters.summary ?? parameters.van_an ?? parameters.mo_ta ?? parameters.synopsis),
+          publisher: text(parameters.publisher ?? parameters.nha_xuat_ban),
+          published_year: text(parameters.published_year ?? parameters.publishedYear ?? parameters.year ?? parameters.nam_xuat_ban),
+          genre: text(parameters.genre ?? parameters.the_loai ?? parameters.category),
+          language: text(parameters.language ?? parameters.lang ?? parameters.ngon_ngu),
+        };
+
+        const updates = Object.fromEntries(
+          Object.entries(resolved).filter(([, value]) => value !== undefined)
+        );
+
+        if (Object.keys(updates).length === 0) {
+          throw new Error("Không có trường thông tin metadata hợp lệ nào để cập nhật.");
+        }
+
+        ctx.updateBookMetadata(updates);
+
+        if (ctx.saveActiveProject) ctx.saveActiveProject();
+        if (ctx.autoSaveMetadataToFile) await ctx.autoSaveMetadataToFile();
+
+        const fieldLabels: Record<string, string> = {
+          title: "Tựa đề",
+          author: "Tác giả",
+          description: "Mô tả",
+          publisher: "NXB",
+          published_year: "Năm",
+          genre: "Thể loại",
+          language: "Ngôn ngữ",
+        };
+        const summary = Object.entries(updates)
+          .map(([key, value]) => `${fieldLabels[key] ?? key}: "${value}"`)
+          .join(", ");
+        return `Đã cập nhật và lưu thông tin sách: ${summary}.`;
       }
 
       case "apply_style_preset": {
-        const presetId = String(parameters.presetId || "");
-        if (presetId) {
-          ctx.selectPreset(presetId);
+        let presetId = String(parameters.presetId || parameters.preset || "").trim();
+        const presetAliases: Record<string, string> = {
+          wuxia: "wuxia-ancient",
+          "tien-hiep": "wuxia-ancient",
+          "co-phong": "wuxia-ancient",
+          lightnovel: "lightnovel-clean",
+          anime: "lightnovel-clean",
+          scifi: "scifi-neon",
+          "sci-fi": "scifi-neon",
+          classic: "classic-hardcover",
+          hardcover: "classic-hardcover",
+          mystery: "mystery-dark",
+        };
+        // `hasOwnProperty.call` avoids the prototype chain: a model-supplied
+        // `presetId: "constructor"` would otherwise resolve to a function.
+        const aliasKey = presetId.toLowerCase();
+        if (Object.prototype.hasOwnProperty.call(presetAliases, aliasKey)) {
+          presetId = presetAliases[aliasKey];
         }
+
+        const hasTypographyChange =
+          typeof parameters.fontSize === "number" ||
+          typeof parameters.lineHeight === "number" ||
+          typeof parameters.dropCaps === "boolean";
+
+        if (presetId) {
+          if (!STYLE_PRESETS.some((preset) => preset.id === presetId)) {
+            throw new Error(`Preset không tồn tại: "${presetId}". Không có thay đổi nào được áp dụng.`);
+          }
+          ctx.selectPreset(presetId);
+        } else if (!hasTypographyChange) {
+          throw new Error("Thiếu presetId nên không có phong cách nào được áp dụng.");
+        }
+
         if (typeof parameters.fontSize === "number") {
           ctx.updateTypography({ fontSize: parameters.fontSize });
         }
@@ -853,24 +1070,34 @@ export class AgentToolDispatcher {
         if (typeof parameters.dropCaps === "boolean") {
           ctx.updateTypography({ dropCaps: parameters.dropCaps });
         }
-        return `Đã áp dụng phong cách "${presetId}" thành công.`;
+        if (ctx.saveActiveProject) ctx.saveActiveProject();
+        if (ctx.autoSaveMetadataToFile) await ctx.autoSaveMetadataToFile();
+
+        return presetId
+          ? `Đã áp dụng phong cách "${presetId}" thành công và lưu vào dự án.`
+          : `Đã cập nhật thông số kiểu chữ và lưu vào dự án.`;
       }
 
       case "update_typography": {
         ctx.updateTypography(parameters);
-        return `Đã cập nhật các thông số hiển thị kiểu chữ thành công.`;
+        if (ctx.saveActiveProject) ctx.saveActiveProject();
+        if (ctx.autoSaveMetadataToFile) await ctx.autoSaveMetadataToFile();
+        return `Đã cập nhật các thông số hiển thị kiểu chữ và lưu thành công.`;
       }
 
       case "clean_watermarks": {
-        if (ctx.cleanWatermarksInBook) {
-          const res = (await ctx.cleanWatermarksInBook(
-            parameters.keywords as string[] | undefined
-          )) as { affectedChapters?: number; removedCount?: number } | undefined;
-          const removed = res?.removedCount || 0;
-          const affected = res?.affectedChapters || 0;
-          return `Đã quét và xóa thành công ${removed} đoạn watermark/rác từ ${affected} chương trong sách.`;
+        if (!ctx.cleanWatermarksInBook) {
+          throw new Error("Chức năng làm sạch watermark không khả dụng.");
         }
-        return `Đã xác nhận yêu cầu làm sạch watermark.`;
+        const res = (await ctx.cleanWatermarksInBook(
+          parameters.keywords as string[] | undefined
+        )) as { affectedChapters?: number; removedCount?: number } | undefined;
+        const removed = res?.removedCount || 0;
+        const affected = res?.affectedChapters || 0;
+        if (removed === 0) {
+          return `Đã kiểm tra toàn bộ sách: không phát hiện thêm đoạn watermark nào cần xóa.`;
+        }
+        return `Đã quét và xóa thành công ${removed} đoạn watermark/rác từ ${affected} chương trong sách.`;
       }
 
       case "manage_glossary": {
@@ -878,40 +1105,139 @@ export class AgentToolDispatcher {
         ctx.setTranslationConfig({
           glossary: { ...terms },
         });
+        if (ctx.saveActiveProject) ctx.saveActiveProject();
         return `Đã cập nhật ${Object.keys(terms).length} thuật ngữ vào Glossary.`;
       }
 
       case "translate_chapter": {
-        const chIdx = Number(parameters.chapterIndex);
-        if (ctx.translateSingleChapter) {
-          await ctx.translateSingleChapter(chIdx);
-          return `Đã kích hoạt dịch thành công chương ${chIdx + 1}.`;
+        const rawIdx = parameters.chapterIndex ?? parameters.chapter_index ?? (parameters.chapter !== undefined ? Number(parameters.chapter) - 1 : 0);
+        const chIdx = Number(rawIdx);
+        if (Number.isNaN(chIdx) || chIdx < 0) {
+          throw new Error(`Chỉ số chương cần dịch không hợp lệ.`);
         }
-        return `Đã xác nhận yêu cầu dịch chương ${chIdx + 1}.`;
+        if (!ctx.translateSingleChapter) {
+          throw new Error("Chức năng dịch thuật không khả dụng.");
+        }
+        const ok = await ctx.translateSingleChapter(chIdx);
+        if (!ok) {
+          throw new Error(`Dịch chương ${chIdx + 1} thất bại. Vui lòng kiểm tra kết nối AI Gateway trong Cổng AI.`);
+        }
+        return `Đã kích hoạt dịch thành công chương ${chIdx + 1} sang tiếng Việt và lưu vào dự án.`;
+      }
+
+      case "batch_translate_chapters": {
+        const scope = parameters.scope === "all" ? "all" : "unprocessed";
+        if (!ctx.batchTranslateChapters) {
+          throw new Error("Chức năng dịch hàng loạt không khả dụng.");
+        }
+        // AWAITED, not fire-and-forget. Returning immediately made the proposal
+        // render as "Đã thực thi" and re-export the EPUB while chapters were still
+        // being written. Progress is surfaced live through `isTranslating`.
+        const finished = await ctx.batchTranslateChapters(undefined, scope === "unprocessed");
+        if (!finished) {
+          throw new Error("Tiến trình dịch hàng loạt không thể khởi động.");
+        }
+        return `Đã hoàn tất lượt dịch cho ${scope === "all" ? "toàn bộ cuốn sách" : "các chương chưa dịch"}. Các chương không dịch được (nếu có) đã được ghi rõ trong nhật ký.`;
+      }
+
+      case "update_chapter_title": {
+        const rawIdx = parameters.chapterIndex ?? parameters.chapter_index ?? parameters.index ?? (parameters.chapter !== undefined ? Number(parameters.chapter) - 1 : undefined);
+        const chIdx = Number(rawIdx);
+        const newTitle = String(parameters.newTitle ?? parameters.title ?? parameters.new_title ?? parameters.tieu_de_moi ?? "").trim();
+
+        if (Number.isNaN(chIdx) || chIdx < 0) {
+          throw new Error(`Chỉ số chương không hợp lệ: ${parameters.chapterIndex ?? parameters.chapter}`);
+        }
+        if (!newTitle) {
+          throw new Error("Tiêu đề chương mới không được để trống.");
+        }
+        if (!ctx.updateChapterTitle) {
+          throw new Error("Chức năng đổi tiêu đề chương không khả dụng.");
+        }
+
+        // The store action persists the rewritten <h1> into `modifiedChapters`,
+        // the project DB and the EPUB, so it must be awaited and its result
+        // checked: without the heading rewrite a title change is silently lost
+        // on reopen, which is exactly the "reports success but did nothing" bug.
+        const persisted = await ctx.updateChapterTitle(chIdx, newTitle);
+        if (!persisted) {
+          throw new Error(
+            `Không thể đổi tiêu đề chương ${chIdx + 1}: không đọc được nội dung chương để ghi lại tiêu đề.`
+          );
+        }
+        return `Đã đổi tiêu đề chương ${chIdx + 1} thành "${newTitle}" và lưu vào sách.`;
+      }
+
+      case "batch_update_chapter_titles": {
+        const rawUpdates = (parameters.updates ?? parameters.chapter_titles ?? parameters.chapters) as Array<Record<string, unknown>> | undefined;
+        if (!rawUpdates || !Array.isArray(rawUpdates) || rawUpdates.length === 0) {
+          throw new Error("Danh sách tiêu đề chương cần cập nhật rỗng hoặc không đúng định dạng.");
+        }
+
+        const normalizedList: Array<{ chapterIndex: number; newTitle: string }> = [];
+        for (const u of rawUpdates) {
+          const rawIdx = u.chapterIndex ?? u.chapter_index ?? u.index ?? (u.chapter !== undefined ? Number(u.chapter) - 1 : undefined);
+          const idx = Number(rawIdx);
+          const title = String(u.newTitle ?? u.title ?? u.new_title ?? u.tieu_de ?? "").trim();
+          if (!Number.isNaN(idx) && idx >= 0 && title) {
+            normalizedList.push({ chapterIndex: idx, newTitle: title });
+          }
+        }
+
+        if (normalizedList.length === 0) {
+          throw new Error("Không có chương hợp lệ nào để cập nhật tiêu đề.");
+        }
+
+        if (!ctx.batchUpdateChapterTitles) {
+          throw new Error("Chức năng đổi tiêu đề hàng loạt không khả dụng.");
+        }
+
+        // Coerce defensively: a context that returns a non-number must be treated as
+        // "nothing persisted" rather than silently reporting an `undefined` count.
+        const persistedCount = Number(await ctx.batchUpdateChapterTitles(normalizedList)) || 0;
+        if (persistedCount === 0) {
+          throw new Error(
+            "Không thể cập nhật tiêu đề: không đọc được nội dung các chương để ghi lại tiêu đề."
+          );
+        }
+        const skipped = normalizedList.length - persistedCount;
+        return skipped > 0
+          ? `Đã cập nhật và lưu tiêu đề cho ${persistedCount}/${normalizedList.length} chương (${skipped} chương không đọc được nội dung nên bị bỏ qua).`
+          : `Đã cập nhật và lưu tiêu đề cho ${persistedCount} chương sách.`;
       }
 
       case "enhance_chapter": {
-        const chIdx = Number(parameters.chapterIndex);
-        if (ctx.enhanceSingleChapter) {
-          await ctx.enhanceSingleChapter(chIdx, {
-            standardizeH1: parameters.standardizeH1 !== false,
-            cleanTopJunk: true,
-          });
-          return `Đã chuẩn hóa tiêu đề H1 và tối ưu định dạng chương ${chIdx + 1} thành công.`;
+        const rawIdx = parameters.chapterIndex ?? parameters.chapter_index ?? (parameters.chapter !== undefined ? Number(parameters.chapter) - 1 : 0);
+        const chIdx = Number(rawIdx);
+        if (Number.isNaN(chIdx) || chIdx < 0) {
+          throw new Error(`Chỉ số chương không hợp lệ.`);
         }
-        return `Đã xác nhận yêu cầu tối ưu chương ${chIdx + 1}.`;
+        if (!ctx.enhanceSingleChapter) {
+          throw new Error("Chức năng biên tập AI không khả dụng.");
+        }
+        const ok = await ctx.enhanceSingleChapter(chIdx, {
+          standardizeH1: parameters.standardizeH1 !== false,
+          cleanTopJunk: true,
+        });
+        if (!ok) {
+          throw new Error(`Biên tập tối ưu chương ${chIdx + 1} thất bại.`);
+        }
+        return `Đã chuẩn hóa tiêu đề H1 và tối ưu định dạng chương ${chIdx + 1} thành công.`;
       }
 
       case "extract_xray_entities": {
-        if (ctx.runXRayExtraction) {
-          await ctx.runXRayExtraction();
-          if (parameters.autoEmbedAppendix !== false && ctx.embedXRayAppendixToBook) {
-            await ctx.embedXRayAppendixToBook();
-            return `Đã trích xuất nhân vật/thuật ngữ và tự động nhúng phụ lục X-Ray vào sách thành công.`;
-          }
-          return `Đã trích xuất danh sách thực thể X-Ray thành công.`;
+        if (!ctx.runXRayExtraction) {
+          throw new Error("Chức năng trích xuất X-Ray không khả dụng.");
         }
-        return `Đã ghi nhận yêu cầu trích xuất X-Ray.`;
+        const data = await ctx.runXRayExtraction();
+        if (!data) {
+          throw new Error("Không thể trích xuất thực thể X-Ray từ sách.");
+        }
+        if (parameters.autoEmbedAppendix !== false && ctx.embedXRayAppendixToBook) {
+          await ctx.embedXRayAppendixToBook();
+          return `Đã trích xuất nhân vật/thuật ngữ và tự động nhúng phụ lục X-Ray vào sách thành công.`;
+        }
+        return `Đã trích xuất danh sách thực thể X-Ray thành công.`;
       }
 
       case "export_book": {
@@ -922,6 +1248,24 @@ export class AgentToolDispatcher {
           ctx.setActiveTab("reader");
         }
         return `Đã mở trung tâm xuất file cho định dạng ${fmt.toUpperCase()}. Bạn có thể xem lại và xuất sách ngay.`;
+      }
+
+      case "save_project": {
+        // This tool owns the save (and reports its real outcome). `confirmAgentAction`
+        // skips its own save for this tool so the EPUB is not re-exported twice.
+        if (ctx.saveActiveProject) ctx.saveActiveProject();
+
+        if (!ctx.currentFilePath) {
+          return `Đã lưu toàn bộ thông tin sách, metadata và nội dung vào dự án. Sách này được mở từ bộ nhớ nên không có file trên đĩa để ghi.`;
+        }
+
+        const savedToFile = ctx.autoSaveMetadataToFile
+          ? await ctx.autoSaveMetadataToFile()
+          : false;
+
+        return savedToFile
+          ? `Đã lưu toàn bộ thông tin sách, metadata và nội dung vào dự án và ghi thành công vào file EPUB.`
+          : `Đã lưu toàn bộ thay đổi vào dự án, nhưng KHÔNG ghi được vào file EPUB (file có thể đang bị khóa hoặc đã bị di chuyển).`;
       }
 
       case "import_content_snippet": {
@@ -940,9 +1284,11 @@ export class AgentToolDispatcher {
             newHtml = `${currentHtml}\n<div class="agent-snippet">${snippet}</div>`;
           }
           ctx.setChapterHtml(ch.href, newHtml);
+          if (ctx.saveActiveProject) ctx.saveActiveProject();
+          if (ctx.autoSaveMetadataToFile) await ctx.autoSaveMetadataToFile();
           return `Đã chèn nội dung vào chương ${chIdx + 1} (${mode}) thành công.`;
         }
-        return `Đã ghi nhận nội dung chèn vào chương ${chIdx + 1}.`;
+        throw new Error(`Không tìm thấy chương ${chIdx + 1} để chèn nội dung.`);
       }
 
       default:

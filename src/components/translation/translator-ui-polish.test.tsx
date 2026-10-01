@@ -127,4 +127,42 @@ describe("UI Polish & Parity Checks", () => {
     expect(categories[0].id).toBe("gemini");
     expect(categories[0].models).toContain("gemini-2.5-pro");
   });
+
+  it("displays live translation progress indicator and active chapter title in the preview header during translation", () => {
+    mockStoreState.currentBook = {
+      title: "Test Book",
+      author: "Author",
+      language: "en",
+      description: null,
+      cover_data_url: null,
+      chapter_count: 3,
+      file_size_bytes: 1024,
+      chapters: [
+        { id: "c1", href: "c1.xhtml", title: "Chapter 1", preview_text: "Text 1" },
+        { id: "c2", href: "c2.xhtml", title: "Chapter 2 - The Voyage", preview_text: "Text 2" },
+        { id: "c3", href: "c3.xhtml", title: "Chapter 3", preview_text: "Text 3" },
+      ],
+      sample_text: "Sample",
+    };
+    mockStoreState.activeChapterIndex = 1; // Chapter 2
+    mockStoreState.isTranslating = true;
+    mockStoreState.translationProgress = {
+      currentChapterIndex: 2,
+      totalChapters: 3,
+      currentChapterHref: "c2.xhtml",
+      currentChapterTitle: "Chapter 2 - The Voyage",
+      currentBlock: 5,
+      totalBlocks: 20,
+      percent: 25,
+    };
+
+    const html = renderToStaticMarkup(<BookTranslatorView />);
+
+    // Must display Chapter 2 title in preview header
+    expect(html).toContain("Chapter 2 - The Voyage");
+    // Must display live percent badge
+    expect(html).toContain("25%");
+    // Must display Real-time Stream badge
+    expect(html).toContain("Real-time Stream");
+  });
 });

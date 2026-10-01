@@ -183,4 +183,45 @@ describe("bookTranslator - LinguaGacha style prompt & glossary engine", () => {
       expect(isUntranslatedEcho("今天天气很好这是一个中文句子", "今天天气很好这是一个中文句子", "zh", "vi")).toBe(true);
     });
   });
+
+  describe("Currency Conversion Prompts", () => {
+    it("injects currency conversion rule into system prompt when target is Vietnamese", () => {
+      const prompt = buildSystemPrompt("literary", "Tiếng Trung (Chinese)", "Tiếng Việt (Vietnamese)", {
+        convertCurrency: true,
+      });
+
+      expect(prompt).toContain("NGUYÊN TẮC QUY ĐỔI TIỀN TỆ SANG VNĐ");
+      expect(prompt).toContain("5000 NDT");
+      expect(prompt).toContain("19.3 triệu VND");
+    });
+
+    it("omits currency conversion rule when convertCurrency is explicitly false", () => {
+      const prompt = buildSystemPrompt("literary", "Tiếng Trung (Chinese)", "Tiếng Việt (Vietnamese)", {
+        convertCurrency: false,
+      });
+
+      expect(prompt).not.toContain("NGUYÊN TẮC QUY ĐỔI TIỀN TỆ SANG VNĐ");
+    });
+
+    it("omits currency conversion rule when target language is not Vietnamese", () => {
+      const prompt = buildSystemPrompt("literary", "Tiếng Trung (Chinese)", "Tiếng Anh (English)", {
+        convertCurrency: true,
+      });
+
+      expect(prompt).not.toContain("NGUYÊN TẮC QUY ĐỔI TIỀN TỆ SANG VNĐ");
+    });
+
+    it("injects currency conversion note into user prompt when convertCurrency is enabled", () => {
+      const prompt = buildUserPrompt({
+        sourceLangName: "Tiếng Trung (Chinese)",
+        targetLangName: "Tiếng Việt (Vietnamese)",
+        tone: "literary",
+        blocks: [{ id: "p_0", text: "他拿出五千块钱。" }],
+        convertCurrency: true,
+      });
+
+      expect(prompt).toContain("[Lưu ý quy đổi tiền tệ]");
+      expect(prompt).toContain("5000 NDT (19.3 triệu VND)");
+    });
+  });
 });

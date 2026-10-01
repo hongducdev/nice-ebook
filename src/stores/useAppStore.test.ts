@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useAppStore } from "./useAppStore";
 import { AiService } from "../services/aiService";
+import { TranslationService } from "../services/translation/translationService";
 
 // Mock @tauri-apps/api/core
 vi.mock("@tauri-apps/api/core", () => ({
@@ -1122,6 +1123,98 @@ describe("useAppStore - Book Loading & Drag-and-Drop", () => {
       expect(updated["Harry"]).toBe("Harry");
       expect(updated["Dumbledore"]).toBe("Cụ Dumbledore");
     });
+
+    it("advances activeChapterIndex to match chapter being translated in single mode and updates modifiedChapters live", async () => {
+      useAppStore.setState({
+        currentBook: {
+          title: "Book",
+          author: "Author",
+          language: "en",
+          description: null,
+          cover_data_url: null,
+          chapter_count: 3,
+          file_size_bytes: 100,
+          chapters: [
+            { id: "c1", href: "ch1.xhtml", title: "Chapter 1", preview_text: "Text 1" },
+            { id: "c2", href: "ch2.xhtml", title: "Chapter 2", preview_text: "Text 2" },
+            { id: "c3", href: "ch3.xhtml", title: "Chapter 3", preview_text: "Text 3" },
+          ],
+          sample_text: "Sample",
+        },
+        activeChapterIndex: 0,
+        modifiedChapters: {
+          "ch2.xhtml": "<html><body>Original ch2 content</body></html>",
+        },
+      });
+
+      const spyTranslate = vi.spyOn(TranslationService, "translateChapter").mockImplementation(async (opts: any) => {
+        opts.onPartialUpdate?.({
+          partialHtml: "<html><body>Partial translated ch2</body></html>",
+          latestTranslatedBlockIds: ["p_1"],
+          resolvedCount: 1,
+          totalBlocks: 2,
+        });
+        return {
+          translatedHtml: "<html><body>Full translated ch2</body></html>",
+          translatedBlocksCount: 2,
+          totalBlocks: 2,
+          elapsedMs: 100,
+          usedModel: "gpt-4o",
+        };
+      });
+
+      // Starting translation on chapter index 1 (Chapter 2)
+      await useAppStore.getState().translateSingleChapter(1);
+
+      // Expect activeChapterIndex in store to automatically follow Chapter 2
+      expect(useAppStore.getState().activeChapterIndex).toBe(1);
+      expect(useAppStore.getState().modifiedChapters["ch2.xhtml"]).toBe("<html><body>Full translated ch2</body></html>");
+      spyTranslate.mockRestore();
+    });
+
+    it("advances activeChapterIndex across chapters during batch translation and clears translating state in finally", async () => {
+      const visitedChapters: number[] = [];
+
+      useAppStore.setState({
+        currentBook: {
+          title: "Book",
+          author: "Author",
+          language: "en",
+          description: null,
+          cover_data_url: null,
+          chapter_count: 2,
+          file_size_bytes: 100,
+          chapters: [
+            { id: "c1", href: "ch1.xhtml", title: "Chapter 1", preview_text: "Text 1" },
+            { id: "c2", href: "ch2.xhtml", title: "Chapter 2", preview_text: "Text 2" },
+          ],
+          sample_text: "Sample",
+        },
+        activeChapterIndex: 0,
+        modifiedChapters: {
+          "ch1.xhtml": "<html><body>Ch 1 text</body></html>",
+          "ch2.xhtml": "<html><body>Ch 2 text</body></html>",
+        },
+      });
+
+      const spyTranslate = vi.spyOn(TranslationService, "translateChapter").mockImplementation(async () => {
+        visitedChapters.push(useAppStore.getState().activeChapterIndex);
+        return {
+          translatedHtml: "<html><body>Done</body></html>",
+          translatedBlocksCount: 1,
+          totalBlocks: 1,
+          elapsedMs: 100,
+          usedModel: "gpt-4o",
+        };
+      });
+
+      await useAppStore.getState().batchTranslateChapters([0, 1], false);
+
+      expect(visitedChapters).toEqual([0, 1]);
+      expect(useAppStore.getState().isTranslating).toBe(false);
+      expect(useAppStore.getState().translationProgress).toBeNull();
+      spyTranslate.mockRestore();
+    });
   });
 
   describe("Book Chat Agent Actions", () => {
@@ -1786,5 +1879,233 @@ describe("useAppStore - Ingest Workflow Router", () => {
     expect(state.translatedChapters).toEqual({});
     expect(state.workflowSource).toBe("auto");
     expect(state.bookProfile?.workflow).toBe("polish");
+  });
+});
+
+/**
+ * Regression tests for chapter-title persistence.
+ *
+ * A chapter title lives in the chapter HTML: both `openProject` and the Rust
+ * parser re-derive it from the first non-empty `<h1>` -> `<h2>` -> `<title>`.
+ * Mutating only the in-memory `currentBook.chapters[i].title` was therefore
+ * silently discarded on the next load, while the agent still reported success.
+ */
+describe("useAppStore - Chapter Title Persistence", () => {
+  const BOOK = {
+    title: "Sách Thử",
+    author: "Tác Giả",
+    language: "vi",
+    description: null,
+    cover_data_url: null,
+    chapter_count: 2,
+    file_size_bytes: 100,
+    chapters: [
+      { id: "c1", href: "ch1.xhtml", title: "Chương 1", preview_text: "A" },
+      { id: "c2", href: "ch2.xhtml", title: "Chương 2", preview_text: "B" },
+    ],
+    sample_text: "Sample",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAppStore.setState({
+      currentBook: { ...BOOK },
+      currentFilePath: "C:\\books\\test.epub",
+      currentFileBytes: null,
+      modifiedChapters: {},
+      activeProjectId: null,
+    });
+  });
+
+  it("persists the new title into the chapter HTML even when the chapter was never edited", async () => {
+    (invoke as any).mockImplementation(async (cmd: string) => {
+      if (cmd === "read_chapter") {
+        return '<html><body><h1 class="t">Chương 1</h1><p>Noi dung</p></body></html>';
+      }
+      return 0;
+    });
+
+    const persisted = await useAppStore.getState().updateChapterTitle(0, "Chương 1: Khởi Hành");
+
+    expect(persisted).toBe(true);
+
+    const after = useAppStore.getState();
+    expect(after.currentBook?.chapters[0].title).toBe("Chương 1: Khởi Hành");
+
+    // The real proof: an override now exists, so the title survives a reload and
+    // is written into the exported EPUB via `chapterOverrides`.
+    const override = after.modifiedChapters["ch1.xhtml"];
+    expect(override).toBeDefined();
+    expect(override).toContain("Chương 1: Khởi Hành");
+  });
+
+  it("falls back to <h2> when the chapter has no <h1>", async () => {
+    (invoke as any).mockImplementation(async (cmd: string) =>
+      cmd === "read_chapter" ? "<body><h2>Phần Một</h2></body>" : 0
+    );
+
+    await useAppStore.getState().updateChapterTitle(0, "Phần Một: Mở Đầu");
+
+    expect(useAppStore.getState().modifiedChapters["ch1.xhtml"]).toContain(
+      "<h2>Phần Một: Mở Đầu</h2>"
+    );
+  });
+
+  it("inserts an <h1> when the chapter has no heading at all", async () => {
+    (invoke as any).mockImplementation(async (cmd: string) =>
+      cmd === "read_chapter" ? "<body><p>Bare chapter</p></body>" : 0
+    );
+
+    await useAppStore.getState().updateChapterTitle(0, "Tiêu Đề Mới");
+
+    const override = useAppStore.getState().modifiedChapters["ch1.xhtml"];
+    expect(override).toContain("<h1>Tiêu Đề Mới</h1>");
+  });
+
+  it("writes a title containing $ replacement tokens verbatim", async () => {
+    // `String.prototype.replace` expands $&, $1, $` and $' inside a STRING
+    // replacement, so passing the title as a template string corrupted the HTML.
+    (invoke as any).mockImplementation(async (cmd: string) =>
+      cmd === "read_chapter" ? '<h1 class="t">Old</h1>' : 0
+    );
+
+    await useAppStore.getState().updateChapterTitle(0, "Phần $1 và $& và $$ kết thúc");
+
+    const override = useAppStore.getState().modifiedChapters["ch1.xhtml"]!;
+
+    // The `$` tokens must survive verbatim - no `$&`/`$1` expansion. (`&` itself is
+    // escaped to `&amp;`, which is correct: the Rust parser un-escapes it on read.)
+    expect(override).toContain("Phần $1 và $&amp; và $$ kết thúc");
+
+    // The corruption signature from the old buggy template-string replace: the
+    // matched `<h1 ...>` block was re-inserted into its own replacement.
+    expect(override).not.toContain("Old");
+    expect(override.match(/class="t"/g) ?? []).toHaveLength(1);
+  });
+
+  it("escapes markup in a title instead of injecting it into the chapter HTML", async () => {
+    (invoke as any).mockImplementation(async (cmd: string) =>
+      cmd === "read_chapter" ? "<h1>Old</h1>" : 0
+    );
+
+    await useAppStore.getState().updateChapterTitle(0, "<script>alert(1)</script>");
+
+    const override = useAppStore.getState().modifiedChapters["ch1.xhtml"]!;
+    expect(override).not.toContain("<script>");
+    expect(override).toContain("&lt;script&gt;");
+  });
+
+  it("reports failure when the chapter content cannot be read", async () => {
+    (invoke as any).mockRejectedValue(new Error("file moved"));
+
+    const persisted = await useAppStore.getState().updateChapterTitle(0, "Không Lưu Được");
+
+    expect(persisted).toBe(false);
+  });
+
+  it("batch rename reports how many chapters were actually persisted", async () => {
+    (invoke as any).mockImplementation(async (cmd: string) =>
+      cmd === "read_chapter" ? "<h1>Old</h1>" : 0
+    );
+
+    const count = await useAppStore.getState().batchUpdateChapterTitles([
+      { chapterIndex: 0, newTitle: "Chương 1: Mở" },
+      { chapterIndex: 1, newTitle: "Chương 2: Kết" },
+    ]);
+
+    expect(count).toBe(2);
+    const mods = useAppStore.getState().modifiedChapters;
+    expect(mods["ch1.xhtml"]).toContain("Chương 1: Mở");
+    expect(mods["ch2.xhtml"]).toContain("Chương 2: Kết");
+  });
+});
+
+/**
+ * Regression tests for the batch-translation abort state machine.
+ *
+ * `stopTranslation` nulls the shared `translationAbortController`, which used to make
+ * every later `translationAbortController?.signal.aborted` check read `undefined`
+ * (falsy) and let the batch run unabortably to the end.
+ */
+describe("useAppStore - Translation Abort State", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAppStore.setState({
+      currentBook: {
+        title: "Book",
+        author: "Author",
+        language: "en",
+        description: null,
+        cover_data_url: null,
+        chapter_count: 1,
+        file_size_bytes: 100,
+        chapters: [{ id: "c1", href: "ch1.xhtml", title: "Chapter 1", preview_text: "A" }],
+        sample_text: "Sample",
+      },
+      currentFilePath: "C:\\books\\test.epub",
+      currentFileBytes: null,
+      modifiedChapters: {},
+      isTranslating: false,
+      translationProgress: null,
+      activeProjectId: null,
+    });
+  });
+
+  const mockTranslation = () =>
+    vi.spyOn(TranslationService, "translateChapter").mockResolvedValue({
+      translatedHtml: "<p>Xin chao</p>",
+      translatedBlocksCount: 1,
+      totalBlocks: 1,
+      elapsedMs: 10,
+      usedModel: "test",
+    } as any);
+
+  it("does not re-flag isTranslating when a batch chapter finishes after an abort", async () => {
+    (invoke as any).mockImplementation(async (cmd: string) =>
+      cmd === "read_chapter" ? "<p>Hello</p>" : 0
+    );
+    mockTranslation();
+
+    const controller = new AbortController();
+    controller.abort();
+
+    await useAppStore.getState().translateSingleChapter(0, {
+      isPartOfBatch: true,
+      abortSignal: controller.signal,
+    });
+
+    // Previously the batch success path re-set `isTranslating: true` unconditionally,
+    // so the UI flipped back to "translating" right after the user pressed Stop.
+    expect(useAppStore.getState().isTranslating).toBe(false);
+  });
+
+  it("uses the signal passed by the caller rather than the shared controller", async () => {
+    (invoke as any).mockImplementation(async (cmd: string) =>
+      cmd === "read_chapter" ? "<p>Hello</p>" : 0
+    );
+    const spy = mockTranslation();
+
+    const controller = new AbortController();
+    await useAppStore.getState().translateSingleChapter(0, {
+      isPartOfBatch: true,
+      abortSignal: controller.signal,
+    });
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ abortSignal: controller.signal })
+    );
+  });
+
+  it("clears isTranslating and progress after a standalone translation", async () => {
+    (invoke as any).mockImplementation(async (cmd: string) =>
+      cmd === "read_chapter" ? "<p>Hello</p>" : 0
+    );
+    mockTranslation();
+
+    const ok = await useAppStore.getState().translateSingleChapter(0);
+
+    expect(ok).toBe(true);
+    expect(useAppStore.getState().isTranslating).toBe(false);
+    expect(useAppStore.getState().translationProgress).toBeNull();
   });
 });

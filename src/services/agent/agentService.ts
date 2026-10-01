@@ -82,14 +82,16 @@ ${toolsDoc}
 3. Luôn bám sát ngữ cảnh dự án sách thực tế của người dùng: tên sách, các chương, tab đang đứng, và phong cách đang chọn.
 
 [QUY TẮC GỌI CÔNG CỤ]:
-- Khi CẦN gọi công cụ để lấy thông tin hoặc thực hiện hành động, bạn PHẢI trả về DUY NHẤT một khối JSON theo cấu trúc:
+- Để hệ thống hiển thị Form Phê Duyệt có nút [Chấp nhận thực thi] cho người dùng, bạn BẮT BUỘC PHẢI trả về khối mã JSON hợp lệ:
 \`\`\`json
 {
-  "thought": "Giải thích ngắn gọn lý do gọi công cụ",
+  "thought": "Giải thích ngắn gọn lý do gọi công cụ hoặc tóm tắt các thay đổi",
   "action": "<tên_công_cụ_chính_xác>",
   "parameters": { ... }
 }
 \`\`\`
+- TUYỆT ĐỐI KHÔNG xuất ra văn bản thô mô tả hành động thay vì mã JSON, vì giao diện sẽ không nhận diện được form phê duyệt và không hiển thị nút bấm chấp nhận!
+- Khi người dùng yêu cầu sửa tên, đánh số thứ tự hoặc đổi tiêu đề các chương, bạn PHẢI dùng công cụ "batch_update_chapter_titles" (hoặc "update_chapter_title" cho 1 chương).
 - Nếu ĐÃ CÓ ĐỦ thông tin để trả lời hoặc người dùng chỉ trò chuyện bình thường, TUYỆT ĐỐI KHÔNG trả về JSON gọi công cụ. Hãy trả lời trực tiếp bằng văn bản Markdown tự nhiên, lịch sự, chuyên nghiệp bằng tiếng Việt.
 - Định dạng Markdown: Sử dụng định dạng phong phú (tiêu đề ##, danh sách gạch đầu dòng, bảng biểu, in đậm **từ khóa**, trích dẫn > khi trích đoạn sách) hoặc các thẻ HTML an toàn (<b>, <i>, <code>, <br>) để câu trả lời trực quan, dễ đọc nhất.
 
@@ -134,6 +136,7 @@ ${CavemanOptimizer.getDirectives(ctx.cavemanMode || "full")}`;
     if (jsonStr) {
       try {
         const parsed = JSON.parse(jsonStr);
+        // Case 1: Standard structured output { action: "...", parameters: { ... } }
         if (parsed && typeof parsed.action === "string") {
           const actionName = parsed.action.trim();
           const knownTool = AGENT_TOOLS.find(
@@ -162,6 +165,58 @@ ${CavemanOptimizer.getDirectives(ctx.cavemanMode || "full")}`;
             return {
               isAction: false,
               conversationalReply: replyMsg,
+            };
+          }
+        }
+
+        // Case 2: Pseudo-serialized or raw parameters format (e.g. [HÀNH ĐỘNG ĐỀ XUẤT]: ... (Công cụ: batch_update_chapter_titles) [THAM SỐ]: {"updates": [...]})
+        const toolRegex = /(?:Công cụ|Tool|action):\s*([a-z_0-9]+)/i;
+        const toolMatch = toolRegex.exec(trimmed);
+        let resolvedAction = toolMatch ? toolMatch[1].trim() : "";
+
+        // If no explicit "Công cụ: ...", infer from parameters shape
+        if (!resolvedAction && parsed && typeof parsed === "object") {
+          if (Array.isArray((parsed as Record<string, unknown>).updates)) {
+            resolvedAction = "batch_update_chapter_titles";
+          } else if (
+            (parsed as Record<string, unknown>).chapterIndex !== undefined &&
+            (parsed as Record<string, unknown>).newTitle !== undefined
+          ) {
+            resolvedAction = "update_chapter_title";
+          } else if (
+            (parsed as Record<string, unknown>).scope &&
+            ((parsed as Record<string, unknown>).scope === "unprocessed" || (parsed as Record<string, unknown>).scope === "all")
+          ) {
+            resolvedAction = "batch_translate_chapters";
+          } else if ((parsed as Record<string, unknown>).presetId) {
+            resolvedAction = "apply_style_preset";
+          }
+        }
+
+        if (resolvedAction) {
+          const knownTool = AGENT_TOOLS.find(
+            (t) => t.name.toLowerCase() === resolvedAction.toLowerCase()
+          );
+
+          if (knownTool) {
+            const params =
+              parsed && typeof parsed === "object" && (parsed as Record<string, unknown>).parameters && typeof (parsed as Record<string, unknown>).parameters === "object"
+                ? ((parsed as Record<string, unknown>).parameters as Record<string, unknown>)
+                : (parsed as Record<string, unknown>);
+
+            // Clean pseudo-tags from conversational reply so the user sees clean message above the Action Card
+            const cleanPrefix = prefixText
+              .replace(/\[HÀNH ĐỘNG ĐỀ XUẤT\]:[\s\S]*?(?=\[|$)/gi, "")
+              .replace(/\[TRẠNG THÁI\]:[\s\S]*?(?=\[|$)/gi, "")
+              .replace(/\[THAM SỐ\]:[\s\S]*$/gi, "")
+              .trim();
+
+            return {
+              isAction: true,
+              thought: cleanPrefix || "Đề xuất cập nhật dữ liệu sách",
+              action: knownTool.name,
+              parameters: params && typeof params === "object" ? params : {},
+              conversationalReply: cleanPrefix,
             };
           }
         }
@@ -557,6 +612,127 @@ ${b.description ? `\n**Văn án / Tóm tắt**:\n${b.description}` : ""}`,
             author: newAuthor || ctx.currentBook.author,
           },
           diffSummary,
+          createdAt: Date.now(),
+        },
+        actionStatus: "pending",
+        timestamp: Date.now(),
+      };
+    }
+
+    // 7. Đổi / sửa tiêu đề chương sách
+    const chapterTitleMatch = /(?:đổi|sửa|thay|dịch)\s*(?:tiêu đề|tên)?\s*chương\s*(\d+)(?:\s*(?:thành|sang|là))?\s*[:"']?([^"'\n]+)["']?/i.exec(userQuery);
+    if (chapterTitleMatch) {
+      if (!ctx.currentBook || ctx.currentBook.chapters.length === 0) {
+        return {
+          id: `msg_off_${Date.now()}`,
+          role: "assistant",
+          content: "Hiện tại chưa có cuốn sách nào được mở trong Studio để đổi tiêu đề chương.",
+          timestamp: Date.now(),
+        };
+      }
+      const chNum = parseInt(chapterTitleMatch[1], 10);
+      const chIdx = Math.max(0, chNum - 1);
+      const newTitle = chapterTitleMatch[2].trim();
+      const targetCh = ctx.currentBook.chapters[chIdx];
+      if (targetCh && newTitle) {
+        return {
+          id: `msg_off_${Date.now()}`,
+          role: "assistant",
+          content: `Tôi đề xuất đổi tiêu đề cho Chương ${chNum}:`,
+          actionProposal: {
+            id: `prop_${Date.now()}`,
+            toolName: "update_chapter_title",
+            title: `Đổi tiêu đề chương ${chNum}`,
+            description: `Đổi tên chương từ "${targetCh.title}" thành "${newTitle}"`,
+            parameters: {
+              chapterIndex: chIdx,
+              newTitle,
+            },
+            diffSummary: [
+              { field: `Chương ${chNum}`, before: targetCh.title, after: newTitle },
+            ],
+            createdAt: Date.now(),
+          },
+          actionStatus: "pending",
+          timestamp: Date.now(),
+        };
+      }
+    }
+
+    // 8. Kích hoạt dịch toàn bộ sách hoặc các chương chưa dịch
+    if (
+      q.includes("dịch toàn bộ sách") ||
+      q.includes("dịch hết sách") ||
+      q.includes("dịch tất cả các chương") ||
+      q.includes("dịch các chương chưa dịch") ||
+      q.includes("chạy dịch hàng loạt") ||
+      q.includes("dịch sách sang tiếng việt") ||
+      q.includes("dịch sách")
+    ) {
+      if (!ctx.currentBook || ctx.currentBook.chapters.length === 0) {
+        return {
+          id: `msg_off_${Date.now()}`,
+          role: "assistant",
+          content: "Chưa có sách nào được mở để thực hiện dịch thuật.",
+          timestamp: Date.now(),
+        };
+      }
+      const scope = q.includes("toàn bộ") || q.includes("hết sách") ? "all" : "unprocessed";
+      const total = ctx.currentBook.chapters.length;
+      return {
+        id: `msg_off_${Date.now()}`,
+        role: "assistant",
+        content: `Tôi đề xuất kích hoạt tiến trình dịch thuật AI cho cuốn sách "${ctx.currentBook.title}":`,
+        actionProposal: {
+          id: `prop_${Date.now()}`,
+          toolName: "batch_translate_chapters",
+          title: scope === "all" ? `Dịch toàn bộ ${total} chương sách` : `Dịch các chương chưa dịch`,
+          description: `Kích hoạt dịch tự động sang ${ctx.translationConfig.targetLang || "Tiếng Việt"}. Tiến trình sẽ chạy nền và đồng bộ trực tiếp vào dự án.`,
+          parameters: { scope },
+          diffSummary: [
+            { field: "Phạm vi", before: "Chờ dịch", after: scope === "all" ? `Toàn bộ ${total} chương` : "Chương chưa dịch" },
+            { field: "Ngôn ngữ đích", before: ctx.translationConfig.sourceLang, after: ctx.translationConfig.targetLang || "Tiếng Việt" },
+          ],
+          createdAt: Date.now(),
+        },
+        actionStatus: "pending",
+        timestamp: Date.now(),
+      };
+    }
+
+    // 9. Lưu sách / Lưu dự án / Tự động lưu
+    if (
+      q.includes("lưu sách") ||
+      q.includes("lưu dự án") ||
+      q.includes("lưu lại") ||
+      q.includes("tự động lưu") ||
+      q.includes("save book") ||
+      q.includes("save project") ||
+      q === "lưu" ||
+      q === "save"
+    ) {
+      if (!ctx.currentBook) {
+        return {
+          id: `msg_off_${Date.now()}`,
+          role: "assistant",
+          content: "Hiện tại chưa có cuốn sách nào được mở trong Studio để lưu.",
+          timestamp: Date.now(),
+        };
+      }
+
+      return {
+        id: `msg_off_${Date.now()}`,
+        role: "assistant",
+        content: `Tôi đề xuất lưu toàn bộ thông tin sách, metadata, kiểu chữ và các chương đã chỉnh sửa:`,
+        actionProposal: {
+          id: `prop_${Date.now()}`,
+          toolName: "save_project",
+          title: "Lưu dự án & ghi file sách",
+          description: "Lưu toàn bộ thay đổi vào bộ nhớ dự án và cập nhật an toàn vào file EPUB",
+          parameters: {},
+          diffSummary: [
+            { field: "Tự động lưu", before: "Chưa lưu đĩa", after: "Ghi đè file sách & cập nhật dự án" },
+          ],
           createdAt: Date.now(),
         },
         actionStatus: "pending",
