@@ -36,6 +36,10 @@ import { EntityExtractor, ExtractedEntityCandidate } from "../services/translati
 import { BookResearchService } from "../services/translation/bookResearchService";
 import { AgentService, AgentChatMessage } from "../services/agent/agentService";
 import { AgentToolDispatcher, ReadOnlyStoreContext, MutatingStoreContext } from "../services/agent/agentTools";
+import { WorkflowJobService } from "../services/workflow/workflowJobService";
+import { type CavemanMode } from "../utils/cavemanOptimizer";
+
+export type { CavemanMode };
 
 export interface ChapterItem {
   id: string;
@@ -145,11 +149,14 @@ export interface EbookProject {
   detectedLanguageCode?: string | null;
 }
 
+export type LogCategory = "translation" | "enhancement" | "system";
+
 export interface TerminalLogEntry {
   id: string;
   timestamp: number;
   type: "info" | "warning" | "success" | "detail";
   text: string;
+  category?: LogCategory;
 }
 
 export interface ChapterEnhanceReport {
@@ -387,8 +394,10 @@ export interface AppState {
   isBatchEnhancing: boolean;
   enhanceProgress: { current: number; total: number; currentChapterHref: string } | null;
   terminalLogs: TerminalLogEntry[];
-  addTerminalLog: (log: { type: "info" | "warning" | "success" | "detail"; text: string }) => void;
+  addTerminalLog: (log: { type: "info" | "warning" | "success" | "detail"; text: string; category?: LogCategory }) => void;
   clearTerminalLogs: () => void;
+  clearTranslationLogs: () => void;
+  clearEnhancerLogs: () => void;
   resetChapterOverrides: () => void;
   enhanceSingleChapter: (chapterIndex: number, features?: EnhanceFeaturesConfig, options?: EnhanceExecutionOptions) => Promise<boolean>;
   batchEnhanceChapters: (chapterIndices?: number[], features?: EnhanceFeaturesConfig, options?: EnhanceExecutionOptions) => Promise<boolean>;
@@ -456,6 +465,10 @@ export interface AppState {
   confirmAgentAction: (messageId: string, approved: boolean) => Promise<void>;
   clearAgentChat: () => void;
 
+  // Caveman Token Optimization (JuliusBrussee/caveman)
+  cavemanMode: CavemanMode;
+  setCavemanMode: (mode: CavemanMode) => void;
+
   // Global Export Modal State & Actions
   isExportOpen: boolean;
   setIsExportOpen: (open: boolean) => void;
@@ -470,6 +483,19 @@ const initialAutoRouteOnIngest =
     : window.localStorage.getItem(AUTO_ROUTE_STORAGE_KEY) !== "false";
 
 const PROJECTS_STORAGE_KEY = "nice-ebook-projects-v1";
+const SELECTED_MODEL_STORAGE_KEY = "lg-selected-model";
+const ACTIVE_GATEWAY_NAME_STORAGE_KEY = "lg-active-gateway-name";
+const CAVEMAN_MODE_STORAGE_KEY = "lg-caveman-mode";
+
+const initialSelectedModel =
+  typeof window !== "undefined" && window.localStorage
+    ? window.localStorage.getItem(SELECTED_MODEL_STORAGE_KEY)
+    : null;
+
+const initialCavemanMode: CavemanMode =
+  (typeof window !== "undefined" && window.localStorage
+    ? (window.localStorage.getItem(CAVEMAN_MODE_STORAGE_KEY) as CavemanMode)
+    : null) || "lite";
 
 function loadProjectsFromStorage(): EbookProject[] {
   if (typeof window === "undefined" || !window.localStorage) return [];
@@ -819,7 +845,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   gateways: [],
   isScanningGateways: false,
   activeGateway: null,
-  selectedModel: null,
+  selectedModel: initialSelectedModel,
   isAiGenerating: false,
   aiEngineMode: "hybrid",
   setAiEngineMode: (mode) => set({ aiEngineMode: mode }),
@@ -1008,11 +1034,36 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const list = await invoke<DetectedGateway[]>("scan_ai_gateways");
       const onlineList = list.filter((g) => g.is_online);
+
+      // Check saved user gateway preference
+      const savedGwName =
+        typeof window !== "undefined" && window.localStorage
+          ? window.localStorage.getItem(ACTIVE_GATEWAY_NAME_STORAGE_KEY)
+          : null;
+      const matchedGw = savedGwName
+        ? onlineList.find((g) => g.name === savedGwName)
+        : null;
+      const activeGw = matchedGw || (onlineList.length > 0 ? onlineList[0] : null);
+
+      // Check saved user model preference
+      const savedModel =
+        typeof window !== "undefined" && window.localStorage
+          ? window.localStorage.getItem(SELECTED_MODEL_STORAGE_KEY)
+          : null;
+
+      // Keep user's chosen model if available on this gateway; otherwise fallback to active gateway's first model
+      let activeModel = get().selectedModel || savedModel;
+      if (activeGw && activeGw.models.length > 0) {
+        if (!activeModel || !activeGw.models.includes(activeModel)) {
+          activeModel = activeGw.models[0];
+        }
+      }
+
       set({
         gateways: list,
         isScanningGateways: false,
-        activeGateway: onlineList.length > 0 ? onlineList[0] : null,
-        selectedModel: onlineList.length > 0 && onlineList[0].models.length > 0 ? onlineList[0].models[0] : null,
+        activeGateway: activeGw,
+        selectedModel: activeModel,
       });
     } catch (err) {
       console.error("Failed to scan gateways:", err);
@@ -1190,6 +1241,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   selectGateway: (gw) => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      if (gw) {
+        window.localStorage.setItem(ACTIVE_GATEWAY_NAME_STORAGE_KEY, gw.name);
+      } else {
+        window.localStorage.removeItem(ACTIVE_GATEWAY_NAME_STORAGE_KEY);
+      }
+    }
+
     if (!gw) {
       set({
         activeGateway: null,
@@ -1199,7 +1258,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
 
-    const primaryModel = gw.models.length > 0 ? gw.models[0] : null;
+    // Preserve previously selected model if it is in this gateway's model list
+    const currentSelected = get().selectedModel;
+    const primaryModel =
+      currentSelected && gw.models.includes(currentSelected)
+        ? currentSelected
+        : gw.models.length > 0
+        ? gw.models[0]
+        : null;
 
     // Dynamically derive fallback models from this gateway's models, excluding primaryModel
     const candidates = gw.models.filter((m) => m !== primaryModel).slice(0, 3);
@@ -1223,6 +1289,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setSelectedModel: (model) => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      if (model) {
+        window.localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, model);
+      } else {
+        window.localStorage.removeItem(SELECTED_MODEL_STORAGE_KEY);
+      }
+    }
+
     const { activeGateway, fallbackModels, modelTestResults } = get();
     if (!model) {
       set({ selectedModel: null });
@@ -1317,11 +1391,43 @@ export const useAppStore = create<AppState>((set, get) => ({
   terminalLogs: [],
 
   addTerminalLog: (log) => {
+    let category = log.category;
+    if (!category) {
+      const t = log.text;
+      if (
+        t.includes("dịch") ||
+        t.includes("Dịch") ||
+        t.includes("Translation") ||
+        t.includes("translate") ||
+        t.includes("[Mẻ ") ||
+        t.includes("Glossary") ||
+        t.includes("thực thể") ||
+        t.includes("Research Brief") ||
+        t.includes("Zero-Gap")
+      ) {
+        category = "translation";
+      } else if (
+        t.includes("biên tập") ||
+        t.includes("Biên tập") ||
+        t.includes("tối ưu") ||
+        t.includes("Tối ưu") ||
+        t.includes("H1") ||
+        t.includes("H2") ||
+        t.includes("chính tả") ||
+        t.includes("Enhanc")
+      ) {
+        category = "enhancement";
+      } else {
+        category = "system";
+      }
+    }
+
     const entry: TerminalLogEntry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       timestamp: Date.now(),
       type: log.type,
       text: log.text,
+      category,
     };
     set((state) => ({
       // Keep up to 500 latest entries to prevent memory leak and DOM bloat
@@ -1331,6 +1437,18 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   clearTerminalLogs: () => {
     set({ terminalLogs: [] });
+  },
+
+  clearTranslationLogs: () => {
+    set((state) => ({
+      terminalLogs: state.terminalLogs.filter((l) => l.category !== "translation"),
+    }));
+  },
+
+  clearEnhancerLogs: () => {
+    set((state) => ({
+      terminalLogs: state.terminalLogs.filter((l) => l.category !== "enhancement"),
+    }));
   },
 
   resetChapterOverrides: () => {
@@ -1497,6 +1615,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({ isBatchEnhancing: true });
 
+    const enhanceJobId = WorkflowJobService.startJob(
+      "enhancement",
+      `Biên tập & Tối ưu ${pendingIndices.length} chương sách`,
+      "Bắt đầu biên tập hàng loạt..."
+    );
+
     for (let i = 0; i < pendingIndices.length; i++) {
       if (cancelRequested) {
         get().addTerminalLog({
@@ -1518,12 +1642,29 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
       });
 
+      const overallPct = Math.round(((i + 1) / pendingIndices.length) * 100);
+      WorkflowJobService.updateProgress(
+        enhanceJobId,
+        overallPct,
+        `Đang tối ưu chương ${i + 1}/${pendingIndices.length}: "${ch.title}"`
+      );
+
       get().addTerminalLog({
         type: "info",
         text: `⌛ [${i + 1}/${pendingIndices.length}] Đang xử lý: ${ch.href}...`,
       });
 
       await get().enhanceSingleChapter(idx, features, { forceReprocess: !skipAlreadyDone });
+    }
+
+    if (cancelRequested) {
+      WorkflowJobService.failJob(enhanceJobId, "Đã tạm dừng tiến trình tối ưu theo yêu cầu người dùng");
+    } else {
+      WorkflowJobService.completeJob(
+        enhanceJobId,
+        { count: pendingIndices.length },
+        `Đã tối ưu xong ${pendingIndices.length} chương sách`
+      );
     }
 
     set({
@@ -1536,6 +1677,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   stopBatchEnhance: () => {
     if (typeof (get() as any)._cancelBatch === "function") {
       (get() as any)._cancelBatch();
+    }
+    const runningJobs = Object.values(get().workflowJobs || {}).filter(
+      (j) => j.status === "running" && j.type === "enhancement"
+    );
+    for (const j of runningJobs) {
+      WorkflowJobService.failJob(j.id, "Đã tạm dừng tiến trình tối ưu theo yêu cầu người dùng.");
     }
     set({ isBatchEnhancing: false });
   },
@@ -2294,6 +2441,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     translationAbortController = new AbortController();
     set({ isTranslating: true });
 
+    const translateJobId = WorkflowJobService.startJob(
+      "translation",
+      `Dịch chương ${chapterIndex + 1}: "${chapter.title}"`,
+      `Bắt đầu dịch sang ${translationConfig.targetLang}...`
+    );
+
     get().addTerminalLog({
       type: "info",
       text: `🌐 [Dịch AI] Bắt đầu dịch chương ${chapterIndex + 1}: "${chapter.title}" (${translationConfig.sourceLang} ➔ ${translationConfig.targetLang})...`,
@@ -2329,9 +2482,20 @@ export const useAppStore = create<AppState>((set, get) => ({
               percent: p.percent,
             },
           });
+          WorkflowJobService.updateProgress(
+            translateJobId,
+            p.percent,
+            `Chương ${chapterIndex + 1}/1 • Đoạn ${p.currentBlock}/${p.totalBlocks} (${p.percent}%)`
+          );
         },
         onLog: (log) => get().addTerminalLog(log),
       });
+
+      WorkflowJobService.completeJob(
+        translateJobId,
+        { chapterHref: chapter.href, count: res.translatedBlocksCount },
+        `Đã dịch xong chương "${chapter.title}" (${res.translatedBlocksCount} đoạn)`
+      );
 
       const updatedModified = {
         ...get().modifiedChapters,
@@ -2407,6 +2571,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       return true;
     } catch (err: unknown) {
+      WorkflowJobService.failJob(
+        translateJobId,
+        err instanceof DOMException && err.name === "AbortError"
+          ? "Đã dừng dịch theo yêu cầu người dùng"
+          : err instanceof Error ? err.message : String(err)
+      );
       set({ isTranslating: false, translationProgress: null });
       if (err instanceof DOMException && err.name === "AbortError") {
         get().addTerminalLog({
@@ -2557,6 +2727,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (translationAbortController) {
       translationAbortController.abort();
       translationAbortController = null;
+    }
+    const runningJobs = Object.values(get().workflowJobs || {}).filter(
+      (j) => j.status === "running" && j.type === "translation"
+    );
+    for (const j of runningJobs) {
+      WorkflowJobService.failJob(j.id, "Đã tạm dừng tiến trình dịch theo yêu cầu người dùng.");
     }
     set({ isTranslating: false, translationProgress: null });
     get().addTerminalLog({
@@ -3246,6 +3422,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
       setActiveTab: (tab) => get().setActiveTab(tab),
       setActiveChapterIndex: (idx) => get().setActiveChapterIndex(idx),
+      cavemanMode: get().cavemanMode,
     };
 
     // If no online gateway is active, check offline fallback first
@@ -3270,7 +3447,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             content: `💡 Trợ lý hiện đang hoạt động ở chế độ **Lõi Offline (Cục bộ)**.
 
 Để trò chuyện tự do bằng AI hoặc hỏi đáp nội dung sâu, bạn vui lòng:
-1. Mở tab **Cổng AI & Mô hình** và kết nối AI Gateway (Ollama, 9Router, Cockpit).
+1. Mở tab **Cổng AI & Mô hình** và kết nối AI Provider (DeepSeek, Gemini, Claude, Ollama...).
 2. Hoặc bấm vào các **Gợi ý thao tác nhanh** có sẵn bên dưới để trợ lý thực thi trực tiếp trên dự án sách.`,
             timestamp: Date.now(),
           },
@@ -3360,6 +3537,41 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
 
+    // 1. Guard against concurrent/conflicting execution
+    if (proposal.toolName === "translate_chapter" && get().isTranslating) {
+      const updatedList = [...agentMessages];
+      updatedList.push({
+        id: `msg_warn_${Date.now()}`,
+        role: "assistant",
+        content: `⚠️ Tiến trình dịch thuật hiện đang chạy. Vui lòng đợi hoàn thành hoặc dừng tiến trình trước khi thực thi thêm chương khác.`,
+        timestamp: Date.now(),
+      });
+      set({ agentMessages: updatedList });
+      return;
+    }
+
+    if (proposal.toolName === "enhance_chapter" && get().isBatchEnhancing) {
+      const updatedList = [...agentMessages];
+      updatedList.push({
+        id: `msg_warn_${Date.now()}`,
+        role: "assistant",
+        content: `⚠️ Tiến trình biên tập AI hiện đang chạy. Vui lòng đợi hoàn tất trước khi thực thi yêu cầu mới.`,
+        timestamp: Date.now(),
+      });
+      set({ agentMessages: updatedList });
+      return;
+    }
+
+    // 2. Immediately mark target proposal message as 'executing' in the store
+    // This gives instant UI feedback, disables buttons, shows spinner & live progress,
+    // and prevents re-entrant duplicate execution if user clicks multiple times.
+    const executingList = [...agentMessages];
+    executingList[msgIdx] = {
+      ...targetMsg,
+      actionStatus: "executing",
+    };
+    set({ agentMessages: executingList });
+
     // User approved proposal
     const mutatingCtx: MutatingStoreContext = {
       updateBookMetadata,
@@ -3388,19 +3600,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const resultText = await AgentToolDispatcher.executeApprovedAction(proposal, mutatingCtx);
 
-      const updatedList = [...agentMessages];
-      updatedList[msgIdx] = {
-        ...targetMsg,
-        actionStatus: "executed",
-      };
-      updatedList.push({
-        id: `msg_exec_${Date.now()}`,
-        role: "assistant",
-        content: `✅ **Thực thi thành công**: ${resultText}`,
-        timestamp: Date.now(),
-      });
+      const latestMessages = [...get().agentMessages];
+      const curIdx = latestMessages.findIndex((m) => m.id === messageId);
+      if (curIdx !== -1) {
+        latestMessages[curIdx] = {
+          ...latestMessages[curIdx],
+          actionStatus: "executed",
+        };
+        latestMessages.push({
+          id: `msg_exec_${Date.now()}`,
+          role: "assistant",
+          content: `✅ **Thực thi thành công**: ${resultText}`,
+          timestamp: Date.now(),
+        });
 
-      set({ agentMessages: updatedList });
+        set({ agentMessages: latestMessages });
+      }
 
       if (activeProjectId) {
         get().saveActiveProject();
@@ -3410,22 +3625,33 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     } catch (execErr: unknown) {
       const msg = execErr instanceof Error ? execErr.message : String(execErr);
-      const updatedList = [...agentMessages];
-      updatedList[msgIdx] = {
-        ...targetMsg,
-        actionStatus: "rejected",
-      };
-      updatedList.push({
-        id: `msg_exec_err_${Date.now()}`,
-        role: "assistant",
-        content: `❌ Lỗi khi thực thi đề xuất: ${msg}`,
-        timestamp: Date.now(),
-      });
-      set({ agentMessages: updatedList });
+      const latestMessages = [...get().agentMessages];
+      const curIdx = latestMessages.findIndex((m) => m.id === messageId);
+      if (curIdx !== -1) {
+        latestMessages[curIdx] = {
+          ...latestMessages[curIdx],
+          actionStatus: "rejected",
+        };
+        latestMessages.push({
+          id: `msg_exec_err_${Date.now()}`,
+          role: "assistant",
+          content: `❌ Lỗi khi thực thi đề xuất: ${msg}`,
+          timestamp: Date.now(),
+        });
+        set({ agentMessages: latestMessages });
+      }
     }
   },
 
   clearAgentChat: () => {
     set({ agentMessages: [] });
+  },
+
+  cavemanMode: initialCavemanMode,
+  setCavemanMode: (mode) => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem(CAVEMAN_MODE_STORAGE_KEY, mode);
+    }
+    set({ cavemanMode: mode });
   },
 }));

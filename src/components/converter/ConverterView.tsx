@@ -747,7 +747,7 @@ export function ConverterView() {
         // AI Vision OCR via Gateway
         if (!activeGateway) {
           closeProgressModal();
-          toast.error("Chưa có AI Gateway online để dùng tính năng AI Vision. Vui lòng bật 9router, Ollama hoặc cấu hình Gateway.");
+          toast.error("Chưa có AI Gateway online để dùng tính năng AI Vision. Vui lòng cấu hình AI Provider hoặc bật Ollama.");
           setIsOcrRunning(false);
           return;
         }

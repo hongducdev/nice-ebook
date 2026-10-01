@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Cpu, Settings2 } from "lucide-react";
+import { Cpu, Settings2, Zap } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -37,6 +37,8 @@ export function AgentModelSelector({ className, compact = false }: AgentModelSel
     selectedModel,
     setSelectedModel,
     setActiveTab,
+    cavemanMode,
+    setCavemanMode,
   } = useAppStore();
 
   const categorizedModels = useMemo(
@@ -70,6 +72,11 @@ export function AgentModelSelector({ className, compact = false }: AgentModelSel
           />
           <Cpu className="size-3 text-primary shrink-0" />
           <span className="truncate text-left flex-1 font-medium">{currentModel}</span>
+          {cavemanMode !== "off" && !compact && (
+            <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/15 text-amber-500 font-mono shrink-0">
+              ⚡ Caveman
+            </span>
+          )}
         </SelectTrigger>
 
         <SelectContent align="end" className="max-h-80 w-64 text-xs font-mono">
@@ -103,6 +110,39 @@ export function AgentModelSelector({ className, compact = false }: AgentModelSel
               )}
             </SelectGroup>
           )}
+
+          <SelectSeparator />
+          <div className="p-2 flex flex-col gap-1.5 bg-muted/20">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-sans font-semibold uppercase tracking-wider text-foreground flex items-center gap-1">
+                <Zap size={10} className="text-amber-500" />
+                <span>Caveman Token Opt</span>
+              </span>
+              <span className="text-[9px] font-mono text-primary font-medium">
+                {cavemanMode.toUpperCase()}
+              </span>
+            </div>
+            <div className="grid grid-cols-4 gap-1">
+              {(["off", "lite", "full", "ultra"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCavemanMode(mode);
+                    toast.info(`Caveman: ${mode.toUpperCase()}`);
+                  }}
+                  className={`text-[9px] py-0.5 rounded border transition-colors cursor-pointer ${
+                    cavemanMode === mode
+                      ? "border-primary bg-primary/15 text-primary font-bold"
+                      : "border-border/60 text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {mode.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <SelectSeparator />
           <div className="p-1">

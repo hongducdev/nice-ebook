@@ -20,7 +20,7 @@ describe("Sidebar Navigation Exhaustiveness", () => {
   it("contains every ActiveTab value plus the special agent action item", () => {
     const groups = buildNavigationGroups({
       currentBook: { chapter_count: 12 },
-      activeGateway: { name: "Local 9Router" },
+      activeGateway: { name: "DeepSeek API" },
       modifiedCount: 2,
       pendingConverterFile: null,
       translationBadge: "2 ch.",

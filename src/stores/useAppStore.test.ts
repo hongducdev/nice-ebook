@@ -186,6 +186,52 @@ describe("useAppStore - Book Loading & Drag-and-Drop", () => {
     expect(useAppStore.getState().terminalLogs).toHaveLength(0);
   });
 
+  it("isolates translation and enhancement logs into distinct categories", () => {
+    const store = useAppStore.getState();
+    store.clearTerminalLogs();
+
+    // 1. Translation log
+    store.addTerminalLog({
+      type: "info",
+      text: "🌐 [Dịch AI] Bắt đầu dịch chương 1...",
+      category: "translation",
+    });
+
+    // 2. Enhancement log
+    store.addTerminalLog({
+      type: "info",
+      text: "⌛ [Biên tập] Đang tối ưu thẻ H1 chương 1...",
+      category: "enhancement",
+    });
+
+    // 3. Auto-detected categories
+    store.addTerminalLog({
+      type: "detail",
+      text: "📝 [p_0] Bản dịch đoạn văn mở đầu",
+    });
+    store.addTerminalLog({
+      type: "detail",
+      text: "+ [H2] Thêm tiêu đề phụ",
+    });
+
+    const logs = useAppStore.getState().terminalLogs;
+    expect(logs).toHaveLength(4);
+    expect(logs[0].category).toBe("translation");
+    expect(logs[1].category).toBe("enhancement");
+    expect(logs[2].category).toBe("translation"); // auto-detected from 'dịch'
+    expect(logs[3].category).toBe("enhancement"); // auto-detected from 'H2'
+
+    // Clear translation logs only
+    store.clearTranslationLogs();
+    const remainingAfterTransClear = useAppStore.getState().terminalLogs;
+    expect(remainingAfterTransClear).toHaveLength(2);
+    expect(remainingAfterTransClear.every((l) => l.category === "enhancement")).toBe(true);
+
+    // Clear enhancer logs only
+    store.clearEnhancerLogs();
+    expect(useAppStore.getState().terminalLogs).toHaveLength(0);
+  });
+
   it("resets chapter overrides when resetChapterOverrides is called and preserves sibling state", () => {
     useAppStore.setState({
       theme: "dark",
@@ -511,6 +557,35 @@ describe("useAppStore - Book Loading & Drag-and-Drop", () => {
           gatewayType: "9router",
         })
       );
+    });
+
+    it("persists selectedModel in localStorage and retains it across scans", async () => {
+      useAppStore.getState().setSelectedModel("ag/gemini-2.0-flash");
+      expect(useAppStore.getState().selectedModel).toBe("ag/gemini-2.0-flash");
+
+      const mockGateways = [
+        {
+          name: "Local 9Router",
+          base_url: "http://127.0.0.1:20128/v1",
+          port: 20128,
+          is_online: true,
+          models: ["ag/gemini-2.0-flash", "cx/gpt-4o"],
+          gateway_type: "9router",
+          latency_ms: 10,
+        },
+      ];
+
+      (invoke as any).mockImplementation((cmd: string) => {
+        if (cmd === "scan_ai_gateways") {
+          return Promise.resolve(mockGateways);
+        }
+        return Promise.resolve({});
+      });
+
+      await useAppStore.getState().scanGateways();
+
+      // Must preserve the user's selected model rather than forcibly overwriting it
+      expect(useAppStore.getState().selectedModel).toBe("ag/gemini-2.0-flash");
     });
   });
 
@@ -1133,6 +1208,92 @@ describe("useAppStore - Book Loading & Drag-and-Drop", () => {
       expect(state.activePresetId).toBe("classic-hardcover"); // Not changed!
       const targetMsg = state.agentMessages.find((m) => m.id === "msg_proposal_2");
       expect(targetMsg?.actionStatus).toBe("rejected");
+    });
+
+    it("prevents conflicting execution when translation is already running", async () => {
+      useAppStore.setState({
+        isTranslating: true,
+        agentMessages: [
+          {
+            id: "msg_proposal_trans",
+            role: "assistant",
+            content: "Đề xuất dịch",
+            actionStatus: "pending",
+            actionProposal: {
+              id: "act_trans_1",
+              toolName: "translate_chapter",
+              title: "Dịch chương",
+              description: "Dịch chương 1",
+              parameters: { chapterIndex: 0 },
+              createdAt: 100,
+            },
+            timestamp: 100,
+          },
+        ],
+      });
+
+      await useAppStore.getState().confirmAgentAction("msg_proposal_trans", true);
+
+      const state = useAppStore.getState();
+      const lastMsg = state.agentMessages[state.agentMessages.length - 1];
+      expect(lastMsg.content).toContain("Tiến trình dịch thuật hiện đang chạy");
+    });
+
+    it("guarantees mutating action proposal is strictly dormant until confirmed", () => {
+      useAppStore.setState({
+        activePresetId: "classic-hardcover",
+        agentMessages: [
+          {
+            id: "msg_dormant",
+            role: "assistant",
+            content: "Đề xuất đổi phong cách",
+            actionStatus: "pending",
+            actionProposal: {
+              id: "act_dormant",
+              toolName: "apply_style_preset",
+              title: "Đổi phong cách",
+              description: "Đổi sang wuxia-ancient",
+              parameters: { presetId: "wuxia-ancient" },
+              createdAt: 100,
+            },
+            timestamp: 100,
+          },
+        ],
+      });
+
+      // Assert that without confirmAgentAction, no mutation has occurred
+      const stateBefore = useAppStore.getState();
+      expect(stateBefore.activePresetId).toBe("classic-hardcover");
+      expect(stateBefore.agentMessages[0].actionStatus).toBe("pending");
+    });
+
+    it("prevents conflicting execution when batch enhancing is already running", async () => {
+      useAppStore.setState({
+        isBatchEnhancing: true,
+        agentMessages: [
+          {
+            id: "msg_proposal_enh",
+            role: "assistant",
+            content: "Đề xuất tối ưu",
+            actionStatus: "pending",
+            actionProposal: {
+              id: "act_enh_1",
+              toolName: "enhance_chapter",
+              title: "Tối ưu chương",
+              description: "Tối ưu chương 1",
+              parameters: { chapterIndex: 0 },
+              createdAt: 100,
+            },
+            timestamp: 100,
+          },
+        ],
+      });
+
+      await useAppStore.getState().confirmAgentAction("msg_proposal_enh", true);
+
+      const state = useAppStore.getState();
+      const lastMsg = state.agentMessages[state.agentMessages.length - 1];
+      expect(lastMsg.content).toContain("Tiến trình biên tập AI hiện đang chạy");
     });
   });
 

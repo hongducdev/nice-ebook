@@ -27,7 +27,7 @@ export const PROVIDER_METADATA = {
     name: "OpenAI Codex",
     description: "Tài khoản ChatGPT / Codex OAuth đã kết nối",
     accent: "#10a37f",
-    aliases: ["cx", "codex"],
+    aliases: ["cx", "codex", "chatgpt"],
   },
   cline: {
     name: "Cline",
@@ -45,7 +45,7 @@ export const PROVIDER_METADATA = {
     name: "OpenRouter",
     description: "Khóa API OpenRouter đã cấu hình",
     accent: "#6366f1",
-    aliases: ["openrouter"],
+    aliases: ["openrouter", "or", "meta-llama", "mistralai", "x-ai"],
   },
   "claude-code": {
     name: "Claude Code",
@@ -63,7 +63,7 @@ export const PROVIDER_METADATA = {
     name: "GitHub Copilot",
     description: "Tài khoản GitHub Copilot đã kết nối",
     accent: "#24292e",
-    aliases: ["gh", "github-copilot"],
+    aliases: ["gh", "github-copilot", "github", "copilot"],
   },
   kiro: {
     name: "Kiro AI",
@@ -81,49 +81,49 @@ export const PROVIDER_METADATA = {
     name: "Qwen Code",
     description: "Tài khoản Qwen Code đã kết nối",
     accent: "#615ced",
-    aliases: ["qw", "qwen"],
+    aliases: ["qw", "qwen", "alibaba", "dashscope"],
   },
   deepseek: {
     name: "DeepSeek",
     description: "Khóa API DeepSeek đã cấu hình",
     accent: "#4d6bfe",
-    aliases: ["deepseek"],
+    aliases: ["deepseek", "ds"],
   },
   minimax: {
     name: "MiniMax",
     description: "Khóa API MiniMax đã cấu hình",
     accent: "#ff6b6b",
-    aliases: ["minimax", "minimax-cn"],
+    aliases: ["minimax", "minimax-cn", "abab"],
   },
   glm: {
     name: "GLM / Zhipu",
     description: "Khóa API GLM Coding đã cấu hình",
     accent: "#3b82f6",
-    aliases: ["glm", "glm-cn"],
+    aliases: ["glm", "glm-cn", "zhipu", "chatglm"],
   },
   kimi: {
     name: "Kimi Coding",
     description: "Khóa API Kimi Coding đã cấu hình",
     accent: "#10b981",
-    aliases: ["kimi"],
+    aliases: ["kimi", "moonshot"],
   },
   openai: {
     name: "OpenAI",
     description: "Khóa API OpenAI trực tiếp",
     accent: "#10a37f",
-    aliases: ["openai"],
+    aliases: ["openai", "oai"],
   },
   anthropic: {
     name: "Anthropic",
     description: "Khóa API Anthropic Claude trực tiếp",
     accent: "#d97757",
-    aliases: ["anthropic"],
+    aliases: ["anthropic", "claude"],
   },
   gemini: {
     name: "Google Gemini",
     description: "Khóa API Google Gemini trực tiếp",
     accent: "#1a73e8",
-    aliases: ["gemini"],
+    aliases: ["gemini", "google"],
   },
   opencode: {
     name: "OpenCode Free",
@@ -135,7 +135,13 @@ export const PROVIDER_METADATA = {
     name: "Ollama Local",
     description: "Mô hình cục bộ triển khai offline trên máy tính qua Ollama",
     accent: "#f97316",
-    aliases: ["ollama"],
+    aliases: ["ollama", "local"],
+  },
+  other: {
+    name: "Mô Hình Tùy Chỉnh",
+    description: "Các mô hình AI khác được cung cấp bởi cổng kết nối",
+    accent: "#64748b",
+    aliases: ["other", "custom"],
   },
 } as const satisfies Record<string, ProviderMeta>;
 
@@ -158,11 +164,15 @@ export function getProviderKeyForModel(modelName: string): string {
   }
 
   // Fallbacks if model has no prefix
-  if (lower.startsWith("gpt") || lower.startsWith("o1") || lower.startsWith("o3")) return "openai";
+  if (lower.startsWith("gpt") || lower.startsWith("o1") || lower.startsWith("o3") || lower.startsWith("chatgpt")) return "openai";
   if (lower.startsWith("claude")) return "anthropic";
   if (lower.startsWith("gemini") || lower.startsWith("gemma")) return "gemini";
   if (lower.startsWith("deepseek")) return "deepseek";
   if (lower.startsWith("qwen")) return "qwen";
+  if (lower.startsWith("minimax") || lower.startsWith("abab")) return "minimax";
+  if (lower.startsWith("glm") || lower.startsWith("chatglm")) return "glm";
+  if (lower.startsWith("kimi") || lower.startsWith("moonshot")) return "kimi";
+  if (lower.startsWith("llama") || lower.startsWith("mistral") || lower.startsWith("phi")) return "ollama";
 
   return "other";
 }
@@ -208,7 +218,7 @@ export function categorizeGatewayModels(
     ];
   }
 
-  // 9Router or Proxy Gateway: Group models by their actual provider
+  // AI Gateway & Providers: Group models by their actual provider
   const buckets: Record<string, string[]> = {};
   for (const m of filtered) {
     const pKey = getProviderKeyForModel(m);
@@ -256,7 +266,7 @@ export function categorizeGatewayModels(
 
     const meta = getProviderMeta(pKey);
     const name = meta?.name || (pKey.charAt(0).toUpperCase() + pKey.slice(1));
-    const description = meta?.description || `Mô hình thuộc nhà cung cấp ${name} đã cấu hình trong 9Router`;
+    const description = meta?.description || `Mô hình thuộc nhà cung cấp ${name}`;
     const accent = meta?.accent || "var(--primary)";
 
     resultCategories.push({

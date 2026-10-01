@@ -233,10 +233,10 @@ export function BookDropzone() {
         <Card className="p-3.5 bg-card/60 border-border shadow-2xs">
           <div className="flex items-center gap-1.5 mb-1">
             <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">9Router Auto-Discovery</span>
+            <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">AI Provider Auto-Discovery</span>
           </div>
           <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Tự động tìm kiếm các cổng AI 9router, Cockpit, Ollama trên localhost.
+            Hỗ trợ kết nối DeepSeek, Gemini, Claude và tự động quét Ollama trên localhost.
           </p>
         </Card>
 

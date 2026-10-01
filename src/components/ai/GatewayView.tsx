@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { 
   RefreshCw, 
   SlidersHorizontal, 
@@ -7,7 +7,13 @@ import {
   Play, 
   Activity, 
   Search,
-  ShieldCheck 
+  ShieldCheck,
+  Plus,
+  Copy,
+  Pencil,
+  Trash2,
+  Server,
+  Zap
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -16,6 +22,13 @@ import { Input } from "../ui/input";
 import { Empty, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from "../ui/empty";
 import { useAppStore } from "../../stores/useAppStore";
 import { GatewaySettingsModal } from "../settings/GatewaySettingsModal";
+import {
+  ConfiguredProvider,
+  loadConfiguredProviders,
+  saveConfiguredProviders,
+  duplicateProvider,
+  LINGUAGACHA_PRESETS,
+} from "../../services/ai/linguaGachaProviders";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { 
@@ -25,6 +38,8 @@ import {
 
 export function GatewayView() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingProvider, setEditingProvider] = useState<ConfiguredProvider | null>(null);
+  const [configuredProviders, setConfiguredProviders] = useState<ConfiguredProvider[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [testingModels, setTestingModels] = useState<Record<string, boolean>>({});
   
@@ -45,6 +60,62 @@ export function GatewayView() {
     modelTestResults,
     jevDecision,
   } = useAppStore();
+
+  useEffect(() => {
+    setConfiguredProviders(loadConfiguredProviders());
+  }, [isModalOpen]);
+
+  // Activate a configured provider
+  function handleActivateProvider(prov: ConfiguredProvider) {
+    const updated = configuredProviders.map((p) => ({
+      ...p,
+      isActive: p.id === prov.id,
+    }));
+    setConfiguredProviders(updated);
+    saveConfiguredProviders(updated);
+
+    selectGateway({
+      name: prov.name,
+      base_url: prov.baseUrl,
+      port: 0,
+      is_online: true,
+      models: prov.availableModels.length > 0 ? prov.availableModels : [prov.selectedModel],
+      gateway_type: prov.presetId === "ollama" ? "ollama" : "openai",
+      latency_ms: 10,
+      api_key: prov.apiKey || undefined,
+      configured_providers: [
+        {
+          provider: prov.presetId,
+          name: prov.name,
+          is_active: true,
+          test_status: "active",
+        },
+      ],
+    });
+    setSelectedModel(prov.selectedModel);
+    toast.success(`Đã kích hoạt nhà cung cấp: ${prov.name}`);
+  }
+
+  // Duplicate provider configuration (like LinguaGacha's _副本)
+  function handleDuplicate(prov: ConfiguredProvider) {
+    const duplicated = duplicateProvider(prov, configuredProviders);
+    const updated = [...configuredProviders, duplicated];
+    setConfiguredProviders(updated);
+    saveConfiguredProviders(updated);
+    toast.success(`Đã tạo bản sao: ${duplicated.name}`);
+  }
+
+  // Delete provider configuration
+  function handleDeleteProvider(id: string) {
+    const target = configuredProviders.find((p) => p.id === id);
+    const updated = configuredProviders.filter((p) => p.id !== id);
+    setConfiguredProviders(updated);
+    saveConfiguredProviders(updated);
+    if (target?.name === activeGateway?.name) {
+      selectGateway(null);
+    }
+    toast.info("Đã xóa cấu hình nhà cung cấp.");
+  }
 
   // Test a single model connection via the active gateway or OpenCode CLI
   async function handleTestModel(modelName: string) {
@@ -78,7 +149,6 @@ export function GatewayView() {
       return;
     }
 
-    // Kiểm tra có lỗi không trước khi chọn làm model fallback
     let testResult = modelTestResults[model];
     if (!testResult) {
       toast.loading(`Đang kiểm tra lỗi của "${model}" trước khi chọn làm fallback...`, { id: `check-${model}` });
@@ -100,7 +170,6 @@ export function GatewayView() {
     toast.success(`Đã kiểm tra OK (${testResult.latencyMs}ms) & đặt "${model}" làm fallback!`, { id: `check-${model}` });
   }
 
-  // Test Jev Core Heuristic
   // Test Local Core Latency
   async function handleTestJev() {
     setIsTestingJev(true);
@@ -132,10 +201,11 @@ export function GatewayView() {
         <div className="min-w-0">
           <h2 className="text-base font-semibold text-foreground tracking-tight flex items-center flex-wrap gap-2">
             <Boxes size={18} className="text-primary" />
-            <span>AI Gateway & Điều Phối Mô Hình</span>
+            <span>AI Gateway &amp; Quản Lý Nhà Cung Cấp (LinguaGacha)</span>
             {activeGateway ? (
-              <Badge variant="outline" className="text-[10px] h-4.5 border-primary/40 text-primary">
-                {activeGateway.name} ({activeGateway.latency_ms}ms)
+              <Badge variant="outline" className="text-[10px] h-4.5 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 gap-1">
+                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span>{activeGateway.name} ({activeGateway.latency_ms}ms)</span>
               </Badge>
             ) : (
               <Badge variant="secondary" className="text-[10px] h-4.5">
@@ -144,39 +214,415 @@ export function GatewayView() {
             )}
           </h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Tự động phát hiện các cổng AI Proxy cục bộ (9Router, Cockpit, Ollama) và phân loại mô hình theo từng nhà cung cấp.
+            Cấu hình các nhà cung cấp dịch thuật AI (DeepSeek, Gemini, Claude, OpenAI, Ollama...) với hỗ trợ đa endpoint và sao chép cấu hình.
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
           <Button
-            variant="outline"
             size="sm"
-            onClick={() => setIsModalOpen(true)}
-            className="h-7 text-xs px-2.5 gap-1.5"
+            onClick={() => {
+              setEditingProvider(null);
+              setIsModalOpen(true);
+            }}
+            className="h-7 text-xs px-2.5 gap-1.5 shadow-xs"
           >
-            <SlidersHorizontal className="size-3.5" />
-            <span>Tùy Biến Endpoint</span>
+            <Plus className="size-3.5" />
+            <span>Thêm Provider Mới</span>
           </Button>
 
           <Button
+            variant="outline"
             size="sm"
             onClick={() => {
-              toast.loading("Đang quét các cổng loopback...", { id: "rescan" });
+              toast.loading("Đang quét các cổng localhost...", { id: "rescan" });
               scanGateways().then(() => {
-                toast.success("Đã hoàn tất quét AI Gateway!", { id: "rescan" });
+                toast.success("Đã hoàn tất quét dịch vụ cục bộ!", { id: "rescan" });
               });
             }}
             disabled={isScanningGateways}
             className="h-7 text-xs px-2.5 gap-1.5"
           >
             <RefreshCw className={`size-3.5 ${isScanningGateways ? "animate-spin" : ""}`} />
-            <span>{isScanningGateways ? "Đang quét..." : "Quét lại Gateway"}</span>
+            <span>{isScanningGateways ? "Đang quét..." : "Quét Localhost"}</span>
           </Button>
         </div>
       </div>
 
-      {/* Jev Core Highlight Card (Offline 100%, 0 Key) with Test Feature */}
+      {/* Section 1: Configured Providers (LinguaGacha Style) */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <SlidersHorizontal size={14} className="text-primary" />
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground">
+              Nhà Cung Cấp Đã Cấu Hình ({configuredProviders.length})
+            </h3>
+          </div>
+          <span className="text-[10px] text-muted-foreground">
+            Bấm "Kích hoạt" để chọn nhà cung cấp làm cổng dịch chính
+          </span>
+        </div>
+
+        {configuredProviders.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {configuredProviders.map((prov) => {
+              const isCurrentActive = activeGateway?.name === prov.name || prov.isActive;
+              const presetInfo = LINGUAGACHA_PRESETS.find((p) => p.id === prov.presetId);
+              const accentColor = presetInfo?.accent || "var(--primary)";
+
+              return (
+                <Card
+                  key={prov.id}
+                  className={`p-3.5 flex flex-col justify-between gap-2.5 transition-all bg-card ${
+                    isCurrentActive
+                      ? "ring-2 ring-primary shadow-xs border-primary/50"
+                      : "hover:border-primary/40 border-border"
+                  }`}
+                >
+                  <div className="flex flex-col gap-1.5 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="size-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: accentColor }}
+                        />
+                        <strong className="text-xs font-semibold text-foreground truncate">
+                          {prov.name}
+                        </strong>
+                      </div>
+
+                      {isCurrentActive ? (
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] h-4 px-1.5 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 gap-1 font-mono shrink-0"
+                        >
+                          <Check size={9} />
+                          <span>Đang dùng</span>
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-[9px] h-4 px-1 text-muted-foreground shrink-0">
+                          {presetInfo?.name || "Custom"}
+                        </Badge>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col gap-0.5 text-[10px] font-mono text-muted-foreground">
+                      <span className="truncate" title={prov.baseUrl}>
+                        {prov.baseUrl}
+                      </span>
+                      <div className="flex items-center gap-1.5 mt-0.5 text-foreground">
+                        <span className="text-muted-foreground">Model:</span>
+                        <strong className="text-primary truncate">{prov.selectedModel}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-1 pt-2 border-t border-border/60">
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant={isCurrentActive ? "secondary" : "default"}
+                        size="xs"
+                        onClick={() => handleActivateProvider(prov)}
+                        disabled={isCurrentActive}
+                        className="h-6 px-2 text-[10px] font-medium cursor-pointer"
+                        title={isCurrentActive ? "Đang là provider chính" : "Kích hoạt provider này"}
+                      >
+                        {isCurrentActive ? "Đang dùng" : "Kích hoạt"}
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => handleDuplicate(prov)}
+                        className="size-6 text-muted-foreground hover:text-foreground"
+                        title="Tạo bản sao provider này (Endpoint Duplicate)"
+                      >
+                        <Copy size={11} />
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => {
+                          setEditingProvider(prov);
+                          setIsModalOpen(true);
+                        }}
+                        className="size-6 text-muted-foreground hover:text-foreground"
+                        title="Chỉnh sửa cấu hình"
+                      >
+                        <Pencil size={11} />
+                      </Button>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => handleDeleteProvider(prov.id)}
+                      className="size-6 text-muted-foreground hover:text-destructive"
+                      title="Xóa cấu hình này"
+                    >
+                      <Trash2 size={11} />
+                    </Button>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="p-4 rounded-xl border border-dashed border-border text-center text-xs text-muted-foreground bg-muted/10">
+            Chưa có nhà cung cấp nào được cấu hình. Nhấn "Thêm Provider Mới" để thiết lập DeepSeek, Gemini, Claude hoặc OpenAI.
+          </div>
+        )}
+      </div>
+
+      {/* Section 2: Detected Localhost Gateways */}
+      {gateways.length > 0 && (
+        <div className="flex flex-col gap-2 pt-2 border-t border-border">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Server size={14} className="text-primary" />
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Dịch Vụ Cục Bộ Tự Động Quét (Localhost)
+              </h3>
+            </div>
+            <span className="text-xs text-muted-foreground font-mono">
+              {gateways.filter((g) => g.is_online).length} trực tuyến
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {gateways.map((gw) => {
+              const isSelected = activeGateway?.name === gw.name;
+
+              return (
+                <Card
+                  key={gw.name}
+                  onClick={() => {
+                    if (gw.is_online) {
+                      selectGateway(isSelected ? null : gw);
+                      toast.success(
+                        isSelected ? "Đã chuyển về Lõi Cục Bộ Jev Core" : `Đã kích hoạt: ${gw.name}`
+                      );
+                    }
+                  }}
+                  className={`p-2.5 transition-all bg-card ${
+                    gw.is_online ? "cursor-pointer" : "opacity-50 cursor-not-allowed"
+                  } ${isSelected ? "ring-2 ring-primary shadow-xs" : "hover:border-primary/50"}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div
+                        className={`size-2 rounded-full shrink-0 ${
+                          gw.is_online ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground"
+                        }`}
+                      />
+                      <div className="min-w-0">
+                        <span className="text-xs font-semibold text-foreground truncate block">
+                          {gw.name}
+                        </span>
+                        <span className="text-[10px] font-mono text-muted-foreground truncate block">
+                          {gw.base_url}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {gw.is_online && (
+                        <Badge variant="secondary" className="text-[9px] h-4 px-1 font-mono">
+                          {gw.models.length} models
+                        </Badge>
+                      )}
+                      {isSelected && (
+                        <Badge variant="outline" className="text-[9px] h-4 px-1 gap-1 border-primary/40 text-primary">
+                          <Check className="size-2.5" />
+                          <span>Đang chọn</span>
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Section 3: Available Models in Active Gateway */}
+      <div className="flex flex-col gap-2 pt-2 border-t border-border shrink-0">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Zap size={14} className="text-primary" />
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground">
+              Mô Hình Khả Dụng (Available Models)
+            </h3>
+            <Badge variant="secondary" className="text-[10px] h-4.5">
+              {categorizedModels.reduce((acc, c) => acc + c.models.length, 0)} mô hình
+            </Badge>
+          </div>
+
+          <div className="relative w-56">
+            <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Tìm kiếm mô hình..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full h-7 pl-8 pr-2.5 text-xs font-mono bg-card"
+            />
+          </div>
+        </div>
+
+        {categorizedModels.length > 0 ? (
+          <div className="model-page flex-shrink-0">
+            {categorizedModels.map((category) => (
+              <Card key={category.id} className="model-page__category-card p-4 bg-card border-border">
+                <div className="model-page__category-header">
+                  <div className="model-page__category-main">
+                    <div
+                      className="model-page__category-accent"
+                      style={{ backgroundColor: category.accent }}
+                      aria-hidden="true"
+                    />
+                    <div className="model-page__category-copy">
+                      <div className="flex items-center gap-2">
+                        <h4 className="model-page__category-title">{category.name}</h4>
+                        {category.accountBadge && (
+                          <Badge variant="outline" className="text-[9px] h-4.5 border-primary/40 text-primary">
+                            {category.accountBadge}
+                          </Badge>
+                        )}
+                        <Badge variant="secondary" className="text-[10px] h-4.5">
+                          {category.models.length} mô hình
+                        </Badge>
+                      </div>
+                      <p className="model-page__category-description">{category.description}</p>
+                    </div>
+                  </div>
+
+                  {category.models.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleTestModel(category.models[0])}
+                      disabled={Boolean(testingModels[category.models[0]])}
+                      className="h-6 text-xs px-2 gap-1 text-muted-foreground hover:text-foreground"
+                      title={`Kiểm tra kết nối mô hình đầu tiên (${category.models[0]})`}
+                    >
+                      <Activity className={`size-3 ${testingModels[category.models[0]] ? "animate-spin text-primary" : ""}`} />
+                      <span>Test nhanh</span>
+                    </Button>
+                  )}
+                </div>
+
+                <div className="model-page__flow-list">
+                  {category.models.map((model) => {
+                    const isSelected = selectedModel === model;
+                    const isTesting = Boolean(testingModels[model]);
+                    const testResult = modelTestResults[model];
+                    const isFallback = fallbackModels.includes(model);
+
+                    return (
+                      <div
+                        key={model}
+                        onClick={() => {
+                          setSelectedModel(model);
+                          toast.success(`Đã kích hoạt mô hình: ${model}`);
+                        }}
+                        data-selected={isSelected ? "true" : undefined}
+                        className="model-page__item-chip group cursor-pointer"
+                        title={`Chọn mô hình ${model}${testResult ? ` • ${testResult.message}` : ""}`}
+                      >
+                        <span>{model}</span>
+
+                        {testResult && (
+                          <span 
+                            className={`text-[9px] font-mono px-1 rounded ${
+                              testResult.success 
+                                ? "bg-emerald-500/20 text-emerald-400" 
+                                : "bg-red-500/20 text-red-400"
+                            }`}
+                            title={testResult.message}
+                          >
+                            {testResult.success ? `${testResult.latencyMs}ms` : "Lỗi"}
+                          </span>
+                        )}
+
+                        {isFallback && (
+                          <Badge variant="outline" className="text-[8px] h-4 px-1 font-mono border-primary/40 text-primary">
+                            Fallback
+                          </Badge>
+                        )}
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => handleSetAsFallback(model, e)}
+                            className="model-page__item-chip-test-btn"
+                            title={isFallback ? "Bỏ khỏi chuỗi fallback" : "Kiểm tra lỗi & đặt làm fallback"}
+                            aria-label={`Toggle fallback ${model}`}
+                          >
+                            <ShieldCheck size={11} className={isFallback ? "text-emerald-400" : "opacity-40 group-hover:opacity-100"} />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleTestModel(model);
+                            }}
+                            disabled={isTesting}
+                            className="model-page__item-chip-test-btn"
+                            title="Kiểm tra kết nối và độ trễ của mô hình này"
+                            aria-label={`Test ${model}`}
+                          >
+                            {isTesting ? (
+                              <Activity size={11} className="animate-spin text-primary" />
+                            ) : (
+                              <Play size={10} className="opacity-70 group-hover:opacity-100" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Empty className="p-6 border border-border rounded-xl bg-card">
+            <EmptyMedia>
+              <Boxes className="size-8 text-primary opacity-80" />
+            </EmptyMedia>
+            <EmptyTitle className="text-xs font-semibold text-foreground">
+              {activeGateway
+                ? `Chưa có danh sách mô hình từ ${activeGateway.name}`
+                : "Chưa kích hoạt AI Provider"}
+            </EmptyTitle>
+            <EmptyDescription className="text-[11px] text-muted-foreground max-w-sm mx-auto leading-relaxed">
+              Chọn hoặc kích hoạt một nhà cung cấp ở danh sách trên hoặc nhấn "Thêm Provider Mới" để thiết lập DeepSeek, Gemini, Claude, OpenAI...
+            </EmptyDescription>
+            <EmptyContent className="flex items-center gap-2 mt-2">
+              <Button
+                size="sm"
+                onClick={() => {
+                  setEditingProvider(null);
+                  setIsModalOpen(true);
+                }}
+                className="h-7 text-xs px-3"
+              >
+                Cấu Hình Provider
+              </Button>
+            </EmptyContent>
+          </Empty>
+        )}
+      </div>
+
+      {/* Section 4: Jev Core Local */}
       <Card className="p-4 shrink-0 bg-card border-border">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0 flex-1">
@@ -184,7 +630,7 @@ export function GatewayView() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center flex-wrap gap-2">
                 <h3 className="text-sm font-semibold text-foreground">
-                  Lõi Xử Lý Cục Bộ (Tự động 100% Offline)
+                  Lõi Xử Lý Cục Bộ Jev Core (Tự động 100% Offline)
                 </h3>
                 <Badge variant="secondary" className="text-[10px] h-4.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                   100% Offline
@@ -238,276 +684,12 @@ export function GatewayView() {
         </div>
       </Card>
 
-      {/* Section 1: Detected Gateways (Compact View without massive chip overflow) */}
-      <div className="flex items-center justify-between flex-shrink-0">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Danh Sách AI Gateway Cục Bộ (Localhost)
-        </h3>
-        <span className="text-xs text-muted-foreground font-mono">
-          {gateways.filter((g) => g.is_online).length} / {gateways.length || 7} cổng trực tuyến
-        </span>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 flex-shrink-0">
-        {gateways.map((gw) => {
-          const isSelected = activeGateway?.name === gw.name;
-
-          return (
-            <Card
-              key={gw.name}
-              onClick={() => {
-                if (gw.is_online) {
-                  selectGateway(isSelected ? null : gw);
-                  toast.success(
-                    isSelected ? "Đã chuyển về Jev Core Offline" : `Đã kích hoạt Gateway: ${gw.name}`
-                  );
-                }
-              }}
-              className={`p-3 transition-all bg-card ${
-                gw.is_online ? "cursor-pointer" : "opacity-50 cursor-not-allowed"
-              } ${isSelected ? "ring-2 ring-primary shadow-xs" : "hover:border-primary/50"}`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div
-                    className={`size-2 rounded-full shrink-0 ${
-                      gw.is_online
-                        ? "bg-emerald-500 shadow-xs animate-pulse"
-                        : "bg-muted-foreground"
-                    }`}
-                  />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-foreground truncate max-w-[160px]">
-                        {gw.name}
-                      </span>
-                      <span className="text-[10px] font-mono text-muted-foreground">
-                        :{gw.port}
-                      </span>
-                    </div>
-                    <span className="text-[10px] font-mono text-muted-foreground truncate block max-w-[200px]">
-                      {gw.base_url}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  {gw.is_online && (
-                    <>
-                      <Badge variant="secondary" className="text-[10px] h-4.5 px-1.5 font-mono">
-                        {gw.models.length} models
-                      </Badge>
-                      <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400">
-                        {gw.latency_ms}ms
-                      </span>
-                    </>
-                  )}
-
-                  {isSelected && (
-                    <Badge variant="outline" className="text-[10px] h-4.5 px-1.5 gap-1 border-primary/40 text-primary">
-                      <Check className="size-3" />
-                      <span>Đang chọn</span>
-                    </Badge>
-                  )}
-                </div>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
-
-      {/* Section 2: Categorized Models by Provider with Test Feature */}
-      <div className="flex items-center justify-between pt-2 border-t border-border shrink-0">
-        <div className="flex items-center gap-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground">
-            Phân Loại Mô Hình Theo Nhà Cung Cấp
-          </h3>
-          <Badge variant="secondary" className="text-[10px] h-4.5">
-            {categorizedModels.reduce((acc, c) => acc + c.models.length, 0)} mô hình
-          </Badge>
-        </div>
-
-        {/* Search bar to prevent chip clutter */}
-        <div className="relative w-56">
-          <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder="Tìm kiếm mô hình..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-7 pl-8 pr-2.5 text-xs font-mono bg-card"
-          />
-        </div>
-      </div>
-
-      {/* Provider Category Cards */}
-      {categorizedModels.length > 0 ? (
-        <div className="model-page flex-shrink-0">
-          {categorizedModels.map((category) => (
-            <Card key={category.id} className="model-page__category-card p-4 bg-card border-border">
-              {/* Category Header */}
-              <div className="model-page__category-header">
-                <div className="model-page__category-main">
-                  <div
-                    className="model-page__category-accent"
-                    style={{ backgroundColor: category.accent }}
-                    aria-hidden="true"
-                  />
-                  <div className="model-page__category-copy">
-                    <div className="flex items-center gap-2">
-                      <h4 className="model-page__category-title">{category.name}</h4>
-                      {category.accountBadge && (
-                        <Badge variant="outline" className="text-[9px] h-4.5 border-primary/40 text-primary">
-                          {category.accountBadge}
-                        </Badge>
-                      )}
-                      <Badge variant="secondary" className="text-[10px] h-4.5">
-                        {category.models.length} mô hình
-                      </Badge>
-                    </div>
-                    <p className="model-page__category-description">{category.description}</p>
-                  </div>
-                </div>
-
-                {/* Quick test the first model of this provider */}
-                {category.models.length > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleTestModel(category.models[0])}
-                    disabled={Boolean(testingModels[category.models[0]])}
-                    className="h-6 text-xs px-2 gap-1 text-muted-foreground hover:text-foreground"
-                    title={`Kiểm tra kết nối mô hình đầu tiên (${category.models[0]})`}
-                  >
-                    <Activity className={`size-3 ${testingModels[category.models[0]] ? "animate-spin text-primary" : ""}`} />
-                    <span>Test nhanh</span>
-                  </Button>
-                )}
-              </div>
-
-              {/* Models Flow List (Scrollable, max 180px so it NEVER breaks the page layout) */}
-              <div className="model-page__flow-list">
-                {category.models.map((model) => {
-                  const isSelected = selectedModel === model;
-                  const isTesting = Boolean(testingModels[model]);
-                  const testResult = modelTestResults[model];
-                  const isFallback = fallbackModels.includes(model);
-
-                  return (
-                    <div
-                      key={model}
-                      onClick={() => {
-                        setSelectedModel(model);
-                        toast.success(`Đã kích hoạt mô hình: ${model}`);
-                      }}
-                      data-selected={isSelected ? "true" : undefined}
-                      className="model-page__item-chip group"
-                      title={`Chọn mô hình ${model}${testResult ? ` • ${testResult.message}` : ""}`}
-                    >
-                      <span>{model}</span>
-
-                      {/* Test result status badge */}
-                      {testResult && (
-                        <span 
-                          className={`text-[9px] font-mono px-1 rounded ${
-                            testResult.success 
-                              ? "bg-emerald-500/20 text-emerald-400" 
-                              : "bg-red-500/20 text-red-400"
-                          }`}
-                          title={testResult.message}
-                        >
-                          {testResult.success ? `${testResult.latencyMs}ms` : "Lỗi"}
-                        </span>
-                      )}
-
-                      {/* Fallback badge */}
-                      {isFallback && (
-                        <Badge variant="outline" className="text-[8px] h-4 px-1 font-mono border-primary/40 text-primary">
-                          Fallback
-                        </Badge>
-                      )}
-
-                      {/* Action buttons inside Chip */}
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={(e) => handleSetAsFallback(model, e)}
-                          className="model-page__item-chip-test-btn"
-                          title={isFallback ? "Bỏ khỏi chuỗi fallback" : "Kiểm tra lỗi & đặt làm fallback"}
-                          aria-label={`Toggle fallback ${model}`}
-                        >
-                          <ShieldCheck size={11} className={isFallback ? "text-emerald-400" : "opacity-40 group-hover:opacity-100"} />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleTestModel(model);
-                          }}
-                          disabled={isTesting}
-                          className="model-page__item-chip-test-btn"
-                          title="Kiểm tra kết nối và độ trễ của mô hình này"
-                          aria-label={`Test ${model}`}
-                        >
-                          {isTesting ? (
-                            <Activity size={11} className="animate-spin text-primary" />
-                          ) : (
-                            <Play size={10} className="opacity-70 group-hover:opacity-100" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <Empty className="p-8 border border-border rounded-xl bg-card">
-          <EmptyMedia>
-            <Boxes className="size-10 text-primary opacity-80" />
-          </EmptyMedia>
-          <EmptyTitle className="text-sm font-semibold text-foreground">
-            {activeGateway
-              ? `Chưa phát hiện mô hình hoặc Provider nào trong ${activeGateway.name}`
-              : "Chưa kích hoạt AI Gateway"}
-          </EmptyTitle>
-          <EmptyDescription className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
-            {activeGateway?.gateway_type === "9router"
-              ? "Chỉ các nhà cung cấp (Antigravity, Codex, Cline, Qoder...) đã được thiết lập và kết nối trong 9Router mới hiển thị tại đây. Vui lòng mở 9Router để cấu hình provider của bạn."
-              : "Vui lòng chọn hoặc quét lại Gateway ở danh sách trên để tải các mô hình của nhà cung cấp đã thiết lập."}
-          </EmptyDescription>
-          {activeGateway?.gateway_type === "9router" && (
-            <EmptyContent className="flex items-center gap-2 mt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                asChild
-                className="h-7 text-xs px-3"
-              >
-                <a
-                  href={`${activeGateway.base_url.replace(/\/v1\/?$/, "")}/dashboard`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Mở 9Router Dashboard
-                </a>
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => scanGateways()}
-                className="h-7 text-xs px-3"
-              >
-                Quét lại Gateway
-              </Button>
-            </EmptyContent>
-          )}
-        </Empty>
-      )}
-
-      <GatewaySettingsModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      <GatewaySettingsModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        initialProvider={editingProvider}
+        onSaved={() => setConfiguredProviders(loadConfiguredProviders())}
+      />
     </div>
   );
 }
