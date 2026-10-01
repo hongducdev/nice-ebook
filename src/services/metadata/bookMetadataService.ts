@@ -637,9 +637,21 @@ export class BookMetadataService {
    * Fetch an external image and convert to data URL safely.
    * Uses Tauri's Rust command `fetch_image_as_data_url` when available (bypassing CORS),
    * or standard browser fetch as web fallback.
+   *
+   * @param options.signal     Aborts the download. The Rust command itself cannot be
+   *                           cancelled mid-flight, so the abort is honoured before the
+   *                           request and re-checked after it resolves.
+   * @param options.timeoutSecs Overrides the command's 25s default (clamped 5-120 in Rust).
+   *                           AI image endpoints commonly need 15-30s.
    */
-  public static async fetchCoverDataUrl(url: string): Promise<string> {
+  public static async fetchCoverDataUrl(
+    url: string,
+    options?: { signal?: AbortSignal; timeoutSecs?: number }
+  ): Promise<string> {
     if (!url) throw new Error("URL ảnh rỗng");
+
+    const { signal, timeoutSecs } = options ?? {};
+    if (signal?.aborted) throw new DOMException("Đã hủy tải ảnh", "AbortError");
 
     // If already a data URL, return directly
     if (url.startsWith("data:")) {
@@ -650,19 +662,27 @@ export class BookMetadataService {
 
     if (isTauri) {
       try {
-        return await invoke<string>("fetch_image_as_data_url", { url });
+        const dataUrl = await invoke<string>("fetch_image_as_data_url", {
+          url,
+          timeoutSecs: timeoutSecs ?? null,
+        });
+        if (signal?.aborted) throw new DOMException("Đã hủy tải ảnh", "AbortError");
+        return dataUrl;
       } catch (err) {
+        // An abort must propagate, not silently fall through to another download.
+        if (err instanceof DOMException && err.name === "AbortError") throw err;
         console.warn("Tauri fetch_image_as_data_url failed, trying browser fetch fallback:", err);
       }
     }
 
     // Browser fallback
-    const res = await fetch(url, { mode: "cors" });
+    const res = await fetch(url, { mode: "cors", signal });
     if (!res.ok) {
       throw new Error(`Không thể tải ảnh: HTTP ${res.status}`);
     }
 
     const blob = await res.blob();
+    if (signal?.aborted) throw new DOMException("Đã hủy tải ảnh", "AbortError");
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => {

@@ -24,12 +24,13 @@ import {
 import { useAppStore } from "../../stores/useAppStore";
 import { BookMetadataService, BookMetadataItem, CoverOption, normalizeAuthor } from "../../services/metadata/bookMetadataService";
 import { AiMetadataEnricher } from "../../services/metadata/aiMetadataEnricher";
+import { AiCoverTab } from "./AiCoverTab";
 import { toast } from "sonner";
 
 interface MetadataModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: "metadata" | "covers" | "upload";
+  initialTab?: "metadata" | "covers" | "upload" | "ai-cover";
   // Optional mode for ConverterView
   converterValues?: {
     title: string;
@@ -70,7 +71,7 @@ export function MetadataModal({
   const [coverDataUrl, setCoverDataUrl] = useState<string | null>(null);
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState<"metadata" | "covers" | "upload">(initialTab || "metadata");
+  const [activeTab, setActiveTab] = useState<"metadata" | "covers" | "upload" | "ai-cover">(initialTab || "metadata");
 
   // Search Source Mode: All / Wattpad & Webnovel / Published Books
   const [searchSourceMode, setSearchSourceMode] = useState<"all" | "wattpad" | "published">("all");
@@ -130,6 +131,21 @@ export function MetadataModal({
     coverDataUrl,
   };
 
+  // The exact values last pushed from the store into this form. Any field whose
+  // live value differs from its snapshot is an unsaved user edit and must never
+  // be silently overwritten by an external `currentBook` change.
+  const syncedSnapshotRef = useRef<{
+    title: string;
+    author: string;
+    publisher: string;
+    publishedYear: string;
+    language: string;
+    genre: string;
+    isbn: string;
+    description: string;
+    coverDataUrl: string | null;
+  } | null>(null);
+
   const performSave = (overrides?: Partial<typeof valuesRef.current>) => {
     const current = { ...valuesRef.current, ...overrides };
     const rawTitle = current.title ?? "";
@@ -170,6 +186,11 @@ export function MetadataModal({
         cover_data_url: current.coverDataUrl || null,
       });
     }
+
+    // The form now matches what was just written to the store, so the fields are no
+    // longer "dirty" and may accept external updates again. Without this a field the
+    // user edited even once would never re-converge with the store.
+    syncedSnapshotRef.current = { ...current };
 
     setSaveStatus("saved");
     return true;
@@ -232,12 +253,93 @@ export function MetadataModal({
         }
       }
 
+      // Record exactly what the store pushed into the form. Fields that later
+      // diverge from this snapshot are the user's unsaved edits.
+      const b = !isConverterMode ? useAppStore.getState().currentBook : null;
+      syncedSnapshotRef.current = isConverterMode
+        ? null
+        : {
+            title: b?.title || "",
+            author: b?.author || "",
+            publisher: b?.publisher || "",
+            publishedYear: b?.published_year || "",
+            language: b?.language || "vi",
+            genre: b?.genre || "",
+            isbn: b?.isbn || "",
+            description: b?.description || "",
+            coverDataUrl: b?.cover_data_url || null,
+          };
+
       setSearchResults([]);
       setShowSearchResults(false);
       setDiffModalData(null);
     }
     prevIsOpenRef.current = isOpen;
   }, [isOpen, initialTab, isConverterMode, converterValues]);
+
+  // Sync state when currentBook changes externally (e.g. from Chat Agent, or a
+  // chapter translation completing while the modal is open).
+  //
+  // A field the user has typed into (i.e. one that no longer matches the last
+  // snapshot pushed from the store) is deliberately NOT overwritten: otherwise
+  // the incoming value silently replaces in-progress typing, and the 600 ms
+  // debounce then persists the reverted value over the user's edit.
+  const prevBookRef = useRef(currentBook);
+  useEffect(() => {
+    if (!isOpen || isConverterMode) return;
+    if (!currentBook || currentBook === prevBookRef.current) return;
+    prevBookRef.current = currentBook;
+
+    const snapshot = syncedSnapshotRef.current;
+    if (!snapshot) return;
+
+    const form = valuesRef.current;
+    const next = { ...snapshot };
+
+    // Each field is refreshed only while it still matches the snapshot, i.e. the
+    // user has not typed into it since the last store sync.
+    if (form.title === snapshot.title) {
+      next.title = currentBook.title ?? "";
+      setTitle(next.title);
+    }
+    if (currentBook.author !== undefined && form.author === snapshot.author) {
+      next.author = currentBook.author;
+      setAuthor(next.author);
+    }
+    if (currentBook.publisher !== undefined && form.publisher === snapshot.publisher) {
+      next.publisher = currentBook.publisher;
+      setPublisher(next.publisher);
+    }
+    if (currentBook.published_year !== undefined && form.publishedYear === snapshot.publishedYear) {
+      next.publishedYear = currentBook.published_year;
+      setPublishedYear(next.publishedYear);
+    }
+    if (currentBook.language && form.language === snapshot.language) {
+      next.language = currentBook.language;
+      setLanguage(next.language);
+    }
+    if (currentBook.genre !== undefined && form.genre === snapshot.genre) {
+      next.genre = currentBook.genre;
+      setGenre(next.genre);
+    }
+    if (currentBook.isbn !== undefined && form.isbn === snapshot.isbn) {
+      next.isbn = currentBook.isbn;
+      setIsbn(next.isbn);
+    }
+    if (currentBook.description !== undefined && form.description === snapshot.description) {
+      next.description = currentBook.description ?? "";
+      setDescription(next.description);
+    }
+    if (
+      currentBook.cover_data_url !== undefined &&
+      form.coverDataUrl === snapshot.coverDataUrl
+    ) {
+      next.coverDataUrl = currentBook.cover_data_url;
+      setCoverDataUrl(next.coverDataUrl);
+    }
+
+    syncedSnapshotRef.current = next;
+  }, [isOpen, currentBook, isConverterMode]);
 
   function handleClose() {
     if (debounceTimerRef.current) {
@@ -542,7 +644,7 @@ export function MetadataModal({
         onChange={handleFileInputChange}
       />
 
-      <div className="card-surface rounded-2xl w-full max-w-5xl h-[92vh] max-h-[860px] flex flex-col overflow-hidden shadow-2xl border border-[var(--border)]">
+      <div className="card-surface rounded-2xl w-full max-w-5xl xl:max-w-6xl h-[92vh] max-h-[880px] flex flex-col overflow-hidden shadow-2xl border border-[var(--border)] transition-all">
         {/* Top Header Bar */}
         <div className="h-14 px-6 border-b border-[var(--border)] flex items-center justify-between bg-[var(--ui-titlebar-surface)] shrink-0">
           <div className="flex items-center gap-3">
@@ -599,110 +701,130 @@ export function MetadataModal({
 
         {/* Modal Body: Left Cover Panel + Right Main Tabbed Area */}
         <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
-          {/* Left Column: Cover Panel */}
-          <div className="w-full md:w-72 shrink-0 p-5 border-b md:border-b-0 md:border-r border-[var(--border)] bg-[var(--card)]/40 flex flex-col items-center justify-between gap-4 overflow-y-auto">
-            <div className="w-full flex flex-col items-center">
-              <span className="text-[11px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2.5 self-start">
-                Ảnh bìa tác phẩm
-              </span>
+          {/* Left Column: Cover Panel (Hidden in AI Cover tab so AI Studio has the full spacious width) */}
+          {activeTab !== "ai-cover" && (
+            <div className="w-full md:w-72 shrink-0 p-5 border-b md:border-b-0 md:border-r border-[var(--border)] bg-[var(--card)]/40 flex flex-col items-center justify-between gap-4 overflow-y-auto">
+              <div className="w-full flex flex-col items-center">
+                <span className="text-[11px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2.5 self-start">
+                  Ảnh bìa tác phẩm
+                </span>
 
-              {/* Cover Card Display */}
-              <div className="relative group w-44 aspect-[2/3] rounded-xl overflow-hidden border-2 border-[var(--border)] bg-[var(--secondary)] shadow-md flex items-center justify-center">
-                {coverDataUrl ? (
-                  <img
-                    src={coverDataUrl}
-                    alt="Book Cover"
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="flex flex-col items-center justify-center p-4 text-center text-[var(--muted-foreground)]">
-                    <ImageIcon size={32} className="opacity-40 mb-2" />
-                    <span className="text-xs font-medium">Chưa có ảnh bìa</span>
-                    <span className="text-[10px] opacity-70 mt-0.5">Nhấn "Tìm ảnh bìa" bên dưới</span>
-                  </div>
-                )}
+                {/* Cover Card Display */}
+                <div className="relative group w-44 aspect-[2/3] rounded-xl overflow-hidden border-2 border-[var(--border)] bg-[var(--secondary)] shadow-md flex items-center justify-center">
+                  {coverDataUrl ? (
+                    <img
+                      src={coverDataUrl}
+                      alt="Book Cover"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center p-4 text-center text-[var(--muted-foreground)]">
+                      <ImageIcon size={32} className="opacity-40 mb-2" />
+                      <span className="text-xs font-medium">Chưa có ảnh bìa</span>
+                      <span className="text-[10px] opacity-70 mt-0.5">Nhấn "Tìm ảnh bìa" bên dưới</span>
+                    </div>
+                  )}
 
-                {/* Hover overlay actions */}
-                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCoverSearchQuery(title);
-                      setActiveTab("covers");
-                      if (coverGallery.length === 0) handleSearchCovers();
-                    }}
-                    className="lg-button lg-button--primary text-xs h-7 px-2.5 gap-1 w-full"
-                  >
-                    <Search size={12} />
-                    <span>Đổi ảnh bìa</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="lg-button lg-button--secondary text-xs h-7 px-2.5 gap-1 w-full"
-                  >
-                    <Upload size={12} />
-                    <span>Tải ảnh lên</span>
-                  </button>
-
-                  {coverDataUrl && (
+                  {/* Hover overlay actions */}
+                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2">
                     <button
                       type="button"
                       onClick={() => {
-                        setCoverDataUrl(null);
-                        performSave({ coverDataUrl: null });
-                        toast.success("Đã xóa và tự động lưu ảnh bìa!");
+                        setCoverSearchQuery(title);
+                        setActiveTab("covers");
+                        if (coverGallery.length === 0) handleSearchCovers();
                       }}
-                      className="lg-button lg-button--ghost text-xs h-7 px-2.5 gap-1 text-[var(--ui-failure)] w-full hover:bg-red-500/10"
+                      className="lg-button lg-button--primary text-xs h-7 px-2.5 gap-1 w-full"
                     >
-                      <Trash2 size={12} />
-                      <span>Xóa bìa</span>
+                      <Search size={12} />
+                      <span>Đổi ảnh bìa</span>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("ai-cover")}
+                      className="lg-button lg-button--secondary text-xs h-7 px-2.5 gap-1 w-full text-amber-500 font-medium hover:bg-amber-500/10"
+                    >
+                      <Wand2 size={12} />
+                      <span>Tạo bìa AI</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="lg-button lg-button--secondary text-xs h-7 px-2.5 gap-1 w-full"
+                    >
+                      <Upload size={12} />
+                      <span>Tải ảnh lên</span>
+                    </button>
+
+                    {coverDataUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCoverDataUrl(null);
+                          performSave({ coverDataUrl: null });
+                          toast.success("Đã xóa và tự động lưu ảnh bìa!");
+                        }}
+                        className="lg-button lg-button--ghost text-xs h-7 px-2.5 gap-1 text-[var(--ui-failure)] w-full hover:bg-red-500/10"
+                      >
+                        <Trash2 size={12} />
+                        <span>Xóa bìa</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Resolution / Status Badge */}
+                <div className="mt-3 flex items-center gap-1.5 text-[11px] text-[var(--muted-foreground)]">
+                  {coverDataUrl ? (
+                    <span className="app-badge app-badge--success text-[10px] gap-1">
+                      <Check size={10} />
+                      <span>Đã gắn ảnh bìa</span>
+                    </span>
+                  ) : (
+                    <span className="app-badge text-[10px] text-[var(--muted-foreground)]">
+                      Tỉ lệ 2:3 chuẩn Ebook
+                    </span>
                   )}
                 </div>
               </div>
 
-              {/* Resolution / Status Badge */}
-              <div className="mt-3 flex items-center gap-1.5 text-[11px] text-[var(--muted-foreground)]">
-                {coverDataUrl ? (
-                  <span className="app-badge app-badge--success text-[10px] gap-1">
-                    <Check size={10} />
-                    <span>Đã gắn ảnh bìa</span>
-                  </span>
-                ) : (
-                  <span className="app-badge text-[10px] text-[var(--muted-foreground)]">
-                    Tỉ lệ 2:3 chuẩn Ebook
-                  </span>
-                )}
+              {/* Quick Cover Buttons */}
+              <div className="w-full space-y-2 pt-2 border-t border-[var(--border)]">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("ai-cover")}
+                  className="w-full lg-button lg-button--primary text-xs h-8 px-3 gap-2 font-medium bg-gradient-to-r from-amber-500/15 via-[var(--primary)]/15 to-purple-500/15 hover:from-amber-500/25 hover:to-purple-500/25 border border-amber-500/30 text-[var(--foreground)] shadow-xs"
+                >
+                  <Wand2 size={13} className="text-amber-500 shrink-0" />
+                  <span>✨ Tạo bìa AI độc bản</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCoverSearchQuery(title);
+                    setActiveTab("covers");
+                    if (coverGallery.length === 0) handleSearchCovers();
+                  }}
+                  className="w-full lg-button lg-button--secondary text-xs h-8 px-3 gap-2 font-medium"
+                >
+                  <Search size={13} className="text-[var(--primary)]" />
+                  <span>Kho ảnh bìa đẹp</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full lg-button lg-button--ghost text-xs h-8 px-3 gap-2"
+                >
+                  <Upload size={13} />
+                  <span>Tải ảnh từ máy tính</span>
+                </button>
               </div>
             </div>
-
-            {/* Quick Cover Buttons */}
-            <div className="w-full space-y-2 pt-2 border-t border-[var(--border)]">
-              <button
-                type="button"
-                onClick={() => {
-                  setCoverSearchQuery(title);
-                  setActiveTab("covers");
-                  if (coverGallery.length === 0) handleSearchCovers();
-                }}
-                className="w-full lg-button lg-button--secondary text-xs h-8 px-3 gap-2 font-medium"
-              >
-                <Search size={13} className="text-[var(--primary)]" />
-                <span>Kho ảnh bìa đẹp</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full lg-button lg-button--ghost text-xs h-8 px-3 gap-2"
-              >
-                <Upload size={13} />
-                <span>Tải ảnh từ máy tính</span>
-              </button>
-            </div>
-          </div>
+          )}
 
           {/* Right Column: Tabbed Content */}
           <div className="flex-1 min-w-0 flex flex-col min-h-0 bg-[var(--background)] overflow-hidden">
@@ -720,6 +842,22 @@ export function MetadataModal({
                 >
                   <FileText size={13} />
                   <span>Thông tin tác phẩm</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("ai-cover")}
+                  className={`flex items-center gap-2 px-3.5 py-1 text-xs font-semibold rounded-lg transition-all whitespace-nowrap ${
+                    activeTab === "ai-cover"
+                      ? "bg-[var(--card)] text-[var(--primary)] shadow-xs border border-[var(--border)]"
+                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  <Wand2 size={13} className="text-amber-500" />
+                  <span>✨ Tạo bìa AI</span>
+                  <span className="app-badge bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[9px] px-1 py-0">
+                    Mới
+                  </span>
                 </button>
 
                 <button
@@ -762,6 +900,24 @@ export function MetadataModal({
 
             {/* Tab Body */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-5 space-y-4 min-w-0">
+              {/* TAB: AI COVER STUDIO */}
+              {activeTab === "ai-cover" && (
+                <AiCoverTab
+                  bookTitle={title}
+                  author={author}
+                  genre={genre}
+                  description={description}
+                  activeGateway={activeGateway}
+                  selectedModel={selectedModel || "deepseek-chat"}
+                  onApplyCover={(dataUrl) => {
+                    setCoverDataUrl(dataUrl);
+                    performSave({ coverDataUrl: dataUrl });
+                    toast.success("Đã chọn ảnh bìa AI và tự động lưu sách!");
+                    setActiveTab("metadata");
+                  }}
+                />
+              )}
+
               {/* TAB 1: METADATA FORM */}
               {activeTab === "metadata" && (
                 <div className="space-y-4 w-full min-w-0">

@@ -83,7 +83,7 @@ export function BookView() {
 
   const [isCleaningWatermarks, setIsCleaningWatermarks] = useState(false);
   const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false);
-  const [metadataModalTab, setMetadataModalTab] = useState<"metadata" | "covers" | "upload">("metadata");
+  const [metadataModalTab, setMetadataModalTab] = useState<"metadata" | "covers" | "upload" | "ai-cover">("metadata");
   const [isPreviewCoverZoomed, setIsPreviewCoverZoomed] = useState(false);
   const watermarkReport = useMemo(() => {
     if (!currentBook || currentBook.chapters.length === 0) return null;
@@ -473,16 +473,30 @@ export function BookView() {
               <div className="flex flex-col items-center justify-center text-center p-2 text-muted-foreground">
                 <ImageIcon size={28} className="opacity-40 mb-1" />
                 <span className="text-[10px] leading-tight font-medium">Chưa có ảnh bìa</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMetadataModalTab("covers");
-                    setIsMetadataModalOpen(true);
-                  }}
-                  className="mt-2 text-[10px] text-primary hover:underline font-semibold"
-                >
-                  + Thêm ảnh bìa
-                </button>
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMetadataModalTab("ai-cover");
+                      setIsMetadataModalOpen(true);
+                    }}
+                    className="text-[10px] text-amber-500 hover:underline font-semibold flex items-center gap-1"
+                  >
+                    <Wand2 size={10} />
+                    <span>Tạo bìa AI</span>
+                  </button>
+                  <span className="text-[10px] text-muted-foreground/60">•</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMetadataModalTab("covers");
+                      setIsMetadataModalOpen(true);
+                    }}
+                    className="text-[10px] text-primary hover:underline font-semibold"
+                  >
+                    Tìm trên mạng
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -517,6 +531,19 @@ export function BookView() {
 
             {/* Quick Action Pills for Cover & Metadata */}
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-3 pt-2 border-t border-border/60">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setMetadataModalTab("ai-cover");
+                  setIsMetadataModalOpen(true);
+                }}
+                className="text-xs h-7 px-2.5 gap-1.5 font-medium bg-gradient-to-r from-amber-500/15 via-primary/15 to-purple-500/15 hover:from-amber-500/25 hover:to-purple-500/25 border-amber-500/30 text-foreground shadow-xs"
+              >
+                <Wand2 size={12} className="text-amber-500" />
+                <span>✨ Tạo Bìa Bằng AI...</span>
+              </Button>
+
               <Button
                 variant="outline"
                 size="sm"

@@ -3,7 +3,9 @@ pub mod jev;
 pub mod kindle;
 pub mod scanner;
 
-use epub::{CreateEpubOptions, EpubMetadata, EpubParser, EpubWriter, MetadataOverrides, StylesheetEntry};
+use epub::{
+    CreateEpubOptions, EpubMetadata, EpubParser, EpubWriter, MetadataOverrides, StylesheetEntry,
+};
 use jev::{JevClassifier, JevDecision, JevVerdictChapterPlan, JevVerdictEngine};
 use kindle::{SdrExportResult, WordWisePayload, XRayPayload};
 use scanner::{DetectedGateway, GatewayScanner};
@@ -228,8 +230,10 @@ pub async fn validate_safe_image_url_with_dns(
 }
 
 #[tauri::command]
-async fn fetch_image_as_data_url(url: String) -> Result<String, String> {
+async fn fetch_image_as_data_url(url: String, timeout_secs: Option<u64>) -> Result<String, String> {
     let parsed_url = reqwest::Url::parse(&url).map_err(|e| format!("URL không hợp lệ: {}", e))?;
+
+    let timeout_val = timeout_secs.unwrap_or(25).clamp(5, 120);
 
     let mut current_url = parsed_url;
     let mut redirect_count = 0;
@@ -238,7 +242,7 @@ async fn fetch_image_as_data_url(url: String) -> Result<String, String> {
         let pinned_addr = validate_safe_image_url_with_dns(&current_url).await?;
 
         let mut client_builder = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(timeout_val))
             .redirect(reqwest::redirect::Policy::none());
 
         if let Some(url::Host::Domain(domain)) = current_url.host() {
@@ -766,6 +770,143 @@ async fn fetch_external_json(url: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn call_image_generation_api(
+    endpoint: String,
+    api_key: Option<String>,
+    payload_json: String,
+    timeout_secs: Option<u64>,
+) -> Result<String, String> {
+    let raw_url = endpoint.trim();
+    let parsed_url =
+        reqwest::Url::parse(raw_url).map_err(|e| format!("URL không hợp lệ: {}", e))?;
+
+    // Policy: HTTP is allowed ONLY for localhost/loopback or private/internal VPN networks (e.g. LAN, Tailscale)
+    // Public internet remote servers MUST use HTTPS.
+    if parsed_url.scheme() == "http" {
+        let host = parsed_url.host_str().unwrap_or("");
+        // EVERY branch below tests a PARSED address or an exact hostname literal.
+        // A string-prefix test such as `host.starts_with("127.")` must never be used
+        // here: WHATWG only turns a *complete* IPv4 literal into an IP, so a hostname
+        // like "127.0.0.1.attacker.example" stays a DOMAIN, passes the prefix test,
+        // and then receives `Authorization: Bearer <key>` in plaintext over HTTP.
+        let is_local_or_private = if host == "localhost" || host == "::1" || host == "0.0.0.0" {
+            true
+        } else if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+            match ip {
+                std::net::IpAddr::V4(v4) => {
+                    // Loopback + RFC1918 + RFC6598 CGNAT (Tailscale 100.64.0.0/10).
+                    // Link-local (169.254.0.0/16) is deliberately EXCLUDED - it is the
+                    // cloud metadata range (169.254.169.254) and has no legitimate use
+                    // as an image-generation endpoint. The sibling fetch commands block
+                    // it too, so allowing it here would be an inconsistency, not a feature.
+                    v4.is_loopback()
+                        || v4.is_private()
+                        || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xc0) == 64)
+                }
+                std::net::IpAddr::V6(v6) => {
+                    v6.is_loopback() || is_private_or_local_ip(std::net::IpAddr::V6(v6))
+                }
+            }
+        } else {
+            false
+        };
+
+        if !is_local_or_private {
+            return Err("Kết nối HTTP không mã hóa chỉ được phép cho máy chủ cục bộ hoặc mạng nội bộ/VPN (localhost, LAN, Tailscale). Với máy chủ từ xa, vui lòng dùng HTTPS.".to_string());
+        }
+    } else if parsed_url.scheme() != "https" {
+        return Err(
+            "Giao thức không được hỗ trợ (chỉ chấp nhận http://localhost hoặc https://)"
+                .to_string(),
+        );
+    }
+
+    let timeout_val = timeout_secs.unwrap_or(60).clamp(10, 180);
+
+    let pinned_addr = if parsed_url.scheme() == "https" {
+        validate_safe_image_url(&parsed_url)?;
+        Some(validate_safe_image_url_with_dns(&parsed_url).await?)
+    } else {
+        None
+    };
+
+    let mut client_builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(timeout_val))
+        .redirect(reqwest::redirect::Policy::none());
+
+    if let (Some(url::Host::Domain(domain)), Some(addr)) = (parsed_url.host(), pinned_addr) {
+        client_builder = client_builder.resolve(domain, addr);
+    }
+
+    let client = client_builder
+        .build()
+        .map_err(|e| format!("Không thể khởi tạo HTTP client: {}", e))?;
+
+    let mut req = client
+        .post(parsed_url)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .header(reqwest::header::USER_AGENT, "NiceEbookStudio/0.1.0");
+
+    if let Some(key) = api_key.as_ref() {
+        let trimmed = key.trim();
+        if !trimmed.is_empty() {
+            req = req.header(
+                reqwest::header::AUTHORIZATION,
+                format!("Bearer {}", trimmed),
+            );
+        }
+    }
+
+    let mut response = req
+        .body(payload_json)
+        .send()
+        .await
+        .map_err(|e| format!("Lỗi kết nối tới dịch vụ tạo ảnh AI: {}", e))?;
+
+    let status = response.status();
+
+    // Bounded read: image APIs legitimately return multi-MB base64 payloads, but an
+    // unbounded `response.text()` lets a hostile or broken endpoint stream until the
+    // desktop app runs out of memory. Cap generously (the siblings use 2-8 MB).
+    const MAX_BYTES: usize = 64 * 1024 * 1024;
+    if let Some(len) = response.content_length() {
+        if len > MAX_BYTES as u64 {
+            return Err(format!(
+                "Phản hồi từ dịch vụ tạo ảnh AI vượt quá giới hạn cho phép ({} MB)",
+                MAX_BYTES / (1024 * 1024)
+            ));
+        }
+    }
+
+    let mut body_bytes: Vec<u8> = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| format!("Lỗi đọc dữ liệu phản hồi từ dịch vụ AI: {}", e))?
+    {
+        if body_bytes.len() + chunk.len() > MAX_BYTES {
+            return Err(format!(
+                "Phản hồi từ dịch vụ tạo ảnh AI vượt quá giới hạn cho phép ({} MB)",
+                MAX_BYTES / (1024 * 1024)
+            ));
+        }
+        body_bytes.extend_from_slice(&chunk);
+    }
+
+    let body = String::from_utf8_lossy(&body_bytes).to_string();
+
+    if !status.is_success() {
+        return Err(format!(
+            "Dịch vụ tạo ảnh AI trả về mã lỗi HTTP {}: {}",
+            status,
+            body.chars().take(300).collect::<String>()
+        ));
+    }
+
+    Ok(body)
+}
+
+#[tauri::command]
 async fn export_kindle_sdr(
     output_dir: String,
     book_basename: String,
@@ -814,7 +955,8 @@ pub fn run() {
             export_kindle_sdr,
             export_kindle_book,
             kindle::converter::kindle_engine_info,
-            kindle::converter::convert_epub_to_kindle
+            kindle::converter::convert_epub_to_kindle,
+            call_image_generation_api
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1073,5 +1215,107 @@ mod tests {
         // Crucial: The error must NOT be a policy rejection (not "Kết nối HTTP không mã hóa" or "Giao thức không được hỗ trợ")
         assert!(!err.contains("Kết nối HTTP không mã hóa"));
         assert!(!err.contains("Giao thức không được hỗ trợ"));
+    }
+
+    #[tokio::test]
+    async fn test_call_image_generation_api_rejects_insecure_http() {
+        let res = call_image_generation_api(
+            "http://insecure-api.com/v1/images".to_string(),
+            None,
+            "{}".to_string(),
+            Some(1),
+        )
+        .await;
+        assert!(res.is_err());
+        assert!(res
+            .unwrap_err()
+            .contains("Kết nối HTTP không mã hóa chỉ được phép cho máy chủ cục bộ"));
+    }
+
+    /// A hostname that merely *starts with* "127." is still a DOMAIN, not loopback.
+    /// A string-prefix check would let it through the http gate and hand the API key
+    /// to an arbitrary remote host in plaintext.
+    #[tokio::test]
+    async fn test_call_image_generation_api_rejects_127_prefixed_hostname() {
+        for host in [
+            "http://127.0.0.1.attacker.example/v1/images/generations",
+            "http://127.evil.test/v1/images/generations",
+        ] {
+            let res = call_image_generation_api(
+                host.to_string(),
+                Some("secret-key".to_string()),
+                "{}".to_string(),
+                Some(1),
+            )
+            .await;
+
+            let err = res.expect_err("127.-prefixed hostname must be rejected");
+            assert!(
+                err.contains("Kết nối HTTP không mã hóa"),
+                "expected the plaintext-HTTP policy error, got: {}",
+                err
+            );
+        }
+    }
+
+    /// Link-local (169.254.0.0/16) is the cloud metadata range and must be refused
+    /// even though RFC1918 LAN addresses are intentionally allowed.
+    #[tokio::test]
+    async fn test_call_image_generation_api_rejects_link_local_metadata_ip() {
+        let res = call_image_generation_api(
+            "http://169.254.169.254/latest/meta-data".to_string(),
+            Some("secret-key".to_string()),
+            "{}".to_string(),
+            Some(1),
+        )
+        .await;
+
+        let err = res.expect_err("link-local metadata IP must be rejected");
+        assert!(
+            err.contains("Kết nối HTTP không mã hóa"),
+            "expected the plaintext-HTTP policy error, got: {}",
+            err
+        );
+    }
+
+    /// LAN / Tailscale endpoints stay usable: the guard is meant to protect remote
+    /// hosts, not to break a self-hosted image server on the user's own network.
+    #[tokio::test]
+    async fn test_call_image_generation_api_still_allows_private_lan() {
+        for host in [
+            "http://192.168.1.50:8188/v1/images/generations",
+            "http://100.118.3.52:20128/v1/images/generations",
+            "http://127.0.0.1:11434/v1/images/generations",
+        ] {
+            let res =
+                call_image_generation_api(host.to_string(), None, "{}".to_string(), Some(1)).await;
+
+            // The policy gate must pass; any error has to be a connection error.
+            if let Err(err) = res {
+                assert!(
+                    !err.contains("Kết nối HTTP không mã hóa"),
+                    "private/LAN host {} was wrongly rejected by policy: {}",
+                    host,
+                    err
+                );
+            }
+        }
+    }
+
+    /// An endpoint on the public internet is only ever allowed over HTTPS.
+    #[tokio::test]
+    async fn test_call_image_generation_api_requires_https_for_public_hosts() {
+        let res = call_image_generation_api(
+            "http://api.example.com/v1/images/generations".to_string(),
+            Some("secret-key".to_string()),
+            "{}".to_string(),
+            Some(1),
+        )
+        .await;
+
+        assert!(res.is_err());
+        assert!(res
+            .unwrap_err()
+            .contains("Kết nối HTTP không mã hóa chỉ được phép cho máy chủ cục bộ"));
     }
 }
