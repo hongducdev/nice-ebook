@@ -418,4 +418,234 @@ describe("TranslationService", () => {
     expect(result.translatedHtml).toContain("Đoạn 1 đã dịch.");
     expect(result.translatedHtml).toContain("Đoạn 2 được quét vét bù thành công ở Zero-Gap Pass.");
   });
+
+  describe("LinguaGacha-style Adaptive Downsizing, Sliding Context & Concurrency", () => {
+    it("successfully down-sizes a failing 2-block chunk into sub-chunks (1-by-1) to salvage translation", async () => {
+      const mockInvoke = vi.mocked(invoke);
+      // 1. Initial 2-block chunk call fails across candidate model
+      mockInvoke.mockRejectedValueOnce(new Error("Context length exceeded or JSON parsing exploded"));
+      // 2. Adaptive Downsizing splits into 1st half (p_0) -> succeeds
+      mockInvoke.mockResolvedValueOnce(
+        JSON.stringify([{ id: "p_0", text: "Đoạn 0 được cứu nhờ downsizing." }])
+      );
+      // 3. 2nd half (p_1) -> succeeds
+      mockInvoke.mockResolvedValueOnce(
+        JSON.stringify([{ id: "p_1", text: "Đoạn 1 được cứu nhờ downsizing." }])
+      );
+
+      const chapterHtml = `<html><body><p>Sentence 0</p><p>Sentence 1</p></body></html>`;
+
+      const result = await TranslationService.translateChapter({
+        chapterHtml,
+        chapterTitle: "Downsizing Test",
+        sourceLang: "English",
+        targetLang: "Vietnamese",
+        tone: "literary",
+        mode: "replace",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-4o",
+        enableAdaptiveDownsizing: true,
+      });
+
+      expect(result.translatedBlocksCount).toBe(2);
+      expect(result.translatedHtml).toContain("Đoạn 0 được cứu nhờ downsizing.");
+      expect(result.translatedHtml).toContain("Đoạn 1 được cứu nhờ downsizing.");
+      expect(mockInvoke).toHaveBeenCalledTimes(3);
+    });
+
+    it("fails loudly when sub-chunks suffer terminal failure down to single blocks without hiding errors", async () => {
+      const mockInvoke = vi.mocked(invoke);
+      // 1. Combined chunk fails
+      mockInvoke.mockRejectedValueOnce(new Error("API outage"));
+      // 2. 1st sub-block fails terminally
+      mockInvoke.mockRejectedValueOnce(new Error("Terminal unrecoverable error"));
+
+      const chapterHtml = `<html><body><p>Block 0</p><p>Block 1</p></body></html>`;
+
+      await expect(
+        TranslationService.translateChapter({
+          chapterHtml,
+          chapterTitle: "Terminal Downsizing Fail",
+          sourceLang: "English",
+          targetLang: "Vietnamese",
+          tone: "literary",
+          mode: "replace",
+          baseUrl: "https://api.openai.com/v1",
+          model: "gpt-4o",
+          enableAdaptiveDownsizing: true,
+        })
+      ).rejects.toThrow();
+    });
+
+    it("injects ordered sliding context into subsequent chunks to maintain narrative flow", async () => {
+      const mockInvoke = vi.mocked(invoke);
+      // Chunk 0 call
+      mockInvoke.mockResolvedValueOnce(
+        JSON.stringify([{ id: "p_0", text: "Anh nhìn cô một cách trìu mến." }])
+      );
+      // Chunk 1 call
+      mockInvoke.mockResolvedValueOnce(
+        JSON.stringify([{ id: "p_1", text: "Cô mỉm cười đáp lại anh." }])
+      );
+
+      const chapterHtml = `<html><body><p>He looked at her affectionately.</p><p>She smiled back at him.</p></body></html>`;
+
+      const result = await TranslationService.translateChapter({
+        chapterHtml,
+        chapterTitle: "Sliding Context Test",
+        sourceLang: "English",
+        targetLang: "Vietnamese",
+        tone: "literary",
+        mode: "replace",
+        maxBlocksPerChunk: 1, // force 1 block per chunk -> 2 chunks
+        enableSlidingContext: true,
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-4o",
+      });
+
+      expect(result.totalBlocks).toBe(2);
+      expect(mockInvoke).toHaveBeenCalledTimes(2);
+
+      // Verify the 2nd invocation received <previous_context> containing the translated preceding block
+      const secondCallArgs = (mockInvoke.mock.calls[1][1] as any).options;
+      const userMessage = secondCallArgs.messages.find((m: any) => m.role === "user");
+      expect(userMessage.content).toContain("<previous_context>");
+      expect(userMessage.content).toContain("Anh nhìn cô một cách trìu mến.");
+    });
+
+    it("runs multi-chunk chapters concurrently (concurrency=2) without dropping or reordering blocks", async () => {
+      const mockInvoke = vi.mocked(invoke);
+      // 2 chunks executed in concurrent pool
+      mockInvoke.mockImplementation(async (_cmd: string, args: any) => {
+        const options = args?.options;
+        const userMsg = options?.messages?.find((m: any) => m.role === "user")?.content || "";
+        if (userMsg.includes('"id": "p_0"')) {
+          return JSON.stringify([{ id: "p_0", text: "Phần thứ nhất song song." }]);
+        } else if (userMsg.includes('"id": "p_1"')) {
+          return JSON.stringify([{ id: "p_1", text: "Phần thứ hai song song." }]);
+        }
+        return JSON.stringify([]);
+      });
+
+      const chapterHtml = `<html><body><p>First part content.</p><p>Second part content.</p></body></html>`;
+
+      const result = await TranslationService.translateChapter({
+        chapterHtml,
+        chapterTitle: "Concurrent Translation Test",
+        sourceLang: "English",
+        targetLang: "Vietnamese",
+        tone: "literary",
+        mode: "replace",
+        maxBlocksPerChunk: 1, // 2 chunks
+        concurrency: 2, // run both chunks in parallel pool
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-4o",
+      });
+
+      expect(result.totalBlocks).toBe(2);
+      expect(result.translatedBlocksCount).toBe(2);
+      expect(result.translatedHtml).toContain("Phần thứ nhất song song.");
+      expect(result.translatedHtml).toContain("Phần thứ hai song song.");
+    });
+
+    it("propagates error cleanly without emitting partial/dropped data when a worker encounters terminal failure in concurrency pool", async () => {
+      const mockInvoke = vi.mocked(invoke);
+      // Worker for chunk 1 fails terminally across all candidate models
+      mockInvoke.mockImplementation(async (_cmd: string, args: any) => {
+        const options = args?.options;
+        const userMsg = options?.messages?.find((m: any) => m.role === "user")?.content || "";
+        if (userMsg.includes('"id": "p_0"')) {
+          return JSON.stringify([{ id: "p_0", text: "Chunk 0 ok" }]);
+        } else if (userMsg.includes('"id": "p_1"')) {
+          throw new Error("Fatal network error in worker");
+        }
+        return JSON.stringify([]);
+      });
+
+      const chapterHtml = `<html><body><p>Chunk 0 text</p><p>Chunk 1 text</p></body></html>`;
+
+      await expect(
+        TranslationService.translateChapter({
+          chapterHtml,
+          chapterTitle: "Concurrency Terminal Fail",
+          sourceLang: "English",
+          targetLang: "Vietnamese",
+          tone: "literary",
+          mode: "replace",
+          maxBlocksPerChunk: 1,
+          concurrency: 2,
+          baseUrl: "https://api.openai.com/v1",
+          model: "gpt-4o",
+        })
+      ).rejects.toThrow("Fatal network error in worker");
+    });
+
+    it("handles rate limit 429 errors by backing off and successfully falling back to secondary model", async () => {
+      const mockInvoke = vi.mocked(invoke);
+      // Primary model hits 429
+      mockInvoke.mockRejectedValueOnce(new Error("HTTP 429: Too Many Requests (Rate limit reached)"));
+      // Secondary fallback model succeeds
+      mockInvoke.mockResolvedValueOnce(
+        JSON.stringify([{ id: "p_0", text: "Dịch thành công qua model phụ sau 429." }])
+      );
+
+      const chapterHtml = `<html><body><p>Testing 429 rate limit backoff.</p></body></html>`;
+
+      const result = await TranslationService.translateChapter({
+        chapterHtml,
+        chapterTitle: "Rate Limit Test",
+        sourceLang: "English",
+        targetLang: "Vietnamese",
+        tone: "literary",
+        mode: "replace",
+        baseUrl: "https://api.openai.com/v1",
+        model: "primary-tier",
+        fallbackModels: ["secondary-tier"],
+      });
+
+      expect(result.translatedBlocksCount).toBe(1);
+      expect(result.translatedHtml).toContain("Dịch thành công qua model phụ sau 429.");
+      expect(mockInvoke).toHaveBeenCalledTimes(2);
+    });
+
+    it("emits real-time onPartialUpdate callbacks with incremental HTML as each chunk completes", async () => {
+      const mockInvoke = vi.mocked(invoke);
+      mockInvoke.mockResolvedValueOnce(
+        JSON.stringify([{ id: "p_0", text: "Đoạn một dịch xong theo thời gian thực." }])
+      );
+      mockInvoke.mockResolvedValueOnce(
+        JSON.stringify([{ id: "p_1", text: "Đoạn hai tiếp nối thời gian thực." }])
+      );
+
+      const chapterHtml = `<html><body><p>Chunk 1</p><p>Chunk 2</p></body></html>`;
+      const partialUpdates: Array<{ html: string; count: number }> = [];
+
+      const result = await TranslationService.translateChapter({
+        chapterHtml,
+        chapterTitle: "Real-time Stream Test",
+        sourceLang: "English",
+        targetLang: "Vietnamese",
+        tone: "literary",
+        mode: "replace",
+        maxBlocksPerChunk: 1, // 2 chunks to trigger 2 incremental updates
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-4o",
+        onPartialUpdate: (data) => {
+          partialUpdates.push({ html: data.partialHtml, count: data.resolvedCount });
+        },
+      });
+
+      // 2 incremental real-time updates emitted
+      expect(partialUpdates.length).toBe(2);
+      expect(partialUpdates[0].count).toBe(1);
+      expect(partialUpdates[0].html).toContain("Đoạn một dịch xong theo thời gian thực.");
+      expect(partialUpdates[0].html).toContain("Chunk 2"); // Chunk 2 not translated yet
+
+      expect(partialUpdates[1].count).toBe(2);
+      expect(partialUpdates[1].html).toContain("Đoạn một dịch xong theo thời gian thực.");
+      expect(partialUpdates[1].html).toContain("Đoạn hai tiếp nối thời gian thực.");
+
+      expect(result.translatedBlocksCount).toBe(2);
+    });
+  });
 });

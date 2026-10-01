@@ -24,7 +24,7 @@ import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Card } from "../ui/card";
 import { ScrollArea } from "../ui/scroll-area";
-import { Empty, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from "../ui/empty";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from "../ui/empty";
 import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group";
 import { Input } from "../ui/input";
 import { useAppStore } from "../../stores/useAppStore";
@@ -260,25 +260,25 @@ export function EpubReaderViewer() {
 
   if (!currentBook) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-        <Empty className="gap-3">
-          <EmptyMedia>
-            <BookOpen className="size-6 text-primary" />
-          </EmptyMedia>
-          <EmptyTitle className="text-sm font-semibold text-foreground">
-            Chưa có sách nào để xem trước
-          </EmptyTitle>
-          <EmptyDescription className="text-xs text-muted-foreground max-w-sm">
-            Vui lòng nạp file sách .epub trong mục Quản lý sách trước khi vào trình đọc thử.
-          </EmptyDescription>
-          <EmptyContent>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => useAppStore.getState().setActiveTab("books")}
-              className="text-xs h-7 px-3"
+      <div className="flex-1 flex items-center justify-center p-6">
+        <Empty className="max-w-lg border border-border bg-card">
+          <EmptyHeader>
+            <EmptyMedia
+              variant="icon"
+              className="size-16 rounded-full bg-muted text-muted-foreground"
             >
-              <span>Đến mục Quản lý sách</span>
+              <BookOpen className="size-8" />
+            </EmptyMedia>
+            <EmptyTitle className="text-lg font-semibold text-foreground">
+              Chưa có sách nào để xem trước
+            </EmptyTitle>
+            <EmptyDescription className="max-w-md text-sm">
+              Vui lòng nạp file sách .epub trong mục Quản lý sách trước khi vào trình đọc thử.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button type="button" onClick={() => setActiveTab("books")}>
+              Đến Thư Viện Sách
             </Button>
           </EmptyContent>
         </Empty>

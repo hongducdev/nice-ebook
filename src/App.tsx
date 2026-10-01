@@ -172,6 +172,9 @@ export default function App() {
         position="bottom-right" 
         theme={theme === "light" ? "light" : "dark"} 
         richColors 
+        duration={2200}
+        visibleToasts={1}
+        closeButton
       />
 
       {/* Startup Splash Screen */}

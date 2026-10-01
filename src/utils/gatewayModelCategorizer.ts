@@ -300,5 +300,20 @@ export function categorizeGatewayModels(
     return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
   });
 
+  // Fallback: If filtering resulted in empty categories but the gateway actually provides models,
+  // display all models under the gateway / provider's own category so they are never lost.
+  if (resultCategories.length === 0 && filtered.length > 0) {
+    const singleProv = configuredList[0];
+    const meta = singleProv ? getProviderMeta(singleProv.provider) : undefined;
+    resultCategories.push({
+      id: singleProv?.provider || "custom",
+      name: activeGateway.name || meta?.name || "Mô hình khả dụng",
+      description: meta?.description || `Mô hình thuộc nhà cung cấp ${activeGateway.name}`,
+      accent: meta?.accent || "var(--primary)",
+      accountBadge: singleProv?.name || activeGateway.name,
+      models: filtered,
+    });
+  }
+
   return resultCategories;
 }

@@ -28,6 +28,9 @@ export interface TranslateChapterOptions {
   temperature?: number;
   timeoutSecs?: number;
   maxBlocksPerChunk?: number;
+  concurrency?: 1 | 2 | 3;
+  enableSlidingContext?: boolean;
+  enableAdaptiveDownsizing?: boolean;
   abortSignal?: AbortSignal;
   onProgress?: (progress: {
     currentBlock: number;
@@ -35,6 +38,12 @@ export interface TranslateChapterOptions {
     currentChunk: number;
     totalChunks: number;
     percent: number;
+  }) => void;
+  onPartialUpdate?: (data: {
+    partialHtml: string;
+    latestTranslatedBlockIds: string[];
+    resolvedCount: number;
+    totalBlocks: number;
   }) => void;
   onLog?: (log: {
     type: "info" | "warning" | "success" | "detail";
@@ -124,6 +133,9 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
       temperature = 0.3,
       timeoutSecs = 90,
       maxBlocksPerChunk = 10,
+      concurrency = 1,
+      enableSlidingContext = true,
+      enableAdaptiveDownsizing = true,
       abortSignal,
       onProgress,
       onLog,
@@ -155,7 +167,7 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
 
     onLog?.({
       type: "info",
-      text: `Bắt đầu dịch chương "${chapterTitle}": tổng cộng ${blocks.length} đoạn văn (chia thành ${chunks.length} mẻ).`,
+      text: `Bắt đầu dịch chương "${chapterTitle}": tổng cộng ${blocks.length} đoạn văn (chia thành ${chunks.length} mẻ, luồng song song: ${concurrency}x, ngữ cảnh trượt: ${enableSlidingContext ? "Bật" : "Tắt"}).`,
     });
 
     const candidateModels = [model];
@@ -168,26 +180,42 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
     const systemPrompt = buildSystemPrompt(tone, sourceLang, targetLang);
     const allTranslations: Record<string, string> = {};
     let processedBlocksCount = 0;
+    let completedChunksCount = 0;
     let successfulModel = model;
 
-    for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
-      if (abortSignal?.aborted) {
-        throw new DOMException("Thao tác dịch đã bị hủy bởi người dùng", "AbortError");
+    // Precompute ordered source contexts for all chunks to ensure deterministic
+    // context ordering independent of worker completion timing under concurrency.
+    const precomputedContexts: Array<Array<{ id: string; text: string }>> = [];
+    for (let i = 0; i < chunks.length; i++) {
+      if (i === 0 || !enableSlidingContext) {
+        precomputedContexts.push([]);
+      } else {
+        const prevSlice = chunks[i - 1].slice(-3).map((b) => ({
+          id: b.id,
+          text: b.originalText,
+        }));
+        precomputedContexts.push(prevSlice);
       }
+    }
 
-      const chunk = chunks[cIdx];
+    // Helper: Single-pass translation execution for a block chunk with candidate models & recovery
+    const executeChunkSinglePass = async (
+      chunk: typeof blocks,
+      contextBlocks: Array<{ id: string; text: string }>,
+      chunkLabel: string
+    ): Promise<{ chunkTranslations: Record<string, string>; usedModel: string }> => {
       const chunkPrompt = buildUserPrompt({
         sourceLangName: sourceLang,
         targetLangName: targetLang,
         tone,
         blocks: chunk.map((b) => ({ id: b.id, text: b.originalText })),
+        previousContextBlocks: contextBlocks,
         glossary,
         bookTitle,
         chapterTitle,
         researchBrief,
       });
 
-      let chunkSuccess = false;
       let lastErr: Error | null = null;
 
       for (let mIdx = 0; mIdx < candidateModels.length; mIdx++) {
@@ -209,7 +237,7 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
         try {
           onLog?.({
             type: "detail",
-            text: `[Mẻ ${cIdx + 1}/${chunks.length}] Gửi ${chunk.length} đoạn tới mô hình "${activeModel}"...`,
+            text: `[${chunkLabel}] Gửi ${chunk.length} đoạn tới mô hình "${activeModel}"...`,
           });
 
           const rawOutput = await modelBreaker.execute(async () => {
@@ -227,6 +255,7 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
               },
             });
           });
+
           const parsed = parseTranslationResponse(rawOutput, chunk.map((b) => b.id));
           const translatedKeys = Object.keys(parsed);
 
@@ -234,13 +263,11 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
             throw new Error(`Mô hình ${activeModel} không trả về mảng JSON bản dịch hợp lệ`);
           }
 
-          for (const [k, v] of Object.entries(parsed)) {
-            allTranslations[k] = v;
-          }
+          const chunkTranslations: Record<string, string> = { ...parsed };
 
-          // Emit detailed logs for each translated block so they appear when "Chi tiết" filter is active
+          // Emit detailed logs for each translated block
           for (const b of chunk) {
-            const transText = allTranslations[b.id];
+            const transText = chunkTranslations[b.id];
             if (transText && transText.trim().length > 0) {
               onLog?.({
                 type: "detail",
@@ -249,19 +276,18 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
             }
           }
 
-          // Missing Block Recovery: If model returned a partial chunk or untranslated echoes,
-          // automatically attempt a targeted sub-pass for the omitted blocks to prevent
-          // residual source language leaking into the chapter.
+          // In-chunk missing block recovery pass
           const missingInChunk = chunk.filter(
             (b) =>
-              !allTranslations[b.id] ||
-              allTranslations[b.id].trim().length === 0 ||
-              isUntranslatedEcho(allTranslations[b.id], b.originalText, sourceLang, targetLang)
+              !chunkTranslations[b.id] ||
+              chunkTranslations[b.id].trim().length === 0 ||
+              isUntranslatedEcho(chunkTranslations[b.id], b.originalText, sourceLang, targetLang)
           );
+
           if (missingInChunk.length > 0 && !abortSignal?.aborted) {
             onLog?.({
               type: "detail",
-              text: `ℹ️ [Mẻ ${cIdx + 1}] Phát hiện ${missingInChunk.length}/${chunk.length} đoạn chưa dịch hoặc bị sót, đang gửi yêu cầu dịch bù...`,
+              text: `ℹ️ [${chunkLabel}] Phát hiện ${missingInChunk.length}/${chunk.length} đoạn chưa dịch hoặc bị sót, đang gửi yêu cầu dịch bù...`,
             });
             try {
               const recoveryPrompt = buildUserPrompt({
@@ -269,6 +295,7 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
                 targetLangName: targetLang,
                 tone,
                 blocks: missingInChunk.map((b) => ({ id: b.id, text: b.originalText })),
+                previousContextBlocks: contextBlocks,
                 glossary,
                 bookTitle,
                 chapterTitle,
@@ -290,7 +317,7 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
               const parsedRecovery = parseTranslationResponse(rawRecovery, missingInChunk.map((b) => b.id));
               for (const [k, v] of Object.entries(parsedRecovery)) {
                 if (v && v.trim().length > 0 && !isUntranslatedEcho(v, missingInChunk.find((b) => b.id === k)?.originalText || "", sourceLang, targetLang)) {
-                  allTranslations[k] = v;
+                  chunkTranslations[k] = v;
                   onLog?.({
                     type: "detail",
                     text: `🔄 [Bù ${k}] ${v}`,
@@ -298,48 +325,220 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
                 }
               }
             } catch {
-              // Targeted missing blocks recovery pass skipped
+              // Targeted recovery skipped on soft error
             }
           }
 
-          successfulModel = activeModel;
-          chunkSuccess = true;
-          processedBlocksCount += chunk.length;
-
-          const pct = Math.round(((cIdx + 1) / chunks.length) * 100);
-          onProgress?.({
-            currentBlock: processedBlocksCount,
-            totalBlocks: blocks.length,
-            currentChunk: cIdx + 1,
-            totalChunks: chunks.length,
-            percent: pct,
-          });
-
-          const currentResolvedCount = chunk.filter((b) => Boolean(allTranslations[b.id])).length;
-          onLog?.({
-            type: "success",
-            text: `✅ [Mẻ ${cIdx + 1}/${chunks.length}] Đã nhận bản dịch (${currentResolvedCount}/${chunk.length} đoạn).`,
-          });
-
-          break; // Chunk succeeded, break fallback loop
+          return { chunkTranslations, usedModel: activeModel };
         } catch (err) {
           lastErr = err instanceof Error ? err : new Error(String(err));
+          const errMsg = lastErr.message.toLowerCase();
+          const isRateLimit =
+            errMsg.includes("429") ||
+            errMsg.includes("rate limit") ||
+            errMsg.includes("too many requests");
+
+          if (isRateLimit && !abortSignal?.aborted) {
+            onLog?.({
+              type: "warning",
+              text: `⏳ [Rate Limit 429]: Mô hình "${activeModel}" đạt giới hạn tần suất. Đang giãn cách 1.5s trước khi chuyển thử lại...`,
+            });
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+          }
+
           const hasNextModel = mIdx + 1 < candidateModels.length;
           onLog?.({
             type: "warning",
-            text: `⚠️ [Mẻ ${cIdx + 1}] Mô hình "${activeModel}" gặp sự cố: ${lastErr.message}${
+            text: `⚠️ [${chunkLabel}] Mô hình "${activeModel}" gặp sự cố: ${lastErr.message}${
               hasNextModel ? ` -> Thử mô hình kế tiếp: "${candidateModels[mIdx + 1]}"...` : ""
             }`,
           });
         }
       }
 
-      if (!chunkSuccess) {
-        throw new Error(
-          `Không thể dịch mẻ ${cIdx + 1}/${chunks.length} của chương "${chapterTitle}": ${
-            lastErr?.message || "Lỗi không xác định"
-          }`
+      throw lastErr || new Error(`Tất cả mô hình đều thất bại khi dịch ${chunkLabel}`);
+    };
+
+    // Helper: Adaptive Downsizing wrapper (LinguaGacha style)
+    // If a chunk fails across candidate models, bisects chunk down into smaller sub-chunks
+    const executeChunkAdaptive = async (
+      chunk: typeof blocks,
+      contextBlocks: Array<{ id: string; text: string }>,
+      chunkLabel: string,
+      depth = 0
+    ): Promise<{ chunkTranslations: Record<string, string>; usedModel: string }> => {
+      try {
+        return await executeChunkSinglePass(chunk, contextBlocks, chunkLabel);
+      } catch (err) {
+        if (enableAdaptiveDownsizing && chunk.length > 1 && depth < 3) {
+          onLog?.({
+            type: "warning",
+            text: `⚡ [LinguaGacha Adaptive Downsizing]: ${chunkLabel} (${chunk.length} đoạn) bị lỗi. Tự động chia nhỏ thành 2 mẻ con để cứu bản dịch...`,
+          });
+          const mid = Math.ceil(chunk.length / 2);
+          const firstHalf = chunk.slice(0, mid);
+          const secondHalf = chunk.slice(mid);
+
+          const res1 = await executeChunkAdaptive(firstHalf, contextBlocks, `${chunkLabel}.1`, depth + 1);
+          const secondHalfContext = firstHalf.slice(-3).map((b) => ({
+            id: b.id,
+            text: res1.chunkTranslations[b.id] || b.originalText,
+          }));
+          const res2 = await executeChunkAdaptive(secondHalf, secondHalfContext, `${chunkLabel}.2`, depth + 1);
+
+          return {
+            chunkTranslations: { ...res1.chunkTranslations, ...res2.chunkTranslations },
+            usedModel: res2.usedModel || res1.usedModel,
+          };
+        }
+        throw err;
+      }
+    };
+
+    // Helper to emit real-time incremental preview update whenever blocks are translated
+    let liveTranslatedTitle: string | undefined;
+
+    const emitRealtimeUpdate = (latestIds: string[]) => {
+      if (!options.onPartialUpdate) return;
+      try {
+        const headingBlock = blocks.find(
+          (b) =>
+            b.tag === "h1" ||
+            b.tag === "h2" ||
+            b.tag === "h3" ||
+            /title|chapter|heading/i.test(b.attributes)
         );
+        if (headingBlock && allTranslations[headingBlock.id]) {
+          liveTranslatedTitle = allTranslations[headingBlock.id];
+        }
+
+        const currentPartialHtml = ChapterTranslator.applyTranslations(chapterHtml, allTranslations, {
+          mode,
+          glossary,
+          translatedTitle: liveTranslatedTitle,
+        });
+        options.onPartialUpdate({
+          partialHtml: currentPartialHtml,
+          latestTranslatedBlockIds: latestIds,
+          resolvedCount: Object.keys(allTranslations).length,
+          totalBlocks: blocks.length,
+        });
+      } catch (err) {
+        console.warn("Could not emit realtime preview update:", err);
+      }
+    };
+
+    // CONCURRENT OR SEQUENTIAL DISPATCH POOL (concurrency: 1..3)
+    const safeConcurrency = Math.min(Math.max(1, concurrency || 1), 3);
+
+    if (safeConcurrency === 1) {
+      // Sequential processing: allows utilizing previously translated Vietnamese text for enhanced context continuity
+      for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
+        if (abortSignal?.aborted) {
+          throw new DOMException("Thao tác dịch đã bị hủy bởi người dùng", "AbortError");
+        }
+
+        const chunk = chunks[cIdx];
+        // In sequential mode, if preceding blocks are already translated, use them for Vietnamese tone consistency
+        let dynamicContext = precomputedContexts[cIdx];
+        if (cIdx > 0 && enableSlidingContext) {
+          const prevBlocks = chunks[cIdx - 1].slice(-3);
+          dynamicContext = prevBlocks.map((b) => ({
+            id: b.id,
+            text: allTranslations[b.id] || b.originalText,
+          }));
+        }
+
+        const { chunkTranslations, usedModel } = await executeChunkAdaptive(
+          chunk,
+          dynamicContext,
+          `Mẻ ${cIdx + 1}/${chunks.length}`
+        );
+
+        for (const [k, v] of Object.entries(chunkTranslations)) {
+          allTranslations[k] = v;
+        }
+
+        successfulModel = usedModel;
+        processedBlocksCount += chunk.length;
+        completedChunksCount++;
+
+        emitRealtimeUpdate(Object.keys(chunkTranslations));
+
+        const pct = Math.round((completedChunksCount / chunks.length) * 100);
+        onProgress?.({
+          currentBlock: processedBlocksCount,
+          totalBlocks: blocks.length,
+          currentChunk: completedChunksCount,
+          totalChunks: chunks.length,
+          percent: pct,
+        });
+
+        const currentResolvedCount = chunk.filter((b) => Boolean(allTranslations[b.id])).length;
+        onLog?.({
+          type: "success",
+          text: `✅ [Mẻ ${cIdx + 1}/${chunks.length}] Đã nhận bản dịch (${currentResolvedCount}/${chunk.length} đoạn).`,
+        });
+      }
+    } else {
+      // High Concurrency Pool (LinguaGacha style: 2x - 5x parallel chunk streams)
+      let activeIndex = 0;
+      const workerErrors: Error[] = [];
+      const workers: Promise<void>[] = [];
+
+      for (let workerId = 0; workerId < safeConcurrency; workerId++) {
+        workers.push(
+          (async () => {
+            while (activeIndex < chunks.length) {
+              if (abortSignal?.aborted || workerErrors.length > 0) break;
+              const cIdx = activeIndex++;
+              const chunk = chunks[cIdx];
+              const context = precomputedContexts[cIdx];
+
+              try {
+                const { chunkTranslations, usedModel } = await executeChunkAdaptive(
+                  chunk,
+                  context,
+                  `Mẻ ${cIdx + 1}/${chunks.length} [Luồng ${workerId + 1}]`
+                );
+
+                for (const [k, v] of Object.entries(chunkTranslations)) {
+                  allTranslations[k] = v;
+                }
+
+                successfulModel = usedModel;
+                processedBlocksCount += chunk.length;
+                completedChunksCount++;
+
+                emitRealtimeUpdate(Object.keys(chunkTranslations));
+
+                const pct = Math.round((completedChunksCount / chunks.length) * 100);
+                onProgress?.({
+                  currentBlock: processedBlocksCount,
+                  totalBlocks: blocks.length,
+                  currentChunk: completedChunksCount,
+                  totalChunks: chunks.length,
+                  percent: pct,
+                });
+
+                const currentResolvedCount = chunk.filter((b) => Boolean(allTranslations[b.id])).length;
+                onLog?.({
+                  type: "success",
+                  text: `✅ [Mẻ ${cIdx + 1}/${chunks.length}] Hoàn thành (${currentResolvedCount}/${chunk.length} đoạn).`,
+                });
+              } catch (err) {
+                const error = err instanceof Error ? err : new Error(String(err));
+                workerErrors.push(error);
+              }
+            }
+          })()
+        );
+      }
+
+      await Promise.all(workers);
+
+      if (workerErrors.length > 0) {
+        throw workerErrors[0];
       }
     }
 
@@ -425,6 +624,7 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
             }
 
             if (recoveredCount > 0) {
+              emitRealtimeUpdate(Object.keys(parsed));
               break; // Micro-chunk recovered successfully
             }
           } catch {
@@ -440,7 +640,7 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
 
     // Determine translated chapter title:
     // 1. Look for explicit heading blocks (h1..h6) or title/chapter-classed blocks
-    let translatedChapterTitle: string | undefined;
+    let translatedChapterTitle: string | undefined = liveTranslatedTitle;
     const headingBlock = blocks.find(
       (b) =>
         b.tag === "h1" ||

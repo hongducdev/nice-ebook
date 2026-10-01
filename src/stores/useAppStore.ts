@@ -38,6 +38,7 @@ import { AgentService, AgentChatMessage } from "../services/agent/agentService";
 import { AgentToolDispatcher, ReadOnlyStoreContext, MutatingStoreContext } from "../services/agent/agentTools";
 import { WorkflowJobService } from "../services/workflow/workflowJobService";
 import { type CavemanMode } from "../utils/cavemanOptimizer";
+import { loadConfiguredProviders } from "../services/ai/linguaGachaProviders";
 
 export type { CavemanMode };
 
@@ -147,6 +148,8 @@ export interface EbookProject {
   workflowCompletedSteps?: string[];
   translatedChapters?: Record<string, number>;
   detectedLanguageCode?: string | null;
+  autoConfigResult?: AutoTranslationConfigResult | null;
+  translationConfig?: TranslationConfig;
 }
 
 export type LogCategory = "translation" | "enhancement" | "system";
@@ -191,6 +194,9 @@ export interface TranslationConfig {
   researchBrief?: string;
   useResearchBrief?: boolean;
   translateTitles?: boolean;
+  concurrency?: 1 | 2 | 3;
+  enableSlidingContext?: boolean;
+  enableAdaptiveDownsizing?: boolean;
 }
 
 export interface TranslationProgress {
@@ -204,6 +210,7 @@ export interface TranslationProgress {
 }
 
 export interface AutoTranslationConfigResult {
+  bookTitle?: string;
   detectedLanguage: LanguageDetectionResult | null;
   recommendedTone: TranslationTone;
   toneLabel: string;
@@ -445,7 +452,9 @@ export interface AppState {
   isGeneratingResearchBrief: boolean;
   generateBookResearchBrief: () => Promise<string>;
   isAutoConfiguringAll: boolean;
-  autoConfigureAllTranslationSettings: () => Promise<AutoTranslationConfigResult | null>;
+  autoConfigResult: AutoTranslationConfigResult | null;
+  setAutoConfigResult: (result: AutoTranslationConfigResult | null) => void;
+  autoConfigureAllTranslationSettings: (opts?: { force?: boolean }) => Promise<AutoTranslationConfigResult | null>;
   // Unified Workflow Jobs
   workflowJobs: Record<string, WorkflowJob>;
   addWorkflowJob: (job: WorkflowJob) => void;
@@ -558,6 +567,9 @@ const defaultTranslationConfig: TranslationConfig = {
   researchBrief: "",
   useResearchBrief: true,
   translateTitles: true,
+  concurrency: 1,
+  enableSlidingContext: true,
+  enableAdaptiveDownsizing: true,
 };
 
 /** Joins entity names for the terminal log, truncating very long scans. */
@@ -926,6 +938,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         // Chữ ký/ CSS gốc của sách trước không còn giá trị cho sách mới.
         bookStyleSignature: null,
         bookStyleCss: null,
+        autoConfigResult: null,
       });
 
       // Route the user into the right workflow (may switch tabs it is told to).
@@ -934,7 +947,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Sách mở lần đầu chưa có lựa chọn style riêng ⇒ tự style theo chính nó.
       // Luôn phân tích (chỉ đọc zip, rất rẻ) để trình đọc thử có nền CSS gốc;
       // chỉ ÁP DỤNG khi người dùng bật chế độ tự động.
-      void get().analyzeBookStyle({ apply: get().autoStyleFromBook });
+      await get().analyzeBookStyle({ apply: get().autoStyleFromBook });
 
       // Auto trigger Jev Core on loaded book sample text
       if (meta.sample_text && meta.sample_text.length > 50) {
@@ -978,6 +991,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         // Chữ ký/ CSS gốc của sách trước không còn giá trị cho sách mới.
         bookStyleSignature: null,
         bookStyleCss: null,
+        autoConfigResult: null,
       });
 
       // Route the user into the right workflow (may switch tabs it is told to).
@@ -986,7 +1000,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Sách mở lần đầu chưa có lựa chọn style riêng ⇒ tự style theo chính nó.
       // Luôn phân tích (chỉ đọc zip, rất rẻ) để trình đọc thử có nền CSS gốc;
       // chỉ ÁP DỤNG khi người dùng bật chế độ tự động.
-      void get().analyzeBookStyle({ apply: get().autoStyleFromBook });
+      await get().analyzeBookStyle({ apply: get().autoStyleFromBook });
 
       // Auto trigger Jev Core on loaded book
       if (meta.sample_text && meta.sample_text.length > 50) {
@@ -1015,11 +1029,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         isAnalyzingJev: false,
       });
 
-      // Apply recommended preset automatically — trừ khi người dùng đang ở chế độ
-      // "theo sách hiện tại" (khi đó CSS gốc của sách mới là chuẩn, Jev chỉ đề xuất).
+      // Apply recommended preset automatically — trừ khi người dùng đang bật chế độ
+      // "theo sách hiện tại" (khi đó CSS gốc của sách mới là chuẩn, Jev chỉ lưu đề xuất).
       const current = get();
-      const isNativeAuto =
-        current.autoStyleFromBook && current.activePresetId === NATIVE_PRESET_ID;
+      const hasNativeStyle = Boolean(
+        current.activePresetId === NATIVE_PRESET_ID ||
+        (current.bookStyleSignature && current.bookStyleSignature.confidence >= 0.2)
+      );
+      const isNativeAuto = current.autoStyleFromBook && hasNativeStyle;
       if (decision.recommended_preset && !isNativeAuto) {
         get().selectPreset(decision.recommended_preset);
       }
@@ -1043,7 +1060,48 @@ export const useAppStore = create<AppState>((set, get) => ({
       const matchedGw = savedGwName
         ? onlineList.find((g) => g.name === savedGwName)
         : null;
-      const activeGw = matchedGw || (onlineList.length > 0 ? onlineList[0] : null);
+
+      // Check configured providers from localStorage (LinguaGacha presets & cloud providers)
+      const configuredList = loadConfiguredProviders();
+      const activeConfigured = configuredList.find((p) => p.isActive);
+      const isSavedConfigured = savedGwName && configuredList.some((p) => p.name === savedGwName);
+
+      const configuredGw: DetectedGateway | null = activeConfigured
+        ? {
+            name: activeConfigured.name,
+            base_url: activeConfigured.baseUrl,
+            port: 0,
+            is_online: true,
+            models:
+              activeConfigured.availableModels && activeConfigured.availableModels.length > 0
+                ? activeConfigured.availableModels
+                : [activeConfigured.selectedModel],
+            gateway_type: activeConfigured.presetId === "ollama" ? "ollama" : "openai",
+            latency_ms: 10,
+            api_key: activeConfigured.apiKey || undefined,
+            configured_providers: [
+              {
+                provider: activeConfigured.presetId,
+                name: activeConfigured.name,
+                is_active: true,
+                test_status: "active",
+              },
+            ],
+          }
+        : null;
+
+      // Determine active gateway:
+      // 1. If saved gateway matches a local online gateway, use that local gateway
+      // 2. If saved gateway matches an active configured cloud provider (or a configured provider is active), use that
+      // 3. Otherwise default to first online local gateway if any
+      let activeGw: DetectedGateway | null = null;
+      if (matchedGw) {
+        activeGw = matchedGw;
+      } else if (configuredGw && (isSavedConfigured || activeConfigured?.isActive)) {
+        activeGw = configuredGw;
+      } else if (onlineList.length > 0) {
+        activeGw = onlineList[0];
+      }
 
       // Check saved user model preference
       const savedModel =
@@ -2148,6 +2206,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       sceneDivider: get().sceneDivider,
       modifiedChapters: {},
       chapterEnhanceReports: {},
+      autoConfigResult: get().autoConfigResult ?? null,
+      translationConfig: get().translationConfig,
       createdAt: Date.now(),
       lastOpenedAt: Date.now(),
     };
@@ -2271,6 +2331,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         modifiedChapters: activeModified,
         chapterEnhanceReports: project.chapterEnhanceReports || {},
         agentMessages: project.agentMessages || [],
+        autoConfigResult: project.autoConfigResult ?? null,
+        translationConfig: project.translationConfig
+          ? { ...defaultTranslationConfig, ...project.translationConfig }
+          : defaultTranslationConfig,
         isLoadingBook: false,
         activeChapterIndex: 0,
         activeTab: "books",
@@ -2344,6 +2408,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         workflowCompletedSteps,
         translatedChapters,
         detectedLanguageCode: bookProfile?.languageCode ?? p.detectedLanguageCode ?? null,
+        autoConfigResult: get().autoConfigResult ?? null,
+        translationConfig: get().translationConfig,
         lastOpenedAt: Date.now(),
       };
     });
@@ -2468,6 +2534,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         model,
         fallbackModels,
         maxBlocksPerChunk: translationConfig.maxBlocksPerChunk,
+        concurrency: translationConfig.concurrency ?? 1,
+        enableSlidingContext: translationConfig.enableSlidingContext ?? true,
+        enableAdaptiveDownsizing: translationConfig.enableAdaptiveDownsizing ?? true,
         translateChapterTitle: translationConfig.translateTitles !== false,
         abortSignal: translationAbortController.signal,
         onProgress: (p) => {
@@ -2487,6 +2556,15 @@ export const useAppStore = create<AppState>((set, get) => ({
             p.percent,
             `Chương ${chapterIndex + 1}/1 • Đoạn ${p.currentBlock}/${p.totalBlocks} (${p.percent}%)`
           );
+        },
+        onPartialUpdate: ({ partialHtml }) => {
+          // Real-time incremental preview: update modifiedChapters continuously so preview updates live
+          set((state) => ({
+            modifiedChapters: {
+              ...state.modifiedChapters,
+              [chapter.href]: partialHtml,
+            },
+          }));
         },
         onLog: (log) => get().addTerminalLog(log),
       });
@@ -3043,10 +3121,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   isAutoConfiguringAll: false,
+  autoConfigResult: null,
+  setAutoConfigResult: (result) => set({ autoConfigResult: result }),
 
-  autoConfigureAllTranslationSettings: async () => {
-    const { currentBook, activeProjectId } = get();
+  autoConfigureAllTranslationSettings: async (opts?: { force?: boolean }) => {
+    const { currentBook, activeProjectId, autoConfigResult } = get();
     if (!currentBook) return null;
+
+    // Run-once Persistence: If already configured once for this book, re-use saved configuration
+    // unless the user explicitly requested a forced re-configuration (force = true).
+    const currentBookTitle = currentBook.title;
+    if (!opts?.force && autoConfigResult && (!autoConfigResult.bookTitle || autoConfigResult.bookTitle === currentBookTitle)) {
+      get().addTerminalLog({
+        type: "info",
+        text: "ℹ️ [Tự động thiết lập] Cuốn sách này đã được cấu hình toàn diện trước đó. Sử dụng cấu hình đã lưu.",
+      });
+      return autoConfigResult;
+    }
 
     set({ isAutoConfiguringAll: true });
     get().addTerminalLog({
@@ -3265,8 +3356,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().saveActiveProject();
     }
 
-    set({ isAutoConfiguringAll: false });
-
     const toneLabel = TONE_DESCRIPTIONS[recommendedTone]?.name || "Văn học & Tiểu thuyết";
     get().addTerminalLog({
       type: "detail",
@@ -3278,7 +3367,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       text: `🎉 [Hoàn tất tự động thiết lập] Ngôn ngữ: ${detectedLang?.languageName || "Tiếng Anh"} ➔ ${get().translationConfig.targetLang} | Văn phong: ${toneLabel} | Tên riêng: ${properNamesCount} | Thuật ngữ: ${termsCount} | Engine: ${activeEngineLabel} | Bối cảnh: ${researchBrief ? "Đã lập" : "Bỏ qua"}`,
     });
 
-    return {
+    const result: AutoTranslationConfigResult = {
+      bookTitle: currentBook.title,
       detectedLanguage: detectedLang,
       recommendedTone,
       toneLabel,
@@ -3292,6 +3382,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       researchBriefSnippet: researchBrief ? researchBrief.slice(0, 150) + "..." : undefined,
       stepStatuses,
     };
+
+    set({ autoConfigResult: result, isAutoConfiguringAll: false });
+
+    if (activeProjectId) {
+      get().saveActiveProject();
+    }
+
+    return result;
   },
 
   // Unified Workflow Jobs Implementation

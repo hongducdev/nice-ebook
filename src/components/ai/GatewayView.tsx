@@ -62,7 +62,16 @@ export function GatewayView() {
   } = useAppStore();
 
   useEffect(() => {
-    setConfiguredProviders(loadConfiguredProviders());
+    const list = loadConfiguredProviders();
+    setConfiguredProviders(list);
+
+    // If no active gateway is selected in the store, automatically activate the provider that has isActive === true
+    if (!activeGateway) {
+      const activeProv = list.find((p) => p.isActive);
+      if (activeProv) {
+        handleActivateProvider(activeProv);
+      }
+    }
   }, [isModalOpen]);
 
   // Activate a configured provider
@@ -266,17 +275,18 @@ export function GatewayView() {
         {configuredProviders.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
             {configuredProviders.map((prov) => {
-              const isCurrentActive = activeGateway?.name === prov.name || prov.isActive;
+              const isCurrentActive = Boolean(activeGateway && activeGateway.name === prov.name);
               const presetInfo = LINGUAGACHA_PRESETS.find((p) => p.id === prov.presetId);
               const accentColor = presetInfo?.accent || "var(--primary)";
 
               return (
                 <Card
                   key={prov.id}
+                  onClick={() => !isCurrentActive && handleActivateProvider(prov)}
                   className={`p-3.5 flex flex-col justify-between gap-2.5 transition-all bg-card ${
                     isCurrentActive
                       ? "ring-2 ring-primary shadow-xs border-primary/50"
-                      : "hover:border-primary/40 border-border"
+                      : "hover:border-primary/40 border-border cursor-pointer hover:shadow-xs"
                   }`}
                 >
                   <div className="flex flex-col gap-1.5 min-w-0">
@@ -323,7 +333,10 @@ export function GatewayView() {
                         type="button"
                         variant={isCurrentActive ? "secondary" : "default"}
                         size="xs"
-                        onClick={() => handleActivateProvider(prov)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleActivateProvider(prov);
+                        }}
                         disabled={isCurrentActive}
                         className="h-6 px-2 text-[10px] font-medium cursor-pointer"
                         title={isCurrentActive ? "Đang là provider chính" : "Kích hoạt provider này"}
@@ -335,7 +348,10 @@ export function GatewayView() {
                         type="button"
                         variant="ghost"
                         size="icon-xs"
-                        onClick={() => handleDuplicate(prov)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDuplicate(prov);
+                        }}
                         className="size-6 text-muted-foreground hover:text-foreground"
                         title="Tạo bản sao provider này (Endpoint Duplicate)"
                       >
@@ -346,7 +362,8 @@ export function GatewayView() {
                         type="button"
                         variant="ghost"
                         size="icon-xs"
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setEditingProvider(prov);
                           setIsModalOpen(true);
                         }}
@@ -361,7 +378,10 @@ export function GatewayView() {
                       type="button"
                       variant="ghost"
                       size="icon-xs"
-                      onClick={() => handleDeleteProvider(prov.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteProvider(prov.id);
+                      }}
                       className="size-6 text-muted-foreground hover:text-destructive"
                       title="Xóa cấu hình này"
                     >

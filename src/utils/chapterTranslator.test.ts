@@ -320,4 +320,200 @@ describe("ChapterTranslator", () => {
 
     expect(translated).toContain('<td><div class="bilingual-original">Character Realm</div><div class="bilingual-translated" data-bilingual-for="p_0">Cảnh giới nhân vật</div></td>');
   });
+
+  describe("LinguaGacha-style Inline Markup Masking & Ruby Cleaning", () => {
+    it("cleanRubyText strips Japanese furigana while keeping base Kanji intact", () => {
+      const htmlWithRuby = '<p>彼の名前は<ruby>静叶<rt>しずか</rt></ruby>です。これは<ruby>魔法<rp>(</rp><rt>まほう</rt><rp>)</rp></ruby>の世界。</p>';
+      const cleaned = ChapterTranslator.cleanRubyText(htmlWithRuby);
+      expect(cleaned).toBe("<p>彼の名前は静叶です。これは魔法の世界。</p>");
+    });
+
+    it("maskInlineMarkup protects footnotes, anchor links, and code blocks with placeholders", () => {
+      const html = 'London was foggy<span class="footnote"><a href="#fn1">[1]</a></span> and Holmes was studying <code>print("hello")</code><a href="#ref2">[ref]</a>.';
+      const { maskedHtml, tagsMap } = ChapterTranslator.maskInlineMarkup(html);
+
+      expect(maskedHtml).toContain("⟦TAG_0⟧");
+      expect(maskedHtml).toContain("⟦TAG_1⟧");
+      expect(maskedHtml).toContain("⟦TAG_2⟧");
+      expect(tagsMap.get("⟦TAG_0⟧")).toBe('<span class="footnote"><a href="#fn1">[1]</a></span>');
+      expect(tagsMap.get("⟦TAG_1⟧")).toBe('<code>print("hello")</code>');
+      expect(tagsMap.get("⟦TAG_2⟧")).toBe('<a href="#ref2">[ref]</a>');
+    });
+
+    it("unmaskInlineMarkup reconstructs byte-identical original markup on happy path", () => {
+      const html = 'Mr. Dursley was the director<span class="footnote"><a href="#fn1">[1]</a></span> of Grunnings.';
+      const { maskedHtml, tagsMap } = ChapterTranslator.maskInlineMarkup(html);
+
+      // Suppose the model translates while keeping the placeholder intact
+      const translatedWithTag = maskedHtml
+        .replace("Mr. Dursley was the director", "Ông Dursley là giám đốc")
+        .replace("of Grunnings", "của công ty Grunnings");
+
+      const { restoredText, missingPlaceholders } = ChapterTranslator.unmaskInlineMarkup(translatedWithTag, tagsMap);
+
+      expect(missingPlaceholders.length).toBe(0);
+      expect(restoredText).toBe('Ông Dursley là giám đốc<span class="footnote"><a href="#fn1">[1]</a></span> của công ty Grunnings.');
+    });
+
+    it("handles placeholder reordering and restores tags to new positions accurately", () => {
+      const tagsMap = new Map([
+        ["⟦TAG_0⟧", '<sup><a href="#note1">[1]</a></sup>'],
+        ["⟦TAG_1⟧", '<sup><a href="#note2">[2]</a></sup>'],
+      ]);
+      // Sentence inversion: in English note 0 then note 1; in Vietnamese note 1 mentioned before note 0
+      const translatedReordered = "Theo tài liệu thứ hai⟦TAG_1⟧, và tài liệu thứ nhất⟦TAG_0⟧ đã chỉ rõ.";
+      const { restoredText, missingPlaceholders } = ChapterTranslator.unmaskInlineMarkup(translatedReordered, tagsMap);
+
+      expect(missingPlaceholders.length).toBe(0);
+      expect(restoredText).toBe('Theo tài liệu thứ hai<sup><a href="#note2">[2]</a></sup>, và tài liệu thứ nhất<sup><a href="#note1">[1]</a></sup> đã chỉ rõ.');
+    });
+
+    it("deduplicates hallucinated duplicate placeholders to prevent XHTML bloat", () => {
+      const tagsMap = new Map([
+        ["⟦TAG_0⟧", '<span class="footnote"><a href="#fn1">[1]</a></span>'],
+      ]);
+      // Model accidentally outputs ⟦TAG_0⟧ twice
+      const translatedWithDuplicate = "Câu dịch có thẻ ⟦TAG_0⟧ và bị lặp lại ⟦TAG_0⟧ ở cuối.";
+      const { restoredText, missingPlaceholders } = ChapterTranslator.unmaskInlineMarkup(translatedWithDuplicate, tagsMap);
+
+      expect(missingPlaceholders.length).toBe(0);
+      expect(restoredText).toBe('Câu dịch có thẻ <span class="footnote"><a href="#fn1">[1]</a></span> và bị lặp lại  ở cuối.');
+      // Ensure the tag appears exactly once
+      const count = (restoredText.match(/class="footnote"/g) || []).length;
+      expect(count).toBe(1);
+    });
+
+    it("fails safe when placeholder is completely dropped: re-appends missing tags to prevent data loss", () => {
+      const tagsMap = new Map([
+        ["⟦TAG_0⟧", '<span class="footnote"><a href="#fn1">[1]</a></span>'],
+      ]);
+      // Model completely erased ⟦TAG_0⟧
+      const translatedWithoutTag = "Bản dịch bị mô hình bỏ quên mã thẻ giữ chỗ.";
+      const { restoredText, missingPlaceholders } = ChapterTranslator.unmaskInlineMarkup(translatedWithoutTag, tagsMap);
+
+      expect(missingPlaceholders).toEqual(["⟦TAG_0⟧"]);
+      // Automatically re-appends to the end
+      expect(restoredText).toBe('Bản dịch bị mô hình bỏ quên mã thẻ giữ chỗ.<span class="footnote"><a href="#fn1">[1]</a></span>');
+    });
+
+    it("retains byte-identical XHTML structure when masking and unmasking multiple complex nested inline elements", () => {
+      const complexHtml = 'Text before <sup><a href="#fn1" class="noteref">[1]</a></sup> middle <code>const x = "&lt;test&gt;";</code> and <span class="footnote"><a href="#fn2">[2]</a></span> end.';
+      const { maskedHtml, tagsMap } = ChapterTranslator.maskInlineMarkup(complexHtml);
+      const { restoredText, missingPlaceholders } = ChapterTranslator.unmaskInlineMarkup(maskedHtml, tagsMap);
+
+      expect(missingPlaceholders.length).toBe(0);
+      expect(restoredText).toBe(complexHtml);
+    });
+
+    it("handles unclosed or malformed markup safely without throwing exceptions", () => {
+      const malformedHtml = '<p>Broken <ruby>Kanji without close rt<rt>reading</ruby> and <img src="test.jpg" unmatched > content.</p>';
+      expect(() => {
+        const { maskedHtml, tagsMap } = ChapterTranslator.maskInlineMarkup(malformedHtml);
+        ChapterTranslator.unmaskInlineMarkup(maskedHtml, tagsMap);
+      }).not.toThrow();
+    });
+
+    it("preserves original Drop Cap span styling onto first character of translated paragraph", () => {
+      const htmlWithDropCap = '<p class="first-para"><span class="dropcap">M</span>r. and Mrs. Dursley were proud.</p>';
+      const translated = ChapterTranslator.applyTranslations(
+        htmlWithDropCap,
+        { p_0: "Gia đình Dursley luôn tự hào." },
+        { mode: "replace" }
+      );
+
+      expect(translated).toContain('<span class="dropcap">G</span>ia đình Dursley luôn tự hào.');
+      expect(translated).toContain('class="first-para"');
+    });
+
+    it("preserves whole-block formatting wrappers such as <em> or <strong>", () => {
+      const htmlWithEm = '<p class="quote"><em>"All children, except one, grow up."</em></p>';
+      const translated = ChapterTranslator.applyTranslations(
+        htmlWithEm,
+        { p_0: '"Mọi đứa trẻ, trừ một đứa, đều lớn lên."' },
+        { mode: "replace" }
+      );
+
+      expect(translated).toContain('<p class="quote"><em>"Mọi đứa trẻ, trừ một đứa, đều lớn lên."</em></p>');
+    });
+
+    it("preserves <br /> in split-line headings when translation provides combined chapter title", () => {
+      const htmlWithBrTitle = '<h1>Chapter 1<br/>The Boy Who Lived</h1>';
+      const translated = ChapterTranslator.applyTranslations(
+        htmlWithBrTitle,
+        { p_0: "Chương 1: Cậu bé sống sót" },
+        { mode: "replace" }
+      );
+
+      expect(translated).toContain('Chương 1<br />Cậu bé sống sót');
+    });
+
+    it("preserves cross-file footnote links, cross-chapter links, external URLs, and anchor IDs byte-identically, allowing inner text to be translated", () => {
+      const htmlWithAllLinks = `
+        <p id="p0">
+          <a id="intro-anchor"></a>
+          According to research<a href="notes.xhtml#fn1">[1]</a>, readers can jump to <a href="chapter2.xhtml">Chapter 2</a> or visit <a href="https://example.com" target="_blank">our website</a>.
+          Back to note <a href="../notes.xhtml#ref1" class="backlink">↩</a>.
+        </p>
+      `;
+
+      const { maskedHtml, tagsMap } = ChapterTranslator.maskInlineMarkup(htmlWithAllLinks);
+
+      // Verify text-bearing links are paired so their inner text remains visible for translation!
+      expect(maskedHtml).toContain("⟦TAG_2⟧Chapter 2⟦/TAG_2⟧");
+      expect(maskedHtml).toContain("⟦TAG_3⟧our website⟦/TAG_3⟧");
+
+      // Model translates both the surrounding narrative AND the text inside the links!
+      const translated = maskedHtml
+        .replace("According to research", "Theo nghiên cứu")
+        .replace("readers can jump to", "độc giả có thể chuyển đến")
+        .replace("Chapter 2", "Chương 2") // Translated inner text of link!
+        .replace("or visit", "hoặc truy cập")
+        .replace("our website", "trang web của chúng tôi") // Translated inner text of link!
+        .replace("Back to note", "Quay lại ghi chú");
+
+      const { restoredText, missingPlaceholders } = ChapterTranslator.unmaskInlineMarkup(translated, tagsMap);
+
+      expect(missingPlaceholders.length).toBe(0);
+      expect(restoredText).toContain('<a id="intro-anchor"></a>');
+      expect(restoredText).toContain('<a href="notes.xhtml#fn1">[1]</a>');
+      // Inner text translated while href attribute is 100% preserved!
+      expect(restoredText).toContain('<a href="chapter2.xhtml">Chương 2</a>');
+      expect(restoredText).toContain('<a href="https://example.com" target="_blank">trang web của chúng tôi</a>');
+      expect(restoredText).toContain('<a href="../notes.xhtml#ref1" class="backlink">↩</a>');
+    });
+
+    it("automatically re-appends cross-file links when model accidentally drops placeholder", () => {
+      const html = '<p>Important reference<a href="endnotes.xhtml#n42">[42]</a> in the book.</p>';
+      const translated = ChapterTranslator.applyTranslations(
+        html,
+        { p_0: "Tài liệu tham khảo quan trọng trong cuốn sách." },
+        { mode: "replace" }
+      );
+
+      // Even if placeholder was dropped, the link to endnotes.xhtml MUST be salvaged at the end of the block
+      expect(translated).toContain('<a href="endnotes.xhtml#n42">[42]</a>');
+    });
+
+    it("translates text inside text-bearing links and spans while keeping link markup intact", () => {
+      const html = '<p>Please check <a href="chapter2.xhtml">Chapter Two: The Secret Room</a> and <span class="note">Author Warning</span> now.</p>';
+      const blocks = ChapterTranslator.extractTranslatableBlocks(html);
+
+      // Verify the extracted plain text keeps paired tokens so the inner text is accessible for translation
+      expect(blocks[0].originalText).toContain("⟦TAG_0⟧Chapter Two: The Secret Room⟦/TAG_0⟧");
+      expect(blocks[0].originalText).toContain("⟦TAG_1⟧Author Warning⟦/TAG_1⟧");
+
+      // Model translates narrative AND the text inside the paired tokens
+      const translations = {
+        p_0: "Vui lòng xem ⟦TAG_0⟧Chương 2: Căn phòng bí mật⟦/TAG_0⟧ và ⟦TAG_1⟧Cảnh báo của tác giả⟦/TAG_1⟧ ngay bây giờ.",
+      };
+
+      const result = ChapterTranslator.applyTranslations(html, translations, { mode: "replace" });
+
+      // Link href and span class must be preserved, while their inner text is fully translated to Vietnamese!
+      expect(result).toContain('<a href="chapter2.xhtml">Chương 2: Căn phòng bí mật</a>');
+      expect(result).toContain('<span class="note">Cảnh báo của tác giả</span>');
+      expect(result).not.toContain("Chapter Two");
+      expect(result).not.toContain("Author Warning");
+    });
+  });
 });

@@ -21,9 +21,13 @@ import {
   AlertTriangle,
   Loader2,
   Search,
-  CheckSquare
+  CheckSquare,
+  Zap,
+  ChevronDown,
+  CheckCircle2,
+  Image as ImageIcon,
 } from "lucide-react";
-import { useAppStore, AutoTranslationConfigResult } from "../../stores/useAppStore";
+import { useAppStore } from "../../stores/useAppStore";
 import {
   TranslationLogPanel,
   filterLogs,
@@ -31,6 +35,8 @@ import {
 } from "./TranslationLogPanel";
 import { TONE_DESCRIPTIONS, TranslationTone } from "../../services/prompts/bookTranslator";
 import { generateEpubCss, injectCssIntoHtml } from "../../utils/cssGenerator";
+import { combinePreviewCss } from "../../utils/bookStyleAnalyzer";
+import { sanitizeEpubHtml } from "../../utils/htmlSanitizer";
 import { LanguageDetectionResult } from "../../utils/languageDetector";
 import { WorkflowBanner } from "../workflow/WorkflowBanner";
 import { AgentModelSelector } from "../agent/AgentModelSelector";
@@ -75,7 +81,6 @@ import {
   SelectValue,
 } from "../ui/select";
 import { Separator } from "../ui/separator";
-import { Spinner } from "../ui/spinner";
 import {
   Table,
   TableBody,
@@ -130,6 +135,7 @@ export function BookTranslatorView() {
     customCss,
     fontFamily,
     bookStyleSignature,
+    bookStyleCss,
     autoDetectSourceLanguage,
     isExtractingEntities,
     extractedCandidates,
@@ -139,6 +145,8 @@ export function BookTranslatorView() {
     generateBookResearchBrief,
     isAutoConfiguringAll,
     autoConfigureAllTranslationSettings,
+    autoConfigResult,
+    setAutoConfigResult,
     bookProfile,
     translatedChapters,
     getTranslationCoverage,
@@ -149,9 +157,9 @@ export function BookTranslatorView() {
   const [copiedLogs, setCopiedLogs] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string>("");
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [isViewingCover, setIsViewingCover] = useState(false);
 
   // Auto-detect & Research state
-  const [autoConfigResult, setAutoConfigResult] = useState<AutoTranslationConfigResult | null>(null);
   const [logFilter, setLogFilter] = useState<LogFilterKey>("all");
   const [logSearch, setLogSearch] = useState("");
   const [logAutoScroll, setLogAutoScroll] = useState(true);
@@ -212,18 +220,56 @@ export function BookTranslatorView() {
         margin-bottom: 1.2em !important;
       }
     `;
-    return base + bilingualRules;
+
+    // Guarantee that reading paper surface is never pitch-black from dark-mode shell bleed
+    const readingPaperBaseRules = `
+      html {
+        background-color: #ffffff !important;
+      }
+      body {
+        background-color: #ffffff !important;
+        color: #1a1a1a !important;
+        margin: 4% 6%;
+        min-height: 100vh;
+      }
+      p, div, span, h1, h2, h3, h4, h5, h6, li, blockquote, dt, dd {
+        color: #1a1a1a;
+      }
+    `;
+
+    return readingPaperBaseRules + base + bilingualRules;
   }, [activePreset, customCss, fontFamily, bookStyleSignature]);
 
+  const previewCss = useMemo(() => {
+    return combinePreviewCss(bookStyleCss, fullCss);
+  }, [bookStyleCss, fullCss]);
+
+  const fullDoc = useMemo(() => {
+    if (!previewHtml) return "";
+    const safeHtml = sanitizeEpubHtml(previewHtml);
+    return injectCssIntoHtml(safeHtml, previewCss);
+  }, [previewHtml, previewCss]);
+
+  const scrollPosRef = useRef<number>(0);
+
+  const handleIframeLoad = () => {
+    if (scrollPosRef.current > 0 && iframeRef.current?.contentDocument) {
+      const doc = iframeRef.current.contentDocument;
+      try {
+        if (doc.documentElement) doc.documentElement.scrollTop = scrollPosRef.current;
+        if (doc.body) doc.body.scrollTop = scrollPosRef.current;
+      } catch {
+        // ignore
+      }
+    }
+  };
+
   useEffect(() => {
-    if (!iframeRef.current || rightTab !== "preview") return;
-    const doc = iframeRef.current.contentDocument;
-    if (!doc) return;
-    const fullDoc = injectCssIntoHtml(previewHtml, fullCss);
-    doc.open();
-    doc.write(fullDoc);
-    doc.close();
-  }, [previewHtml, fullCss, rightTab]);
+    if (iframeRef.current?.contentDocument) {
+      const doc = iframeRef.current.contentDocument;
+      scrollPosRef.current = doc.documentElement?.scrollTop || doc.body?.scrollTop || 0;
+    }
+  }, [fullDoc]);
 
   useEffect(() => {
     return () => {
@@ -243,12 +289,44 @@ export function BookTranslatorView() {
     activeChapter && (modifiedChapters[activeChapter.href] || translatedChapters[activeChapter.href])
   );
 
-  // Load preview HTML whenever activeChapterIndex or modifiedChapters changes
+  // Load preview HTML whenever activeChapterIndex, modifiedChapters, or isViewingCover changes
   useEffect(() => {
     let cancelled = false;
 
     async function loadPreview() {
-      if (!currentBook || !activeChapter) {
+      if (!currentBook) {
+        setPreviewHtml("");
+        return;
+      }
+
+      // 1. If user is explicitly viewing book cover
+      if (isViewingCover) {
+        if (currentBook.cover_data_url) {
+          setPreviewHtml(`
+            <div class="chapter-body book-cover-page" style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:85vh; text-align:center; padding:1.5rem 0;">
+              <div style="max-width:90%; max-height:75vh; border-radius:10px; overflow:hidden; box-shadow:0 12px 30px rgba(0,0,0,0.25); border:1px solid rgba(0,0,0,0.1); margin:0 auto;">
+                <img src="${currentBook.cover_data_url}" alt="${currentBook.title}" style="max-width:100%; max-height:70vh; object-fit:contain; display:block;" />
+              </div>
+              <h1 style="margin-top:1.5rem; font-size:1.3rem; font-weight:700; border-bottom:none; margin-bottom:0.25rem;">${currentBook.title}</h1>
+              <p style="color:#666; font-size:0.9rem; margin-top:0;">${currentBook.author || ""}</p>
+            </div>
+          `);
+        } else {
+          setPreviewHtml(`
+            <div class="chapter-body book-cover-page" style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:70vh; text-align:center;">
+              <div style="width:140px; height:200px; border-radius:8px; border:2px dashed #999; display:flex; align-items:center; justify-content:center; margin-bottom:1rem; color:#888;">
+                <span>Chưa có ảnh bìa</span>
+              </div>
+              <h1>${currentBook.title}</h1>
+              <p style="color:#666;">${currentBook.author || ""}</p>
+            </div>
+          `);
+        }
+        setIsLoadingPreview(false);
+        return;
+      }
+
+      if (!activeChapter) {
         setPreviewHtml("");
         return;
       }
@@ -272,6 +350,23 @@ export function BookTranslatorView() {
             href: activeChapter.href,
           });
         }
+
+        // Auto-heal broken cover image path inside chapter HTML if cover_data_url is present
+        if (currentBook.cover_data_url && (raw.includes("<img") || raw.includes("<image"))) {
+          raw = raw.replace(/<img\b([^>]*)\bsrc=["']([^"']*)["']([^>]*)\/?>/gi, (match, before, src, after) => {
+            if (/cover|bia|titlepage/i.test(src) || /cover|bia/i.test(activeChapter.href) || /cover|bia/i.test(activeChapter.title)) {
+              return `<img${before}src="${currentBook.cover_data_url}"${after}/>`;
+            }
+            return match;
+          });
+          raw = raw.replace(/<image\b([^>]*)\b(?:xlink:href|href)=["']([^"']*)["']([^>]*)\/?>/gi, (match, before, href, after) => {
+            if (/cover|bia|titlepage/i.test(href) || /cover|bia/i.test(activeChapter.href) || /cover|bia/i.test(activeChapter.title)) {
+              return `<image${before}href="${currentBook.cover_data_url}" xlink:href="${currentBook.cover_data_url}"${after}/>`;
+            }
+            return match;
+          });
+        }
+
         if (!cancelled) {
           setPreviewHtml(raw);
         }
@@ -289,7 +384,7 @@ export function BookTranslatorView() {
     return () => {
       cancelled = true;
     };
-  }, [activeChapterIndex, currentBook, currentFilePath, currentFileBytes, modifiedChapters]);
+  }, [activeChapterIndex, currentBook, currentFilePath, currentFileBytes, modifiedChapters, isViewingCover]);
 
   // Aggregate statistics — single source of truth (see the store's
   // getTranslationCoverage) so the badge, the stepper and this panel cannot
@@ -308,26 +403,19 @@ export function BookTranslatorView() {
     }
 
     if (scope === "single") {
-      toast.loading(`Đang dịch chương ${activeChapterIndex + 1}: "${activeChapter?.title}"...`, {
-        id: "trans-run",
-      });
       const ok = await translateSingleChapter(activeChapterIndex);
-      if (ok) {
-        toast.success(`Đã dịch xong chương ${activeChapterIndex + 1}!`, { id: "trans-run" });
-      } else {
-        toast.error("Quá trình dịch bị lỗi hoặc đã dừng.", { id: "trans-run" });
+      if (!ok) {
+        toast.error("Quá trình dịch bị lỗi hoặc đã dừng.");
       }
     } else if (scope === "unprocessed") {
-      toast.loading(`Đang chuẩn bị dịch ${unprocessedCount} chương chưa xử lý...`, { id: "trans-run" });
       const ok = await batchTranslateChapters(undefined, true);
       if (ok) {
-        toast.success("Đã hoàn thành lượt dịch hàng loạt!", { id: "trans-run" });
+        toast.success("Đã hoàn thành lượt dịch hàng loạt!");
       }
     } else {
-      toast.loading(`Đang chuẩn bị dịch toàn bộ ${totalChapters} chương...`, { id: "trans-run" });
       const ok = await batchTranslateChapters(undefined, false);
       if (ok) {
-        toast.success("Đã hoàn thành dịch toàn bộ cuốn sách!", { id: "trans-run" });
+        toast.success("Đã hoàn thành dịch toàn bộ cuốn sách!");
       }
     }
   }
@@ -340,11 +428,6 @@ export function BookTranslatorView() {
       .join("\n");
     navigator.clipboard.writeText(text);
     setCopiedLogs(true);
-    toast.success(
-      filteredLogs.length === translationLogs.length
-        ? "Đã sao chép toàn bộ nhật ký dịch"
-        : `Đã sao chép ${filteredLogs.length}/${translationLogs.length} dòng log đang hiển thị`
-    );
     copyTimerRef.current = setTimeout(() => setCopiedLogs(false), 2000);
   }
 
@@ -362,7 +445,6 @@ export function BookTranslatorView() {
     });
     setNewTermKey("");
     setNewTermVal("");
-    toast.success(`Đã thêm thuật ngữ: "${k}" ➔ "${v}"`);
   }
 
   // Handle remove term from glossary
@@ -370,7 +452,6 @@ export function BookTranslatorView() {
     const updated = { ...(translationConfig.glossary || {}) };
     delete updated[key];
     setTranslationConfig({ glossary: updated });
-    toast.info(`Đã xóa thuật ngữ: "${key}"`);
   }
 
   // Handle swap languages
@@ -383,12 +464,15 @@ export function BookTranslatorView() {
     });
   }
 
-  // Handle auto-configure all settings at once
-  async function handleAutoConfigureAll() {
-    toast.loading("Đang tự động phân tích ngôn ngữ, thể loại, bối cảnh và thuật ngữ sách...", {
-      id: "auto-config",
-    });
-    const res = await autoConfigureAllTranslationSettings();
+  // Handle auto-configure all settings at once (run once and persisted unless forced)
+  async function handleAutoConfigureAll(force = false) {
+    toast.loading(
+      force
+        ? "Đang tự động cấu hình lại (quét mới ngôn ngữ, thể loại & thuật ngữ)..."
+        : "Đang tự động phân tích ngôn ngữ, thể loại, bối cảnh và thuật ngữ sách...",
+      { id: "auto-config" }
+    );
+    const res = await autoConfigureAllTranslationSettings({ force });
     if (res) {
       setAutoConfigResult(res);
       if (res.detectedLanguage) {
@@ -426,7 +510,6 @@ export function BookTranslatorView() {
     const res = autoDetectSourceLanguage();
     if (res) {
       setDetectedLangInfo(res);
-      toast.success(`Đã nhận diện: ${res.languageName} (${Math.round(res.confidence * 100)}%)`);
     } else {
       toast.warning("Không thể nhận diện ngôn ngữ của sách này.");
     }
@@ -434,10 +517,8 @@ export function BookTranslatorView() {
 
   // Handle auto-extract entities and terminology
   async function handleScanEntities() {
-    toast.loading("Đang quét tự động thực thể và đề xuất bản dịch...", { id: "scan-ent" });
     const candidates = await extractBookEntities();
     if (candidates.length > 0) {
-      toast.success(`Đã tìm thấy ${candidates.length} thuật ngữ & tên riêng!`, { id: "scan-ent" });
       const initialSelected: Record<string, boolean> = {};
       const initialEdits: Record<string, string> = {};
       for (const c of candidates) {
@@ -448,7 +529,7 @@ export function BookTranslatorView() {
       setEditedTranslations(initialEdits);
       setShowEntityModal(true);
     } else {
-      toast.info("Không tìm thấy thuật ngữ mới nào.", { id: "scan-ent" });
+      toast.info("Không tìm thấy thuật ngữ mới nào.");
     }
   }
 
@@ -471,12 +552,11 @@ export function BookTranslatorView() {
 
   // Handle generate research brief
   async function handleGenerateBrief() {
-    toast.loading("Đang nghiên cứu bối cảnh tác phẩm bằng AI...", { id: "gen-brief" });
     const brief = await generateBookResearchBrief();
     if (brief) {
-      toast.success("Đã hoàn tất nghiên cứu bối cảnh tác phẩm!", { id: "gen-brief" });
+      toast.success("Đã hoàn tất nghiên cứu bối cảnh tác phẩm!");
     } else {
-      toast.error("Không thể lập hồ sơ nghiên cứu.", { id: "gen-brief" });
+      toast.error("Không thể lập hồ sơ nghiên cứu.");
     }
   }
 
@@ -591,53 +671,88 @@ export function BookTranslatorView() {
             <CardHeader className="flex flex-col gap-1 p-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-1.5 text-xs font-semibold">
-                  <Sparkles className="size-3.5 text-primary" />
-                  <span>Tự Động Cấu Hình Toàn Diện</span>
+                  {autoConfigResult ? (
+                    <CheckCircle2 className="size-3.5 text-emerald-500" />
+                  ) : (
+                    <Sparkles className="size-3.5 text-primary" />
+                  )}
+                  <span>{autoConfigResult ? "Cấu Hình Dịch Thuật Đã Lưu" : "Tự Động Cấu Hình Toàn Diện"}</span>
                 </CardTitle>
-                <Badge variant="secondary" className="bg-primary/10 text-primary text-[9px] px-1.5 h-4">
-                  Tự động 1-Click
+                <Badge
+                  variant="secondary"
+                  className={
+                    autoConfigResult
+                      ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[9px] px-1.5 h-4 font-medium"
+                      : "bg-primary/10 text-primary text-[9px] px-1.5 h-4"
+                  }
+                >
+                  {autoConfigResult ? "Đã lưu 1 lần" : "Tự động 1-Click"}
                 </Badge>
               </div>
               <CardDescription className="text-[10px] leading-relaxed mt-0.5">
-                Tự động nhận diện ngôn ngữ, phân tích thể loại đề xuất văn phong, trích xuất thuật ngữ &amp; nghiên cứu bối cảnh sách trong 1 lượt.
+                {autoConfigResult
+                  ? "Sách này đã được AI tự động phân tích và lưu cấu hình. AI sẽ dùng cấu hình này cho mọi chương, trừ khi bạn ấn cấu hình lại."
+                  : "Tự động nhận diện ngôn ngữ, phân tích thể loại đề xuất văn phong, trích xuất thuật ngữ &amp; nghiên cứu bối cảnh sách trong 1 lượt."}
               </CardDescription>
             </CardHeader>
 
             <CardContent className="flex flex-col gap-2">
-              <Button
-                type="button"
-                disabled={isAutoConfiguringAll}
-                onClick={handleAutoConfigureAll}
-                className="w-full text-xs shadow-xs"
-                title="Phân tích và tự động cấu hình toàn bộ cài đặt dịch thuật"
-              >
-                {isAutoConfiguringAll ? (
-                  <Loader2 className="animate-spin" />
-                ) : (
-                  <Sparkles />
-                )}
-                <span>{isAutoConfiguringAll ? "Đang tự động thiết lập toàn bộ..." : "Tự Động Thiết Lập Toàn Bộ"}</span>
-              </Button>
+              {autoConfigResult ? (
+                <>
+                  <div className="p-2.5 rounded bg-card/90 border border-border text-[10px] flex flex-col gap-1.5 text-foreground animate-in fade-in duration-200">
+                    <div className="flex items-center justify-between font-semibold text-emerald-600 dark:text-emerald-400">
+                      <span className="flex items-center gap-1">
+                        <Check className="size-3" />
+                        <span>Đã cấu hình tối ưu</span>
+                      </span>
+                      <span className="text-muted-foreground font-mono">{autoConfigResult.toneLabel}</span>
+                    </div>
+                    <div className="text-muted-foreground leading-tight">
+                      Ngôn ngữ: <strong>{autoConfigResult.detectedLanguage?.languageName || "Tự động"}</strong> ➔ <strong>{translationConfig.targetLang}</strong>
+                    </div>
+                    <div className="text-muted-foreground leading-tight">
+                      Bộ thuật ngữ: <strong className="text-primary">{autoConfigResult.properNamesCount} tên riêng</strong> + <strong className="text-primary">{autoConfigResult.termsCount} thuật ngữ</strong> = <strong>{Object.keys(translationConfig.glossary || {}).length} mục</strong>
+                    </div>
+                    <div className="text-muted-foreground leading-tight">
+                      Mô hình: <strong className="font-mono text-foreground">{autoConfigResult.activeEngineLabel}</strong>
+                    </div>
+                    <div className="text-muted-foreground leading-tight">
+                      Bối cảnh: <strong>{autoConfigResult.researchBriefGenerated ? "Đã lập hồ sơ" : "Bỏ qua"}</strong> • Đã quét <strong>{autoConfigResult.entitiesExtractedCount} thực thể</strong>
+                    </div>
+                  </div>
 
-              {autoConfigResult && (
-                <div className="p-2 rounded bg-card/90 border border-border text-[10px] flex flex-col gap-1 text-foreground animate-in fade-in duration-200">
-                  <div className="flex items-center justify-between font-semibold text-primary">
-                    <span>✓ Đã cấu hình xong</span>
-                    <span className="text-muted-foreground font-mono">{autoConfigResult.toneLabel}</span>
-                  </div>
-                  <div className="text-muted-foreground leading-tight">
-                    Ngôn ngữ: <strong>{autoConfigResult.detectedLanguage?.languageName || "Tự động"}</strong> ➔ <strong>{translationConfig.targetLang}</strong>
-                  </div>
-                  <div className="text-muted-foreground leading-tight">
-                    Bộ thuật ngữ &amp; tên riêng: <strong className="text-primary">{autoConfigResult.properNamesCount} tên riêng</strong> + <strong className="text-primary">{autoConfigResult.termsCount} thuật ngữ</strong> = <strong>{Object.keys(translationConfig.glossary || {}).length} mục</strong>
-                  </div>
-                  <div className="text-muted-foreground leading-tight">
-                    Bộ dịch thuật: <strong className="font-mono text-foreground">{autoConfigResult.activeEngineLabel}</strong>
-                  </div>
-                  <div className="text-muted-foreground leading-tight">
-                    Bối cảnh: <strong>{autoConfigResult.researchBriefGenerated ? "Đã lập" : "Bỏ qua"}</strong> • Đã quét <strong>{autoConfigResult.entitiesExtractedCount} thực thể</strong>
-                  </div>
-                </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isAutoConfiguringAll}
+                    onClick={() => handleAutoConfigureAll(true)}
+                    className="w-full text-xs shadow-xs gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer"
+                    title="Phân tích lại từ đầu để cập nhật lại toàn bộ ngôn ngữ, văn phong và thuật ngữ mới"
+                  >
+                    {isAutoConfiguringAll ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <RotateCcw className="size-3.5" />
+                    )}
+                    <span>{isAutoConfiguringAll ? "Đang phân tích lại toàn bộ..." : "Tự Động Cấu Hình Lại"}</span>
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  type="button"
+                  disabled={isAutoConfiguringAll}
+                  onClick={() => handleAutoConfigureAll(false)}
+                  className="w-full text-xs shadow-xs cursor-pointer"
+                  title="Phân tích và tự động cấu hình toàn bộ cài đặt dịch thuật"
+                >
+                  {isAutoConfiguringAll ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <Sparkles />
+                  )}
+                  <span>{isAutoConfiguringAll ? "Đang tự động thiết lập toàn bộ..." : "Tự Động Thiết Lập Toàn Bộ"}</span>
+                </Button>
               )}
             </CardContent>
           </Card>
@@ -700,14 +815,14 @@ export function BookTranslatorView() {
               </Alert>
             )}
 
-            <div className="flex items-end gap-2">
-              <div className="flex-1 flex flex-col gap-1">
-                <Label htmlFor="translator-source-lang" className="text-[10px] text-muted-foreground font-medium">Ngôn ngữ nguồn</Label>
+            <div className="flex items-end gap-2 w-full min-w-0">
+              <div className="flex-1 min-w-0 flex flex-col gap-1">
+                <Label htmlFor="translator-source-lang" className="text-[10px] text-muted-foreground font-medium truncate">Ngôn ngữ nguồn</Label>
                 <Select
                   value={translationConfig.sourceLang}
                   onValueChange={(value) => setTranslationConfig({ sourceLang: value })}
                 >
-                  <SelectTrigger id="translator-source-lang" className="w-full text-xs">
+                  <SelectTrigger id="translator-source-lang" className="w-full min-w-0 text-xs overflow-hidden">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -725,19 +840,19 @@ export function BookTranslatorView() {
                 variant="outline"
                 size="icon-sm"
                 onClick={handleSwapLanguages}
-                className="h-8 mb-0"
+                className="h-8 mb-0 shrink-0"
                 title="Đảo ngược cặp ngôn ngữ"
               >
                 <ArrowRightLeft className="size-3.5" />
               </Button>
 
-              <div className="flex-1 flex flex-col gap-1">
-                <Label htmlFor="translator-target-lang" className="text-[10px] text-muted-foreground font-medium">Ngôn ngữ đích</Label>
+              <div className="flex-1 min-w-0 flex flex-col gap-1">
+                <Label htmlFor="translator-target-lang" className="text-[10px] text-muted-foreground font-medium truncate">Ngôn ngữ đích</Label>
                 <Select
                   value={translationConfig.targetLang}
                   onValueChange={(value) => setTranslationConfig({ targetLang: value })}
                 >
-                  <SelectTrigger id="translator-target-lang" className="w-full text-xs">
+                  <SelectTrigger id="translator-target-lang" className="w-full min-w-0 text-xs overflow-hidden">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -921,91 +1036,100 @@ export function BookTranslatorView() {
 
           {/* Section 5: Glossary / Terminology Accordion */}
           <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              5. Thuật ngữ &amp; Tên riêng (Glossary)
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                5. Thuật ngữ &amp; Tên riêng (Glossary)
+              </span>
+              <Button
+                type="button"
+                variant="secondary"
+                size="xs"
+                disabled={isExtractingEntities}
+                onClick={handleScanEntities}
+                className="text-primary shadow-xs"
+                title="Tự động trích xuất các nhân vật, địa danh và thuật ngữ quan trọng"
+              >
+                {isExtractingEntities ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Search />
+                )}
+                <span>{isExtractingEntities ? "Đang quét..." : "Quét AI"}</span>
+              </Button>
+            </div>
             <Card size="sm" className="shrink-0 bg-secondary/20">
               <CardHeader
-                className="cursor-pointer select-none py-2.5 px-3 flex flex-row items-center justify-between"
+                className="cursor-pointer select-none py-2.5 px-3 flex flex-row items-center justify-between gap-2"
                 onClick={() => setShowGlossary(!showGlossary)}
               >
-                <CardTitle className="flex items-center gap-1.5 text-xs">
+                <CardTitle className="flex items-center gap-1.5 text-xs font-medium">
                   <Sliders className="size-3.5 text-primary" />
                   <span>Danh mục thuật ngữ</span>
                 </CardTitle>
-                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                   {extractedCandidates.length > 0 && (
                     <Button
                       type="button"
                       variant="outline"
                       size="xs"
                       onClick={() => setShowEntityModal(true)}
-                      className="text-xs shadow-xs gap-1"
+                      className="text-xs shadow-xs gap-1 h-6 px-2"
                       title="Xem lại hoặc chỉnh sửa danh sách các thực thể đã trích xuất"
                     >
-                      <Eye className="size-3" />
+                      <Eye className="size-3 text-primary" />
                       <span>Duyệt ({extractedCandidates.length})</span>
                     </Button>
                   )}
 
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="xs"
-                    disabled={isExtractingEntities}
-                    onClick={handleScanEntities}
-                    className="text-primary shadow-xs"
-                    title="Tự động trích xuất các nhân vật, địa danh và thuật ngữ quan trọng"
-                  >
-                    {isExtractingEntities ? (
-                      <Loader2 className="animate-spin" />
-                    ) : (
-                      <Search />
-                    )}
-                    <span>{isExtractingEntities ? "Đang quét..." : "Quét AI"}</span>
-                  </Button>
-
                   <Badge variant="secondary" className="text-[10px] px-1.5 h-4">
                     {Object.keys(translationConfig.glossary || {}).length} từ
                   </Badge>
+                  <ChevronDown
+                    className={`size-3.5 text-muted-foreground transition-transform duration-200 ${
+                      showGlossary ? "rotate-180" : ""
+                    }`}
+                  />
                 </div>
               </CardHeader>
 
             {showGlossary && (
               <>
                 <Separator />
-                <CardContent className="flex flex-col gap-2 animate-in fade-in duration-150">
-                  <p className="text-[10px] text-muted-foreground">
+                <CardContent className="flex flex-col gap-2.5 animate-in fade-in duration-150 p-3">
+                  <p className="text-[11px] text-muted-foreground leading-tight">
                     Cố định tên nhân vật hoặc thuật ngữ để bản dịch luôn đồng nhất qua mọi chương:
                   </p>
 
                   {/* Term List */}
-                  <div className="max-h-28 overflow-y-auto flex flex-col gap-1 pr-1">
+                  <div className="max-h-52 overflow-y-auto flex flex-col gap-1.5 pr-1">
                     {Object.entries(translationConfig.glossary || {}).length === 0 ? (
-                      <span className="text-[10px] text-muted-foreground italic">
+                      <div className="py-3 px-2 text-center text-[11px] text-muted-foreground italic bg-background/50 rounded border border-dashed border-border">
                         Chưa có thuật ngữ nào được tạo.
-                      </span>
+                      </div>
                     ) : (
                       Object.entries(translationConfig.glossary || {}).map(([k, v]) => (
                         <div
                           key={k}
-                          className="flex items-center justify-between bg-card px-2 py-1 rounded border border-border text-xs"
+                          className="flex items-center justify-between gap-2 bg-card/90 hover:bg-card px-2.5 py-1.5 rounded-md border border-border text-xs shadow-2xs"
                         >
-                          <span className="font-mono text-[11px] text-foreground truncate max-w-[120px]">
-                            {k}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">➔</span>
-                          <span className="text-[11px] text-primary truncate max-w-[120px]">
-                            {v}
-                          </span>
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            <span className="font-mono text-xs text-foreground truncate" title={k}>
+                              {k}
+                            </span>
+                            <span className="text-muted-foreground text-[10px] shrink-0">➔</span>
+                            <span className="font-medium text-xs text-primary truncate" title={v}>
+                              {v}
+                            </span>
+                          </div>
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon-xs"
                             onClick={() => handleRemoveGlossaryTerm(k)}
-                            className="text-muted-foreground hover:text-red-400 ml-1"
+                            className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 size-6 shrink-0"
+                            title="Xóa thuật ngữ"
                           >
-                            <Trash2 />
+                            <Trash2 className="size-3" />
                           </Button>
                         </div>
                       ))
@@ -1013,28 +1137,30 @@ export function BookTranslatorView() {
                   </div>
 
                   {/* Term Input */}
-                  <div className="flex items-center gap-1.5 mt-1">
+                  <div className="flex items-center gap-1.5 pt-1 border-t border-border/50">
                     <Input
                       type="text"
                       placeholder="Gốc (VD: Harry)"
                       value={newTermKey}
                       onChange={(e) => setNewTermKey(e.target.value)}
-                      className="flex-1 text-xs"
+                      className="flex-1 text-xs h-8"
                     />
                     <Input
                       type="text"
                       placeholder="Dịch (VD: Harry)"
                       value={newTermVal}
                       onChange={(e) => setNewTermVal(e.target.value)}
-                      className="flex-1 text-xs"
+                      className="flex-1 text-xs h-8"
                     />
                     <Button
                       type="button"
-                      size="icon-sm"
+                      size="sm"
                       onClick={handleAddGlossaryTerm}
+                      className="h-8 px-2.5 shrink-0 text-xs gap-1"
                       title="Thêm thuật ngữ"
                     >
-                      <Plus />
+                      <Plus className="size-3.5" />
+                      <span>Thêm</span>
                     </Button>
                   </div>
                 </CardContent>
@@ -1043,10 +1169,79 @@ export function BookTranslatorView() {
           </Card>
           </div>
 
-          {/* Section 6: Scope & Chapter Selector */}
+          {/* Section 6: LinguaGacha Engine Optimizations */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <Zap className="size-3 text-amber-500" />
+                <span>6. Cơ chế dịch LinguaGacha</span>
+              </span>
+              <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 border-primary/40 text-primary">
+                Smart Engine
+              </Badge>
+            </div>
+
+            <Card size="sm" className="shrink-0 bg-secondary/20 p-2.5 flex flex-col gap-2">
+              <div className="flex flex-col gap-1.5">
+                <Label
+                  htmlFor="toggle-sliding-context"
+                  className="flex items-center gap-2 cursor-pointer text-xs font-normal"
+                >
+                  <Checkbox
+                    id="toggle-sliding-context"
+                    checked={translationConfig.enableSlidingContext !== false}
+                    onCheckedChange={(checked) =>
+                      setTranslationConfig({ enableSlidingContext: Boolean(checked) })
+                    }
+                  />
+                  <span>Ngữ cảnh trượt (Sliding Context - giữ chuẩn ngôi xưng)</span>
+                </Label>
+
+                <Label
+                  htmlFor="toggle-adaptive-downsizing"
+                  className="flex items-center gap-2 cursor-pointer text-xs font-normal"
+                >
+                  <Checkbox
+                    id="toggle-adaptive-downsizing"
+                    checked={translationConfig.enableAdaptiveDownsizing !== false}
+                    onCheckedChange={(checked) =>
+                      setTranslationConfig({ enableAdaptiveDownsizing: Boolean(checked) })
+                    }
+                  />
+                  <span>Tự động phân rã mẻ (Adaptive Downsizing khi lỗi)</span>
+                </Label>
+              </div>
+
+              <div className="flex items-center justify-between pt-1 border-t border-border/50">
+                <span className="text-[11px] text-muted-foreground">Số luồng dịch song song:</span>
+                <ToggleGroup
+                  type="single"
+                  value={String(translationConfig.concurrency || 1)}
+                  onValueChange={(val) => {
+                    if (val === "1" || val === "2" || val === "3") {
+                      setTranslationConfig({ concurrency: Number(val) as 1 | 2 | 3 });
+                    }
+                  }}
+                  className="border border-border rounded p-0.5 bg-background"
+                >
+                  <ToggleGroupItem value="1" size="sm" className="h-5 px-1.5 text-[10px] data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                    1x (Tuần tự)
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="2" size="sm" className="h-5 px-1.5 text-[10px] data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                    2x (Nhanh)
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="3" size="sm" className="h-5 px-1.5 text-[10px] data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                    3x (Tối đa)
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+            </Card>
+          </div>
+
+          {/* Section 7: Scope & Chapter Selector */}
           <div className="flex flex-col gap-2">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              6. Phạm vi dịch
+              7. Phạm vi dịch
             </span>
             <ToggleGroup
               type="single"
@@ -1085,14 +1280,26 @@ export function BookTranslatorView() {
               <div className="flex flex-col gap-1 mt-1">
                 <Label htmlFor="translator-chapter" className="text-[10px] text-muted-foreground font-medium">Chọn chương cần dịch:</Label>
                 <Select
-                  value={String(activeChapterIndex)}
-                  onValueChange={(value) => setActiveChapterIndex(Number(value))}
+                  value={isViewingCover ? "cover" : String(activeChapterIndex)}
+                  onValueChange={(value) => {
+                    if (value === "cover") {
+                      setIsViewingCover(true);
+                    } else {
+                      setIsViewingCover(false);
+                      setActiveChapterIndex(Number(value));
+                    }
+                  }}
                 >
                   <SelectTrigger id="translator-chapter" className="w-full text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
+                      {currentBook.cover_data_url && (
+                        <SelectItem key="book-cover-item" value="cover" className="font-medium text-primary">
+                          🖼️ Trang Bìa Tác Phẩm (Cover)
+                        </SelectItem>
+                      )}
                       {currentBook.chapters.map((ch, idx) => {
                         const isDone = Boolean(modifiedChapters[ch.href]);
                         return (
@@ -1189,7 +1396,6 @@ export function BookTranslatorView() {
                   onClick={() => {
                     if (activeChapter) {
                       resetChapterTranslation(activeChapter.href);
-                      toast.info(`Đã khôi phục chương "${activeChapter.title}" về bản gốc`);
                     }
                   }}
                   className="text-muted-foreground hover:text-red-400"
@@ -1265,11 +1471,34 @@ export function BookTranslatorView() {
               </div>
             ) : (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                {activeChapter && (
+                {isTranslating && (
+                  <Badge variant="outline" className="border-emerald-500/50 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] gap-1.5 px-2 h-5 font-medium animate-pulse">
+                    <span className="size-1.5 rounded-full bg-emerald-500" />
+                    <span>Real-time Stream</span>
+                  </Badge>
+                )}
+                {currentBook?.cover_data_url && (
+                  <Button
+                    type="button"
+                    variant={isViewingCover ? "default" : "outline"}
+                    size="xs"
+                    onClick={() => setIsViewingCover((v) => !v)}
+                    className="h-6 text-[10px] gap-1 shadow-2xs cursor-pointer"
+                    title={isViewingCover ? "Quay lại xem chương đang dịch" : "Xem trang bìa tác phẩm"}
+                  >
+                    <ImageIcon className="size-3" />
+                    <span>{isViewingCover ? "Xem Chương" : "Xem Bìa"}</span>
+                  </Button>
+                )}
+                {isViewingCover ? (
+                  <span className="flex items-center gap-1.5 text-primary font-medium">
+                    <span>Trang Bìa Tác Phẩm (Cover)</span>
+                  </span>
+                ) : activeChapter ? (
                   <span>
                     Chương {activeChapterIndex + 1}: <strong className="text-foreground">{activeChapter.title}</strong>
                   </span>
-                )}
+                ) : null}
               </div>
             )}
           </div>
@@ -1277,20 +1506,25 @@ export function BookTranslatorView() {
           {/* Content Area */}
           <TabsContent value="preview" className="flex-1 overflow-hidden relative">
             <div className="w-full h-full p-4 overflow-hidden flex flex-col items-center justify-center">
-              <div className="max-w-3xl w-full h-full bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col">
-                {isLoadingPreview ? (
-                  <div className="flex-1 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                    <Spinner className="size-3.5" />
-                    <span>Đang đọc nội dung chương...</span>
+              <div className="max-w-3xl w-full h-full bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col relative">
+                {isLoadingPreview && (
+                  <div className="absolute inset-0 bg-background/60 backdrop-blur-xs flex items-center justify-center z-10 animate-in fade-in duration-150">
+                    <Badge variant="outline" className="text-xs border-primary/40 text-primary gap-1.5 bg-card/90 shadow-sm py-1.5 px-3">
+                      <Loader2 className="size-3.5 animate-spin" />
+                      <span>Đang tải nội dung chương...</span>
+                    </Badge>
                   </div>
-                ) : previewHtml ? (
+                )}
+                {previewHtml ? (
                   <iframe
                     ref={iframeRef}
                     title="Chapter Translation Preview"
-                    className="w-full h-full border-none select-text bg-white dark:bg-background"
+                    srcDoc={fullDoc}
+                    onLoad={handleIframeLoad}
+                    className="w-full h-full border-none select-text bg-white"
                     sandbox="allow-same-origin"
                   />
-                ) : (
+                ) : !isLoadingPreview && (
                   <Empty className="border-0">
                     <EmptyMedia variant="icon">
                       <FileText />

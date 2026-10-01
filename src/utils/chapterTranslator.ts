@@ -21,6 +21,7 @@ export interface TranslatableBlock {
   innerEndIndex: number;
   originalInnerHtml: string;
   originalText: string;
+  tagsMap?: Record<string, string>;
 }
 
 export interface ChunkOptions {
@@ -36,6 +37,162 @@ export interface TranslationApplyOptions {
 }
 
 export class ChapterTranslator {
+  /**
+   * Cleans Ruby furigana tags (<rt>, <rp>) for East Asian text (Japanese/Chinese),
+   * keeping only the base text so LLM translates clean text without duplicate reading pronunciations.
+   * (e.g. <ruby>漢字<rt>かんじ</rt></ruby> => 漢字)
+   */
+  public static cleanRubyText(html: string): string {
+    if (!html || !html.includes("<ruby")) return html;
+    return html.replace(/<ruby\b[^>]*>([\s\S]*?)<\/ruby>/gi, (_, inner) => {
+      return inner
+        .replace(/<rt\b[^>]*>[\s\S]*?<\/rt>/gi, "")
+        .replace(/<rp\b[^>]*>[\s\S]*?<\/rp>/gi, "")
+        .trim();
+    });
+  }
+
+  /**
+   * Masks inline markup using secure tokens:
+   * - Pure symbols/footnotes (<a href="#fn1">[1]</a>, <img/>, empty anchors) are masked as standalone ⟦TAG_N⟧
+   * - Text-bearing links and spans (<a href="...">Chapter 2</a>, <span class="...">Title</span>)
+   *   are wrapped in paired tokens (⟦TAG_N⟧...⟦/TAG_N⟧) so the LLM translates the inner text!
+   */
+  public static maskInlineMarkup(html: string): { maskedHtml: string; tagsMap: Map<string, string> } {
+    const tagsMap = new Map<string, string>();
+    if (!html) return { maskedHtml: "", tagsMap };
+
+    // 1. Clean ruby furigana first
+    const cleaned = this.cleanRubyText(html);
+    let counter = 0;
+
+    // Matches inline markup strictly in document order:
+    // Pattern 1: Footnotes <span class="footnote">...</span> or <sup>...</sup>
+    // Pattern 2: Container tags <a ...>...</a>, <span ...>...</span>, <abbr>...</abbr>, <cite>...</cite>
+    // Pattern 3: Standalone tags <img ...>, self-closing <a .../>, <code>...</code>
+    const inlineTagRegex = /<(?:span|sup)\b[^>]*class=["'][^"']*(?:footnote|noteref)[^"']*["'][^>]*>[\s\S]*?<\/(?:span|sup)>|<sup\b[^>]*>[\s\S]*?<\/sup>|<(?:a|span|abbr|cite|dfn)\b[^>]*>[\s\S]*?<\/(?:a|span|abbr|cite|dfn)>|<img\b[^>]*\/?>|<a\b[^>]*\/?>|<code\b[^>]*>[\s\S]*?<\/code>/gi;
+
+    const maskedHtml = cleaned.replace(inlineTagRegex, (fullMatch) => {
+      // 1. Footnote container
+      if (/<(?:span|sup)\b[^>]*class=["'][^"']*(?:footnote|noteref)/i.test(fullMatch) || fullMatch.toLowerCase().startsWith("<sup")) {
+        const placeholder = `⟦TAG_${counter++}⟧`;
+        tagsMap.set(placeholder, fullMatch);
+        return placeholder;
+      }
+
+      // 2. Standalone tags: <img>, self-closing <a />, <code>...</code>
+      if (/^<img\b|^<code\b|^<a\b[^>]*\/>/i.test(fullMatch)) {
+        const placeholder = `⟦TAG_${counter++}⟧`;
+        tagsMap.set(placeholder, fullMatch);
+        return placeholder;
+      }
+
+      // 3. Paired tags: <a ...>...</a>, <span ...>...</span>, etc.
+      const match = /^<([a-z0-9]+)\b([^>]*)>([\s\S]*?)<\/\1>$/i.exec(fullMatch);
+      if (match) {
+        const tagName = match[1].toLowerCase();
+        const attrs = match[2];
+        const innerText = match[3];
+
+        // Do not mask dropcap span so initial letter stays in translatable sentence
+        if (tagName === "span" && /class=["'][^"']*(?:dropcap|first-letter|lettrine)[^"']*["']/i.test(attrs)) {
+          return fullMatch;
+        }
+
+        const trimmed = innerText.trim();
+        const isPureSymbol =
+          trimmed.length === 0 ||
+          (trimmed.length <= 8 &&
+            (/^\[?\d+[a-z]?\]?$/i.test(trimmed) ||
+             /^\[?[a-z]?\d+\]?$/i.test(trimmed) ||
+             /^[*\-–—†‡#•↩\s]+$/.test(trimmed) ||
+             /^\[[a-z]{1,4}\]$/i.test(trimmed) ||
+             /^<img\b/i.test(trimmed)));
+
+        if (isPureSymbol) {
+          const placeholder = `⟦TAG_${counter++}⟧`;
+          tagsMap.set(placeholder, fullMatch);
+          return placeholder;
+        } else {
+          // Text-bearing container: MUST translate inner text!
+          const openToken = `⟦TAG_${counter}⟧`;
+          const closeToken = `⟦/TAG_${counter}⟧`;
+          counter++;
+
+          tagsMap.set(openToken, `<${tagName}${attrs}>`);
+          tagsMap.set(closeToken, `</${tagName}>`);
+
+          return `${openToken}${innerText}${closeToken}`;
+        }
+      }
+
+      return fullMatch;
+    });
+
+    return { maskedHtml, tagsMap };
+  }
+
+  /**
+   * Unmasks tokens back into byte-identical original markup with full fail-safe recovery:
+   * - Restores tokens in-place to preserve exact position within sentence
+   * - Deduplicates if the model accidentally hallucinated duplicate tokens
+   * - Re-appends missing tags to the end if model omitted the placeholder token
+   */
+  public static unmaskInlineMarkup(
+    text: string,
+    tagsMap: Map<string, string> | Record<string, string>
+  ): { restoredText: string; missingPlaceholders: string[] } {
+    const map = tagsMap instanceof Map ? tagsMap : new Map(Object.entries(tagsMap || {}));
+    if (!text || map.size === 0) {
+      return { restoredText: text, missingPlaceholders: [] };
+    }
+
+    let restored = text;
+    const missingPlaceholders: string[] = [];
+
+    for (const [placeholder, originalMarkup] of map.entries()) {
+      if (restored.includes(placeholder)) {
+        // Replace first occurrence with actual markup
+        const firstIndex = restored.indexOf(placeholder);
+        restored =
+          restored.slice(0, firstIndex) +
+          originalMarkup +
+          restored.slice(firstIndex + placeholder.length);
+
+        // Strip duplicate occurrences of the same placeholder if model hallucinated
+        while (restored.includes(placeholder)) {
+          restored = restored.replace(placeholder, "");
+        }
+      } else {
+        // Only mark missing if it is a standalone tag or an opening tag (not closing tag ⟦/TAG_N⟧)
+        if (!placeholder.startsWith("⟦/")) {
+          missingPlaceholders.push(placeholder);
+        }
+      }
+    }
+
+    // Fail-safe: If model lost any placeholder, append original markup
+    if (missingPlaceholders.length > 0) {
+      for (const missing of missingPlaceholders) {
+        const orig = map.get(missing);
+        const closeToken = missing.replace(/^⟦/, "⟦/");
+        const closeMarkup = map.get(closeToken);
+
+        if (orig && !restored.includes(orig)) {
+          if (closeMarkup) {
+            // Re-wrap or append paired tag
+            restored += `${orig}${closeMarkup}`;
+          } else {
+            // Standalone tag
+            restored += orig;
+          }
+        }
+      }
+    }
+
+    return { restoredText: restored, missingPlaceholders };
+  }
+
   /**
    * Helper to strip HTML tags and decode common entities to plain text
    */
@@ -76,10 +233,19 @@ export class ChapterTranslator {
       const innerHtml = match[3];
 
       // Extract plain text to evaluate if the block has actual translatable content
-      const plainText = this.stripHtmlToPlainText(innerHtml);
+      // Apply LinguaGacha-style inline markup masking & ruby cleaning
+      const { maskedHtml, tagsMap } = this.maskInlineMarkup(innerHtml);
+      const plainText = this.stripHtmlToPlainText(maskedHtml);
 
       // Skip blocks with no translatable text (e.g. empty spacers, raw image containers)
       if (!plainText || plainText.length === 0) {
+        continue;
+      }
+
+      // If a container block (like <blockquote>, <li>, <dd>, <td>) contains nested block elements (<p>, <h1>..<h6>, <li>),
+      // skip the outer container so that child blocks are individually translated without losing their child structure!
+      if ((tag === "blockquote" || tag === "li" || tag === "dt" || tag === "dd" || tag === "td" || tag === "th") &&
+          /<(?:p|h[1-6]|blockquote|li|table|ul|ol)\b/i.test(innerHtml)) {
         continue;
       }
 
@@ -103,6 +269,7 @@ export class ChapterTranslator {
         innerEndIndex: innerEnd,
         originalInnerHtml: innerHtml,
         originalText: plainText,
+        tagsMap: tagsMap.size > 0 ? Object.fromEntries(tagsMap) : undefined,
       });
     }
 
@@ -133,7 +300,8 @@ export class ChapterTranslator {
         continue;
       }
 
-      const plainText = this.stripHtmlToPlainText(innerHtml);
+      const { maskedHtml, tagsMap } = this.maskInlineMarkup(innerHtml);
+      const plainText = this.stripHtmlToPlainText(maskedHtml);
       if (!plainText || plainText.length === 0) {
         continue;
       }
@@ -154,6 +322,7 @@ export class ChapterTranslator {
         innerEndIndex: innerEnd,
         originalInnerHtml: innerHtml,
         originalText: plainText,
+        tagsMap: tagsMap.size > 0 ? Object.fromEntries(tagsMap) : undefined,
       });
     }
 
@@ -294,27 +463,78 @@ export class ChapterTranslator {
       }
 
       // Apply glossary terms if defined
-      const translatedText = this.applyGlossary(rawTranslation.trim(), glossary);
+      let translatedText = this.applyGlossary(rawTranslation.trim(), glossary);
 
-      // Heuristic: If original inner HTML contained footnotes/anchors and the model omitted them,
-      // re-append the missing footnote elements to the end of translatedText so critical links are never lost.
-      const footnoteRegex = /<(?:span|sup)\b[^>]*class=["'][^"']*footnote[^"']*["'][^>]*>[\s\S]*?<\/(?:span|sup)>|<a\b[^>]*href=["']#[^"']*["'][^>]*>[\s\S]*?<\/a>/gi;
+      // Unmask LinguaGacha-style inline tags back to byte-identical original XHTML markup
+      if (block.tagsMap && Object.keys(block.tagsMap).length > 0) {
+        const { restoredText } = this.unmaskInlineMarkup(translatedText, block.tagsMap);
+        translatedText = restoredText;
+      }
+
+      // Heuristic fail-safe: If original inner HTML contained links or footnotes and the model omitted them,
+      // re-append the missing link/footnote elements to the end of translatedText so critical links are never lost.
+      const linkRegex = /<(?:span|sup)\b[^>]*class=["'][^"']*(?:footnote|noteref)[^"']*["'][^>]*>[\s\S]*?<\/(?:span|sup)>|<a\b[^>]*>[\s\S]*?<\/a>/gi;
       let fnMatch: RegExpExecArray | null;
-      const missingFootnotes: string[] = [];
-      while ((fnMatch = footnoteRegex.exec(block.originalInnerHtml)) !== null) {
+      const missingLinks: string[] = [];
+      while ((fnMatch = linkRegex.exec(block.originalInnerHtml)) !== null) {
         const fnHtml = fnMatch[0];
-        if (!translatedText.includes(fnHtml)) {
-          missingFootnotes.push(fnHtml);
+        // Check if the link destination (href or id) is already preserved in translatedText,
+        // even if its inner text was translated into the target language!
+        const hrefMatch = /href=["']([^"']*)["']/i.exec(fnHtml);
+        const idMatch = /id=["']([^"']*)["']/i.exec(fnHtml);
+
+        let isAlreadyPresent = false;
+        if (hrefMatch && hrefMatch[1]) {
+          isAlreadyPresent = translatedText.includes(`href="${hrefMatch[1]}"`) || translatedText.includes(`href='${hrefMatch[1]}'`);
+        } else if (idMatch && idMatch[1]) {
+          isAlreadyPresent = translatedText.includes(`id="${idMatch[1]}"`) || translatedText.includes(`id='${idMatch[1]}'`);
+        } else {
+          isAlreadyPresent = translatedText.includes(fnHtml);
+        }
+
+        if (!isAlreadyPresent) {
+          missingLinks.push(fnHtml);
         }
       }
-      const finalTranslatedText = missingFootnotes.length > 0
-        ? `${translatedText}${missingFootnotes.join("")}`
+      const finalTranslatedText = missingLinks.length > 0
+        ? `${translatedText}${missingLinks.join("")}`
         : translatedText;
 
-      // Preserve <br /> line breaks if original had <br> and translatedText has \n
+      // Preserve <br /> line breaks if original had <br>
       let formattedTranslatedText = finalTranslatedText;
-      if (/<br\b[^>]*\/?>/i.test(block.originalInnerHtml) && formattedTranslatedText.includes("\n")) {
-        formattedTranslatedText = formattedTranslatedText.replace(/\n+/g, "<br />");
+      if (/<br\b[^>]*\/?>/i.test(block.originalInnerHtml)) {
+        if (formattedTranslatedText.includes("\n")) {
+          formattedTranslatedText = formattedTranslatedText.replace(/\n+/g, "<br />");
+        } else if (!formattedTranslatedText.includes("<br")) {
+          const headingSplitMatch = /^(Chương\s+[^\s:–—]+|Chapter\s+[^\s:–—]+|Hồi\s+[^\s:–—]+|Phần\s+[^\s:–—]+|Tiết\s+[^\s:–—]+|第[^\s:–—]+章)\s*[:：–—]\s*(.*)$/i.exec(formattedTranslatedText);
+          if (headingSplitMatch) {
+            formattedTranslatedText = `${headingSplitMatch[1]}<br />${headingSplitMatch[2]}`;
+          }
+        }
+      }
+
+      // Preserve Drop Cap / Initial Letter formatting from original block
+      const dropCapRegex = /^(\s*<span\b[^>]*class=["'][^"']*(?:dropcap|first-letter|lettrine|initial|cap)[^"']*["'][^>]*>)([\s\S]*?)(<\/span>\s*)/i;
+      const dropCapMatch = dropCapRegex.exec(block.originalInnerHtml);
+      if (dropCapMatch && formattedTranslatedText && !dropCapMatch[1].includes("footnote")) {
+        const openTag = dropCapMatch[1];
+        const closeTag = dropCapMatch[3];
+        if (!formattedTranslatedText.includes(openTag)) {
+          const firstChar = formattedTranslatedText.charAt(0);
+          const rest = formattedTranslatedText.slice(1);
+          formattedTranslatedText = `${openTag}${firstChar}${closeTag}${rest}`;
+        }
+      }
+
+      // Preserve whole-block inline styling wrappers (e.g. <em>...</em>, <strong>...</strong>, <i>...</i>, <b>...</b>)
+      const blockWrapperRegex = /^\s*<((?:em|strong|i|b|cite|u))\b([^>]*)>([\s\S]*?)<\/\1>\s*$/i;
+      const wrapperMatch = blockWrapperRegex.exec(block.originalInnerHtml);
+      if (wrapperMatch && formattedTranslatedText) {
+        const wrapTag = wrapperMatch[1];
+        const wrapAttrs = wrapperMatch[2];
+        if (!formattedTranslatedText.startsWith(`<${wrapTag}`) && !formattedTranslatedText.endsWith(`</${wrapTag}>`)) {
+          formattedTranslatedText = `<${wrapTag}${wrapAttrs}>${formattedTranslatedText}</${wrapTag}>`;
+        }
       }
 
       if (mode === "replace") {

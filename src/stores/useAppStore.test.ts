@@ -1416,6 +1416,52 @@ describe("useAppStore - Book Loading & Drag-and-Drop", () => {
         });
       }
     });
+
+    it("only runs once and reuses persisted autoConfigResult unless force flag is passed", async () => {
+      let runCount = 0;
+      const originalExtract = useAppStore.getState().extractBookEntities;
+
+      useAppStore.setState({
+        currentBook: {
+          title: "Run Once Book",
+          author: "Author",
+          language: "zh",
+          description: "Desc",
+          cover_data_url: null,
+          chapter_count: 1,
+          file_size_bytes: 100,
+          chapters: [],
+          sample_text: "修仙门派测试文本",
+        },
+        autoConfigResult: null, // Initial state: not configured yet
+        extractBookEntities: async () => {
+          runCount++;
+          return [{ id: "e1", name: "宗门", count: 1, category: "term", suggestedTranslation: "Tông môn", isExistingInGlossary: false }];
+        },
+      });
+
+      try {
+        // Run 1: First time execution
+        const res1 = await useAppStore.getState().autoConfigureAllTranslationSettings();
+        expect(res1).toBeDefined();
+        expect(runCount).toBe(1);
+        expect(useAppStore.getState().autoConfigResult).toBe(res1);
+
+        // Run 2: Subsequent call without force -> MUST return saved config without re-running extraction!
+        const res2 = await useAppStore.getState().autoConfigureAllTranslationSettings();
+        expect(res2).toBe(res1);
+        expect(runCount).toBe(1); // runCount remains 1! Did not re-run!
+
+        // Run 3: User explicitly clicks "Tự động cấu hình lại" (force = true) -> MUST re-run
+        const res3 = await useAppStore.getState().autoConfigureAllTranslationSettings({ force: true });
+        expect(res3).toBeDefined();
+        expect(runCount).toBe(2); // runCount incremented to 2
+      } finally {
+        useAppStore.setState({
+          extractBookEntities: originalExtract,
+        });
+      }
+    });
   });
 });
 

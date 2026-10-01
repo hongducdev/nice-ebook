@@ -9,10 +9,40 @@ export interface BuildTranslationPromptOptions {
   targetLangName: string;
   tone: TranslationTone;
   blocks: Array<{ id: string; text: string }>;
+  previousContextBlocks?: Array<{ id?: string; text: string }>;
   glossary?: Record<string, string>;
   bookTitle?: string;
   chapterTitle?: string;
   researchBrief?: string;
+}
+
+/**
+ * Dynamic Glossary Filter (LinguaGacha style):
+ * Scans text and only retains glossary terms that actually appear in the current batch.
+ * Saves input tokens, keeps model attention sharp, and eliminates hallucination.
+ */
+export function filterGlossaryForBatch(
+  textToScan: string,
+  fullGlossary?: Record<string, string>
+): Record<string, string> {
+  if (!fullGlossary || Object.keys(fullGlossary).length === 0) return {};
+  if (!textToScan || textToScan.trim().length === 0) return {};
+
+  const matched: Record<string, string> = {};
+  const lowerText = textToScan.toLowerCase();
+
+  for (const [sourceTerm, targetTerm] of Object.entries(fullGlossary)) {
+    if (!sourceTerm || !targetTerm) continue;
+    const trimmedSource = sourceTerm.trim();
+    if (!trimmedSource) continue;
+
+    // Fast check: exact substring or case-insensitive match
+    if (textToScan.includes(trimmedSource) || lowerText.includes(trimmedSource.toLowerCase())) {
+      matched[trimmedSource] = targetTerm.trim();
+    }
+  }
+
+  return matched;
 }
 
 export const TONE_DESCRIPTIONS: Record<TranslationTone, { name: string; description: string; instructions: string }> = {
@@ -54,11 +84,32 @@ QUY TẮC CỐT LÕI BẮT BUỘC:
 4. Giữ NGUYÊN VẸN các mã ID ("id"), KHÔNG ĐƯỢC gộp, tách, xóa bỏ hay tự ý sinh thêm bất kỳ đoạn nào. Mỗi đoạn văn có mã 'id' riêng phải có một bản dịch tương ứng. Số lượng phần tử trả về phải khớp đúng số lượng phần tử đầu vào.
 5. Giữ nguyên các ký tự đặc biệt, dấu ngoặc kép, dấu chấm lửng (...), dấu gạch ngang thoại nếu có trong văn bản gốc. Nếu đoạn văn có dấu xuống dòng thơ ca, hãy giữ nguyên vị trí xuống dòng.
 6. DỊCH SẠCH HOÀN TOÀN: Tuyệt đối KHÔNG tự ý thêm lời dẫn (preamble), không thêm chú thích người dịch (translator's note), không thêm lời cảm ơn, không chèn watermark quảng cáo.
-7. CHỈ TRẢ VỀ DUY NHẤT MÃ RAW JSON dạng mảng [...]. Tuyệt đối KHÔNG bọc trong \`\`\`json hoặc thêm bất kỳ lời chào/lời dẫn nào.`;
+7. CHỈ TRẢ VỀ DUY NHẤT MÃ RAW JSON dạng mảng [...]. Tuyệt đối KHÔNG bọc trong \`\`\`json hoặc thêm bất kỳ lời chào/lời dẫn nào.
+8. NGUYÊN TẮC NGỮ CẢNH TRƯỢT (<previous_context>): Nếu có thẻ <previous_context>, đó chỉ là các đoạn văn liền trước để bạn tham khảo xưng hô và mạch truyện. Tuyệt đối KHÔNG dịch lại và KHÔNG đưa bất kỳ đoạn nào trong thẻ đó vào kết quả JSON.
+9. NGUYÊN TẮC XỬ LÝ ĐA NGÔN NGỮ XEN LẪN (HYBRID / CODE-SWITCHING):
+- Nếu văn bản nguồn (ví dụ tiếng Trung hoặc tiếng Nhật) có xuất hiện các câu thoại, đoạn văn, câu cảm thán hoặc thuật ngữ TIẾNG ANH (hoặc ngôn ngữ phụ khác):
+- BẠN PHẢI LINH HOẠT DỊCH CẢ CÂU/CỤM TỪ TIẾNG ANH ĐÓ SANG ${targetLang.toUpperCase()} để bản dịch liền mạch và độc giả hiểu trọn vẹn ngữ cảnh (Ví dụ: "I love you" ➔ "Anh yêu em" / "Tôi yêu cậu", "Game Over" ➔ "Trò chơi kết thúc", "Target eliminated" ➔ "Mục tiêu đã bị tiêu diệt").
+- CHỈ GIỮ NGUYÊN: các từ viết tắt phổ thông chuẩn quốc tế (CEO, VIP, FBI, DNA, AI, CPU...), tên thương hiệu quốc tế (Apple, Google...), tên riêng người phương Tây hoặc mã placeholder giữ chỗ.
+- Tuyệt đối KHÔNG bỏ sót câu thoại tiếng Anh chưa dịch trong bản dịch.
+10. NGUYÊN TẮC DỊCH VĂN BẢN TRONG ĐƯỜNG LINK & CẶP THẺ (⟦TAG_N⟧...⟦/TAG_N⟧):
+- Nếu văn bản có chứa các cặp thẻ giữ chỗ dạng ⟦TAG_N⟧văn bản⟦/TAG_N⟧ (đại diện cho đường link hoặc thẻ trang trí đặc biệt):
+- BẠN BẮT BUỘC PHẢI DỊCH NỘI DUNG VĂN BẢN NẰM BÊN TRONG CẶP THẺ ĐÓ SANG ${targetLang.toUpperCase()}.
+- Giữ nguyên cặp mã mở ⟦TAG_N⟧ và mã đóng ⟦/TAG_N⟧ bao bọc xung quanh văn bản vừa dịch (Ví dụ: "Read ⟦TAG_0⟧Chapter Two: The Vanishing Glass⟦/TAG_0⟧" ➔ "Đọc ⟦TAG_0⟧Chương 2: Chiếc gương biến mất⟦/TAG_0⟧" hoặc "⟦TAG_1⟧第一章 降临⟦/TAG_1⟧" ➔ "⟦TAG_1⟧Chương 1: Giáng lâm⟦/TAG_1⟧").
+- Tuyệt đối KHÔNG bỏ sót văn bản bên trong các thẻ link hay thẻ trang trí.`;
 }
 
 export function buildUserPrompt(options: BuildTranslationPromptOptions): string {
-  const { sourceLangName, targetLangName, tone, blocks, glossary, bookTitle, chapterTitle, researchBrief } = options;
+  const {
+    sourceLangName,
+    targetLangName,
+    tone,
+    blocks,
+    previousContextBlocks,
+    glossary,
+    bookTitle,
+    chapterTitle,
+    researchBrief,
+  } = options;
   const toneInfo = TONE_DESCRIPTIONS[tone] || TONE_DESCRIPTIONS.literary;
 
   let prompt = `Hãy dịch ${blocks.length} đoạn văn bản sau từ ${sourceLangName} sang ${targetLangName} theo văn phong ${toneInfo.name}.\n`;
@@ -70,10 +121,35 @@ export function buildUserPrompt(options: BuildTranslationPromptOptions): string 
     prompt += `\n`;
   }
 
+  // 1. Sliding Context Window (LinguaGacha style: bounded to last 3-4 blocks, max 600 chars)
+  if (previousContextBlocks && previousContextBlocks.length > 0) {
+    const validContext = previousContextBlocks
+      .map((b) => b.text.trim())
+      .filter((t) => t.length > 0)
+      .slice(-4);
+
+    if (validContext.length > 0) {
+      prompt += `\n[NGỮ CẢNH LIỀN TRƯỚC - THAM KHẢO XƯNG HÔ & MẠCH TRUYỆN, KHÔNG DỊCH LẠI]:\n<previous_context>\n`;
+      let currentLen = 0;
+      for (const line of validContext) {
+        if (currentLen + line.length > 600) break;
+        prompt += `${line}\n`;
+        currentLen += line.length;
+      }
+      prompt += `</previous_context>\n`;
+    }
+  }
+
+  // 2. Dynamic Glossary Filtering (LinguaGacha style: scan current batch + context)
   if (glossary && Object.keys(glossary).length > 0) {
-    prompt += `\n[BẢNG THUẬT NGỮ & TÊN NHÂN VẬT BẮT BUỘC SỬ DỤNG]:\n`;
-    for (const [k, v] of Object.entries(glossary)) {
-      if (k && v) {
+    const batchCombinedText = blocks.map((b) => b.text).join(" ");
+    const contextCombinedText = (previousContextBlocks || []).map((b) => b.text).join(" ");
+    const textToMatch = `${batchCombinedText} ${contextCombinedText}`;
+    const dynamicGlossary = filterGlossaryForBatch(textToMatch, glossary);
+
+    if (Object.keys(dynamicGlossary).length > 0) {
+      prompt += `\n[BẢNG THUẬT NGỮ & TÊN NHÂN VẬT ÁP DỤNG CHO ĐOẠN NÀY]:\n`;
+      for (const [k, v] of Object.entries(dynamicGlossary)) {
         prompt += `- "${k}" => "${v}"\n`;
       }
     }
@@ -82,6 +158,9 @@ export function buildUserPrompt(options: BuildTranslationPromptOptions): string 
   if (researchBrief && researchBrief.trim().length > 0) {
     prompt += `\n[TÀI LIỆU THAM KHẢO NGỮ CẢNH TÁC PHẨM & QUY TẮC XƯNG HÔ]:\n<<<CONTEXT_BRIEF_START>>>\n${researchBrief.trim()}\n<<<CONTEXT_BRIEF_END>>>\n*Lưu ý: Chỉ áp dụng thông tin trên để thống nhất xưng hô và thuật ngữ, không dịch đoạn tài liệu này.*\n`;
   }
+
+  // Multilingual & paired tag translation guidance
+  prompt += `\n*Lưu ý quan trọng: Nếu trong văn bản có câu thoại/thuật ngữ tiếng Anh xen lẫn, hãy dịch linh hoạt sang ${targetLangName}. Nếu có các cặp thẻ dạng ⟦TAG_N⟧văn bản⟦/TAG_N⟧ (đường link, trích dẫn), BẮT BUỘC dịch phần văn bản bên trong sang ${targetLangName} và giữ nguyên cặp thẻ bao quanh, không bỏ sót.*\n`;
 
   prompt += `\n[DANH SÁCH ĐOẠN VĂN CẦN DỊCH]:\n`;
   prompt += JSON.stringify(

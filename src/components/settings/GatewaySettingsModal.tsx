@@ -358,9 +358,9 @@ export function GatewaySettingsModal({
             <Label htmlFor="provider-model" className="text-xs font-medium text-foreground">
               Mô hình chính (Model):
             </Label>
-            <div className="flex items-center gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <Select value={model} onValueChange={(val) => setModel(val)}>
-                <SelectTrigger className="w-full text-xs font-mono">
+                <SelectTrigger id="provider-model" className="w-full min-w-0 text-xs font-mono truncate">
                   <SelectValue placeholder="Chọn hoặc nhập tên mô hình" />
                 </SelectTrigger>
                 <SelectContent className="max-h-56">
@@ -376,7 +376,7 @@ export function GatewaySettingsModal({
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 placeholder="Hoặc gõ tên model tùy chỉnh"
-                className="w-1/2 text-xs font-mono"
+                className="w-full min-w-0 text-xs font-mono"
                 title="Gõ tên mô hình tùy chỉnh nếu không có trong danh sách trên"
               />
             </div>
