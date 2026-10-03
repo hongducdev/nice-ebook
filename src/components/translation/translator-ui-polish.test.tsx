@@ -97,6 +97,42 @@ describe("UI Polish & Parity Checks", () => {
     expect(html).toContain("Danh mục thuật ngữ");
   });
 
+  it("dùng bố cục ba vùng của phương án A: cột cấu hình 22rem nằm BÊN PHẢI vùng chính", () => {
+    mockStoreState.currentBook = {
+      title: "Test Book",
+      author: "Author",
+      language: "en",
+      description: null,
+      cover_data_url: null,
+      chapter_count: 2,
+      file_size_bytes: 1024,
+      chapters: [
+        { id: "c1", href: "c1.xhtml", title: "Chapter 1", preview_text: "Hello world" },
+        { id: "c2", href: "c2.xhtml", title: "Chapter 2", preview_text: "Hello again" },
+      ],
+      sample_text: "Hello world sample",
+    };
+
+    const html = renderToStaticMarkup(<BookTranslatorView />);
+
+    // Vùng chính + panel đảo chiều bằng flex-row-reverse (không di chuyển khối JSX nào)
+    expect(html).toContain("flex-row-reverse");
+    // Cột cấu hình đổi sang 22rem, viền chuyển sang cạnh trái
+    expect(html).toContain("w-[22rem]");
+    expect(html).toContain("border-l border-border");
+    // Không còn cột trái 360px của bố cục cũ
+    expect(html).not.toContain("w-[360px]");
+
+    // Bảng chương là bề mặt chính của vùng giữa (phương án A)
+    expect(html).toContain("Danh sách chương");
+    expect(html).toContain("table-fixed");
+    expect(html).toContain("w-[104px]");
+    expect(html).toContain("Chưa dịch");
+    // Hàng đang chọn và hàng thường phải khác nhau (N2): chương đang mở ≠ chương khác
+    expect(html).toContain("bg-[var(--ui-table-selected)]");
+    expect(html).toContain("hover:bg-[var(--ui-table-hover)]");
+  });
+
   it("categorizes models properly for Google Gemini API configured provider", () => {
     const geminiGateway: any = {
       name: "Google Gemini API",

@@ -344,7 +344,7 @@ export function AiCoverTab({
             <button
               type="button"
               onClick={() => setShowConfigPanel((prev) => !prev)}
-              className="text-[11px] text-[var(--muted-foreground)] hover:text-[var(--foreground)] flex items-center gap-1 transition-colors"
+              className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] flex items-center gap-1 transition-colors"
             >
               <SlidersHorizontal size={12} />
               <span>{showConfigPanel ? "Thu gọn cấu hình" : "Tùy chỉnh API"}</span>
@@ -373,7 +373,7 @@ export function AiCoverTab({
                     {eng.id === "pollinations" ? "Pollinations AI" : eng.name.split(" ")[0]}
                   </span>
                   <span
-                    className={`text-[9px] px-1.5 py-0.5 rounded-md font-semibold shrink-0 ${
+                    className={`text-xs px-1.5 py-0.5 rounded-md font-semibold shrink-0 ${
                       eng.requiresKey
                         ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
                         : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
@@ -382,7 +382,7 @@ export function AiCoverTab({
                     {eng.badge}
                   </span>
                 </div>
-                <p className="text-[11px] text-[var(--muted-foreground)] leading-tight">
+                <p className="text-xs text-[var(--muted-foreground)] leading-tight">
                   {eng.id === "pollinations" ? "Miễn phí 100% • Không cần Key" : eng.description.split("•")[0]}
                 </p>
               </button>
@@ -394,7 +394,7 @@ export function AiCoverTab({
             <div className="pt-2.5 mt-2 border-t border-[var(--border)]/70 space-y-2 text-xs animate-in fade-in duration-100">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div>
-                  <label className="text-[11px] text-[var(--muted-foreground)] mb-1 flex items-center gap-1">
+                  <label className="text-xs text-[var(--muted-foreground)] mb-1 flex items-center gap-1">
                     <Key size={11} />
                     <span>API Key:</span>
                   </label>
@@ -407,7 +407,7 @@ export function AiCoverTab({
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] text-[var(--muted-foreground)] mb-1 flex items-center gap-1">
+                  <label className="text-xs text-[var(--muted-foreground)] mb-1 flex items-center gap-1">
                     <Globe size={11} />
                     <span>Base URL (Tùy chọn):</span>
                   </label>
@@ -420,7 +420,7 @@ export function AiCoverTab({
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] text-[var(--muted-foreground)] mb-1 flex items-center gap-1">
+                  <label className="text-xs text-[var(--muted-foreground)] mb-1 flex items-center gap-1">
                     <SlidersHorizontal size={11} />
                     <span>Tên Model (Tùy chọn):</span>
                   </label>
@@ -444,7 +444,7 @@ export function AiCoverTab({
               <Palette size={13} className="text-[var(--primary)]" />
               <span>Phong cách nghệ thuật bìa sách:</span>
             </span>
-            <span className="text-[11px] text-[var(--primary)] font-medium">
+            <span className="text-xs text-[var(--primary)] font-medium">
               {currentPreset.name}
             </span>
           </div>
@@ -457,7 +457,7 @@ export function AiCoverTab({
                 onClick={() => handleSelectStyle(pst.id)}
                 className={`p-2.5 rounded-xl border text-left transition-all flex flex-col gap-1 cursor-pointer ${
                   coverStyleId === pst.id
-                    ? "border-[var(--primary)] bg-[var(--primary)] text-white shadow-xs font-semibold ring-2 ring-[var(--primary)]/30"
+                    ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--foreground)] shadow-xs font-semibold ring-2 ring-[var(--primary)]/30"
                     : "border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] hover:border-[var(--border)]/90 hover:bg-[var(--secondary)]/60"
                 }`}
               >
@@ -466,8 +466,8 @@ export function AiCoverTab({
                   <span className="text-xs font-semibold leading-tight">{pst.name}</span>
                 </div>
                 <span
-                  className={`text-[10px] leading-tight ${
-                    coverStyleId === pst.id ? "text-white/85" : "text-[var(--muted-foreground)]"
+                  className={`text-xs leading-tight ${
+                    coverStyleId === pst.id ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"
                   }`}
                 >
                   {pst.category}
@@ -489,7 +489,7 @@ export function AiCoverTab({
               <button
                 type="button"
                 onClick={handleAutoSuggestPrompt}
-                className="lg-button lg-button--secondary text-[11px] h-7 px-2.5 gap-1 text-[var(--primary)] font-medium"
+                className="lg-button lg-button--secondary text-xs h-7 px-2.5 gap-1 text-[var(--primary)] font-medium"
                 title="Tạo lại prompt từ thông tin sách"
               >
                 <RefreshCw size={11} />
@@ -500,7 +500,7 @@ export function AiCoverTab({
                 type="button"
                 onClick={handleEnhancePrompt}
                 disabled={isEnhancingPrompt}
-                className="lg-button lg-button--secondary text-[11px] h-7 px-2.5 gap-1 font-medium bg-gradient-to-r from-amber-500/10 to-purple-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+                className="lg-button lg-button--secondary text-xs h-7 px-2.5 gap-1 font-medium bg-gradient-to-r from-amber-500/10 to-purple-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
                 title="Nhờ AI Art Director viết lại prompt giàu tính nghệ thuật hơn"
               >
                 {isEnhancingPrompt ? (
@@ -557,7 +557,7 @@ export function AiCoverTab({
             <div className="space-y-3 pt-1 border-t border-[var(--border)]/60 animate-in fade-in duration-100">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
-                  <label className="text-[11px] text-[var(--muted-foreground)] font-semibold uppercase block mb-1">
+                  <label className="text-xs text-[var(--muted-foreground)] font-semibold uppercase block mb-1">
                     Tựa Đề Sách
                   </label>
                   <input
@@ -569,7 +569,7 @@ export function AiCoverTab({
                 </div>
 
                 <div>
-                  <label className="text-[11px] text-[var(--muted-foreground)] font-semibold uppercase block mb-1">
+                  <label className="text-xs text-[var(--muted-foreground)] font-semibold uppercase block mb-1">
                     Tên Tác Giả
                   </label>
                   <input
@@ -581,7 +581,7 @@ export function AiCoverTab({
                 </div>
 
                 <div>
-                  <label className="text-[11px] text-[var(--muted-foreground)] font-semibold uppercase block mb-1">
+                  <label className="text-xs text-[var(--muted-foreground)] font-semibold uppercase block mb-1">
                     Phụ Đề / Thể Loại
                   </label>
                   <input
@@ -598,7 +598,7 @@ export function AiCoverTab({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
                 {/* Font Selector */}
                 <div>
-                  <label className="text-[11px] text-[var(--muted-foreground)] font-semibold uppercase block mb-1">
+                  <label className="text-xs text-[var(--muted-foreground)] font-semibold uppercase block mb-1">
                     Font Chữ Nghệ Thuật
                   </label>
                   <select
@@ -620,7 +620,7 @@ export function AiCoverTab({
 
                 {/* Position */}
                 <div>
-                  <label className="text-[11px] text-[var(--muted-foreground)] font-semibold uppercase block mb-1">
+                  <label className="text-xs text-[var(--muted-foreground)] font-semibold uppercase block mb-1">
                     Vị Trí Bố Cục
                   </label>
                   <select
@@ -640,7 +640,7 @@ export function AiCoverTab({
 
                 {/* Color Palette */}
                 <div>
-                  <label className="text-[11px] text-[var(--muted-foreground)] font-semibold uppercase block mb-1">
+                  <label className="text-xs text-[var(--muted-foreground)] font-semibold uppercase block mb-1">
                     Màu Chữ
                   </label>
                   <div className="flex items-center gap-2 pt-0.5">
@@ -677,7 +677,7 @@ export function AiCoverTab({
                     onChange={(e) => updateTypography({ hasBackdropGradient: e.target.checked })}
                     className="rounded border-[var(--border)]"
                   />
-                  <span className="text-[11px] text-[var(--foreground)]">
+                  <span className="text-xs text-[var(--foreground)]">
                     Dải gradient tối bảo vệ chữ (Tăng độ dễ đọc)
                   </span>
                 </label>
@@ -689,7 +689,7 @@ export function AiCoverTab({
                     onChange={(e) => updateTypography({ hasDropShadow: e.target.checked })}
                     className="rounded border-[var(--border)]"
                   />
-                  <span className="text-[11px] text-[var(--foreground)]">Đổ bóng chữ nổi bật</span>
+                  <span className="text-xs text-[var(--foreground)]">Đổ bóng chữ nổi bật</span>
                 </label>
               </div>
             </div>
@@ -702,7 +702,7 @@ export function AiCoverTab({
             type="button"
             onClick={handleGenerateCover}
             disabled={isGenerating}
-            className="flex-1 lg-button lg-button--primary text-sm h-10 px-5 gap-2 font-bold shadow-md bg-gradient-to-r from-amber-500 via-[var(--primary)] to-purple-600 hover:from-amber-600 hover:to-purple-700 text-white border-0 cursor-pointer"
+            className="flex-1 inline-flex h-10 items-center justify-center gap-2 rounded-[var(--ui-radius-button)] border-0 bg-gradient-to-r from-amber-500 via-[var(--primary)] to-purple-600 px-5 text-sm font-semibold text-white shadow-md transition-all hover:from-amber-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             {isGenerating ? (
               <Loader2 size={16} className="animate-spin" />
@@ -729,7 +729,7 @@ export function AiCoverTab({
 
       {/* Right Column: Live Cover Preview & Variations History */}
       <div className="w-full lg:w-80 shrink-0 flex flex-col gap-3 min-w-0">
-        <span className="text-[11px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
+        <span className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
           Xem trước tác phẩm
         </span>
 
@@ -747,7 +747,7 @@ export function AiCoverTab({
                 <ImageIcon size={22} />
               </div>
               <p className="text-xs font-semibold text-[var(--foreground)]">Chưa tạo ảnh bìa AI</p>
-              <p className="text-[11px] text-[var(--muted-foreground)] mt-1 max-w-[200px]">
+              <p className="text-xs text-[var(--muted-foreground)] mt-1 max-w-[200px]">
                 Chọn phong cách và bấm "Bắt Đầu Tạo Bìa Sách Ngay" để AI sinh tác phẩm độc bản.
               </p>
             </div>
@@ -760,7 +760,7 @@ export function AiCoverTab({
               <p className="text-xs font-semibold">
                 {isCompositingTypography ? "Đang gắn chữ nghệ thuật..." : "AI đang sáng tác bìa sách..."}
               </p>
-              <p className="text-[10px] text-white/70">Tỉ lệ 2:3 chuẩn Ebook quốc tế</p>
+              <p className="text-xs text-white/70">Tỉ lệ 2:3 chuẩn Ebook quốc tế</p>
             </div>
           )}
         </div>
@@ -771,7 +771,7 @@ export function AiCoverTab({
             <button
               type="button"
               onClick={() => onApplyCover(selectedCover.finalDataUrl)}
-              className="w-full lg-button lg-button--primary text-xs h-8 px-3 gap-1.5 font-semibold shadow-xs"
+              className="w-full lg-button lg-button--secondary text-xs h-8 px-3 gap-1.5 font-semibold text-[var(--primary)]"
             >
               <Check size={13} />
               <span>Áp Dụng Làm Ảnh Bìa Cuốn Sách</span>
@@ -803,7 +803,7 @@ export function AiCoverTab({
         {/* Session Variations History */}
         {generatedCovers.length > 0 && (
           <div className="pt-2 border-t border-[var(--border)] max-w-[280px] mx-auto w-full space-y-1.5">
-            <div className="flex items-center justify-between text-[11px] text-[var(--muted-foreground)]">
+            <div className="flex items-center justify-between text-xs text-[var(--muted-foreground)]">
               <span>Các biến thể đã tạo ({generatedCovers.length}):</span>
             </div>
 

@@ -1085,7 +1085,7 @@ export function ConverterView() {
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <h1 className="text-base font-semibold text-foreground">Bước 1: Nạp &amp; Chuyển Đổi Sách</h1>
-              <Badge variant="outline" className="text-[10px] font-mono border-primary/40 text-primary">
+              <Badge variant="outline" className="text-xs font-mono border-primary/40 text-primary">
                 PDF &bull; OCR &bull; TXT &bull; MD
               </Badge>
             </div>
@@ -1133,7 +1133,7 @@ export function ConverterView() {
             <Sparkles size={14} />
             <span>3. Xem Trước &amp; Tạo EPUB</span>
             {chapters.length > 0 && (
-              <span className="text-[10px] opacity-75 font-mono">({chapters.length})</span>
+              <span className="text-xs opacity-75 font-mono">({chapters.length})</span>
             )}
           </ToggleGroupItem>
         </ToggleGroup>
@@ -1182,7 +1182,7 @@ export function ConverterView() {
                     <div className="flex flex-col gap-0.5">
                       <div className="flex items-center gap-2">
                         <CardTitle className="text-base font-semibold">{loadedFileName}</CardTitle>
-                        <Badge variant="secondary" className="text-[10px] font-mono uppercase">
+                        <Badge variant="secondary" className="text-xs font-mono uppercase">
                           {fileType} &bull; {formatSize(fileSizeBytes)}
                         </Badge>
                       </div>
@@ -1214,7 +1214,7 @@ export function ConverterView() {
                           <span>Phát hiện PDF dạng SCAN (ảnh chụp)</span>
                           <Badge
                             variant="outline"
-                            className="border-amber-500/40 bg-amber-500/20 text-[10px] text-amber-600 dark:text-amber-300"
+                            className="border-amber-500/40 bg-amber-500/20 text-xs text-amber-600 dark:text-amber-300"
                           >
                             Cần OCR
                           </Badge>
@@ -1291,7 +1291,7 @@ export function ConverterView() {
                           {/* Progress Bar when extracting */}
                           {isExtractingDigital && digitalExtractProgress && (
                             <div className="flex flex-col gap-1.5 rounded border border-emerald-500/20 bg-background/60 p-2.5">
-                              <div className="flex items-center justify-between text-[11px]">
+                              <div className="flex items-center justify-between text-xs">
                                 <span className="text-foreground">{digitalExtractProgress.message}</span>
                                 <span className="font-mono text-emerald-500">
                                   {Math.round((digitalExtractProgress.current / digitalExtractProgress.total) * 100)}%
@@ -1315,7 +1315,7 @@ export function ConverterView() {
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-0.5">
                     <h3 className="text-xs font-bold text-foreground">Thông tin &amp; Bìa sách (Metadata)</h3>
-                    <p className="text-[11px] text-muted-foreground">Thiết lập tựa đề, tác giả, ngôn ngữ và ảnh bìa</p>
+                    <p className="text-xs text-muted-foreground">Thiết lập tựa đề, tác giả, ngôn ngữ và ảnh bìa</p>
                   </div>
                   <Button
                     type="button"
@@ -1404,14 +1404,14 @@ export function ConverterView() {
                         <div className="flex flex-col gap-0.5 text-xs">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-semibold text-foreground">Phân loại nội dung:</span>
-                            <Badge variant="outline" className="text-[10px] font-mono border-primary/40 text-primary">
+                            <Badge variant="outline" className="text-xs font-mono border-primary/40 text-primary">
                               {activeJev.genre_label}
                             </Badge>
-                            <span className="text-[11px] text-muted-foreground">
+                            <span className="text-xs text-muted-foreground">
                               Tỉ lệ thoại: <strong className="text-foreground">{Math.round(activeJev.dialogue_ratio * 100)}%</strong>
                             </span>
                           </div>
-                          <p className="text-[11px] text-muted-foreground">
+                          <p className="text-xs text-muted-foreground">
                             Tự động đề xuất phong cách:{" "}
                             <span className="text-primary font-semibold uppercase">{activeJev.recommended_preset}</span> &bull; {activeJev.explanation}
                           </p>
@@ -1421,7 +1421,7 @@ export function ConverterView() {
                       <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
                         <Badge
                           variant="secondary"
-                          className="text-[10px] font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                          className="text-xs font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
                         >
                           Xử lý cục bộ &lt; 2ms
                         </Badge>
@@ -1459,9 +1459,10 @@ export function ConverterView() {
                 </EmptyContent>
               </Empty>
             ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-                {/* Left Panel: Preview Canvas & OCR Controls (5 cols) */}
-                <div className="lg:col-span-5 flex flex-col gap-4">
+              <div className="flex flex-col lg:flex-row-reverse gap-5 items-start">
+                {/* Options panel: page preview + OCR settings, fixed at 22rem on the right.
+                    DOM order is unchanged (panel first) — flex-row-reverse performs the flip. */}
+                <div className="w-full lg:w-[22rem] flex-shrink-0 lg:border-l border-border flex flex-col gap-4">
                   {/* Visual Page Canvas */}
                   <Card className="shadow-sm">
                     <CardHeader className="border-b">
@@ -1533,7 +1534,7 @@ export function ConverterView() {
 
                     {/* Engine Picker */}
                     <div className="flex flex-col gap-1.5">
-                      <Label className="text-[11px] text-muted-foreground">
+                      <Label className="text-xs text-muted-foreground">
                         Công cụ nhận diện (OCR Engine)
                       </Label>
                       <ToggleGroup
@@ -1567,7 +1568,7 @@ export function ConverterView() {
                     {/* Language & Resolution */}
                     <div className="grid grid-cols-2 gap-2.5">
                       <div className="flex flex-col gap-1.5">
-                        <Label className="text-[11px] text-muted-foreground">Ngôn ngữ OCR</Label>
+                        <Label className="text-xs text-muted-foreground">Ngôn ngữ OCR</Label>
                         <Select
                           value={ocrLanguage}
                           onValueChange={(val) => setOcrLanguage(val as OcrLanguage)}
@@ -1588,7 +1589,7 @@ export function ConverterView() {
                       </div>
 
                       <div className="flex flex-col gap-1.5">
-                        <Label className="text-[11px] text-muted-foreground">Độ sắc nét (DPI Scale)</Label>
+                        <Label className="text-xs text-muted-foreground">Độ sắc nét (DPI Scale)</Label>
                         <Select value={String(ocrScale)} onValueChange={(val) => setOcrScale(parseFloat(val))}>
                           <SelectTrigger size="sm" className="w-full text-xs">
                             <SelectValue />
@@ -1606,7 +1607,7 @@ export function ConverterView() {
 
                     {/* Page Range Picker */}
                     <div className="flex flex-col gap-1">
-                      <Label className="text-[11px] text-muted-foreground">Khoảng trang quét OCR</Label>
+                      <Label className="text-xs text-muted-foreground">Khoảng trang quét OCR</Label>
                       <div className="flex items-center gap-2">
                         <Select
                           value={ocrPageRangeMode}
@@ -1638,21 +1639,10 @@ export function ConverterView() {
                           />
                         )}
                       </div>
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">
                         Số trang sẽ quét: {targetOcrPages.length} trang
                       </span>
                     </div>
-
-                    {/* Progress Bar (if running) */}
-                    {isOcrRunning && ocrProgress && (
-                      <div className="flex flex-col gap-1.5 rounded border border-border bg-secondary/60 p-2.5">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-medium text-foreground">{ocrProgress.statusText}</span>
-                          <span className="font-mono text-primary">{ocrProgress.overallPercent}%</span>
-                        </div>
-                        <Progress value={ocrProgress.overallPercent} className="h-1.5" />
-                      </div>
-                    )}
 
                     {/* Action Buttons */}
                     <div className="flex items-center gap-2 pt-1">
@@ -1683,8 +1673,8 @@ export function ConverterView() {
                   </Card>
                 </div>
 
-                {/* Right Panel: Recognized Text & Editor (7 cols) */}
-                <div className="lg:col-span-7 flex flex-col gap-3">
+                {/* Primary column: recognized text & editor */}
+                <div className="flex-1 min-w-0 flex flex-col gap-3">
                   <Card className="shadow-sm">
                     <CardHeader className="border-b">
                       <div className="flex items-center gap-2">
@@ -1695,7 +1685,7 @@ export function ConverterView() {
                         {ocrRecognizedPages[previewPageNumber] && (
                           <Badge
                             variant="secondary"
-                            className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                            className="text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
                           >
                             Đã OCR
                           </Badge>
@@ -1714,7 +1704,7 @@ export function ConverterView() {
                             handleSaveCurrentPageText(cleaned);
                             toast.success("Đã làm sạch văn bản trang hiện tại!");
                           }}
-                          className="text-[11px]"
+                          className="text-xs"
                         >
                           <Wand2 size={13} />
                           <span>Làm sạch</span>
@@ -1730,7 +1720,7 @@ export function ConverterView() {
                             handleSaveCurrentPageText(merged);
                             toast.success("Đã gộp dòng mềm trang hiện tại!");
                           }}
-                          className="text-[11px]"
+                          className="text-xs"
                         >
                           <FileCode size={13} />
                           <span>Gộp dòng</span>
@@ -1746,7 +1736,7 @@ export function ConverterView() {
                             setTimeout(() => setIsCopied(false), 2000);
                             toast.success("Đã chép nội dung vào bộ nhớ tạm!");
                           }}
-                          className="text-[11px]"
+                          className="text-xs"
                         >
                           {isCopied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
                           <span>{isCopied ? "Đã chép" : "Chép"}</span>
@@ -1765,7 +1755,7 @@ export function ConverterView() {
                       />
 
                       {/* Footer Info */}
-                      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>
                           Ký tự trang này: {activePageEditorText.length} &bull; Tổng trang đã OCR:{" "}
                           {Object.keys(ocrRecognizedPages).length} / {pdfDoc.numPages}
@@ -1775,7 +1765,7 @@ export function ConverterView() {
                           variant="link"
                           size="sm"
                           onClick={() => setActiveStep("export")}
-                          className="gap-1 text-[11px] font-medium"
+                          className="gap-1 text-xs font-medium"
                         >
                           <span>Tiếp tục: Xem trước &amp; Tạo EPUB</span>
                           <ArrowRight size={13} />
@@ -1783,6 +1773,17 @@ export function ConverterView() {
                       </div>
                     </CardContent>
                   </Card>
+
+                  {/* OCR progress/log sits under the primary data surface, not in the options column */}
+                  {isOcrRunning && ocrProgress && (
+                    <div className="flex flex-col gap-1.5 rounded border border-border bg-secondary/60 p-2.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium text-foreground">{ocrProgress.statusText}</span>
+                        <span className="font-mono text-primary">{ocrProgress.overallPercent}%</span>
+                      </div>
+                      <Progress value={ocrProgress.overallPercent} className="h-1.5" />
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1800,17 +1801,17 @@ export function ConverterView() {
                 aria-live="polite"
               >
                 <span className="font-medium text-muted-foreground">Nhận diện nguồn:</span>
-                <Badge variant="secondary" className="gap-1.5 text-[10px]">
+                <Badge variant="secondary" className="gap-1.5 text-xs">
                   <span aria-hidden="true">{sourceProfile.languageFlag}</span>
                   <span>{sourceProfile.languageName}</span>
                   <span className="font-mono text-muted-foreground">
                     {Math.round(sourceProfile.languageConfidence * 100)}%
                   </span>
                 </Badge>
-                <Badge variant="outline" className="text-[10px] border-primary/40 text-primary">
+                <Badge variant="outline" className="text-xs border-primary/40 text-primary">
                   {workflowLabel(sourceProfile)}
                 </Badge>
-                <span className="font-mono text-[10px] text-muted-foreground">
+                <span className="font-mono text-xs text-muted-foreground">
                   {sourceSteps.join(" → ")}
                 </span>
               </div>
@@ -1997,19 +1998,19 @@ export function ConverterView() {
                       <CardContent className="flex flex-col justify-between gap-2">
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2">
-                            <span className="size-5 rounded bg-secondary flex items-center justify-center text-[10px] font-mono text-muted-foreground">
+                            <span className="size-5 rounded bg-secondary flex items-center justify-center text-xs font-mono text-muted-foreground">
                               {idx + 1}
                             </span>
                             <span className="text-xs font-semibold text-foreground line-clamp-1">
                               {ch.title}
                             </span>
                           </div>
-                          <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+                          <span className="text-xs text-muted-foreground font-mono shrink-0">
                             {ch.content.split(/\s+/).length} từ
                           </span>
                         </div>
 
-                        <p className="text-[11px] text-muted-foreground line-clamp-2 italic leading-relaxed">
+                        <p className="text-xs text-muted-foreground line-clamp-2 italic leading-relaxed">
                           {ch.content.slice(0, 140)}...
                         </p>
                       </CardContent>

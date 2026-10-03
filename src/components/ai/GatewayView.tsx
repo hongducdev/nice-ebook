@@ -11,7 +11,7 @@ import {
   Plus,
   Copy,
   Pencil,
-  Trash2,
+  MoreHorizontal,
   Server,
   Zap,
   AlertTriangle
@@ -21,6 +21,12 @@ import { Badge } from "../ui/badge";
 import { Card } from "../ui/card";
 import { Input } from "../ui/input";
 import { Empty, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from "../ui/empty";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import { useAppStore } from "../../stores/useAppStore";
 import { GatewaySettingsModal } from "../settings/GatewaySettingsModal";
 import {
@@ -39,6 +45,25 @@ import {
   categorizeGatewayModels, 
   ModelCategory 
 } from "../../utils/gatewayModelCategorizer";
+
+/** Initials for a provider row's avatar bubble (presentation only, no state or data added). */
+function providerInitials(name: string, fallback: string): string {
+  const source = (name || fallback || "?").trim();
+  const letters = source
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("");
+  return (letters || source.slice(0, 1) || "?").toUpperCase();
+}
+
+/** Label for the local-core latency button (kept out of JSX so no ternary is nested). */
+function jevLatencyLabel(isTesting: boolean, result: { latencyMs: number } | null): string {
+  if (isTesting) return "Đang đo...";
+  if (result) return `${result.latencyMs}ms`;
+  return "Đo độ trễ";
+}
 
 export function GatewayView() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -228,12 +253,12 @@ export function GatewayView() {
             <Boxes size={18} className="text-primary" />
             <span>AI Gateway &amp; Quản Lý Nhà Cung Cấp (LinguaGacha)</span>
             {activeGateway ? (
-              <Badge variant="outline" className="text-[10px] h-4.5 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 gap-1">
+              <Badge variant="outline" className="text-xs gap-1 border-emerald-500/40 text-emerald-600 dark:text-emerald-400">
                 <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 <span>{activeGateway.name} ({activeGateway.latency_ms}ms)</span>
               </Badge>
             ) : (
-              <Badge variant="secondary" className="text-[10px] h-4.5">
+              <Badge variant="secondary" className="text-xs">
                 Lõi Offline (Cục bộ)
               </Badge>
             )}
@@ -282,7 +307,7 @@ export function GatewayView() {
             <span className="text-xs font-semibold text-foreground">
               Mô hình “{selectedModel}” chưa thuộc nhà cung cấp nào đang hoạt động
             </span>
-            <span className="text-[11px] text-muted-foreground leading-relaxed">
+            <span className="text-xs text-muted-foreground leading-relaxed">
               Bấm “Kích hoạt” trên nhà cung cấp tương ứng bên dưới (hoặc thêm mới) để dùng
               mô hình này cho dịch thuật, biên tập và trợ lý chat.
             </span>
@@ -290,145 +315,200 @@ export function GatewayView() {
         </div>
       )}
 
-      {/* Section 1: Configured Providers (LinguaGacha Style) */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <SlidersHorizontal size={14} className="text-primary" />
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground">
-              Nhà Cung Cấp Đã Cấu Hình ({configuredProviders.length})
-            </h3>
+      {/* Provider zone (approved layout "A · three zones"): the provider list is the primary
+          column, the edit form is the right-hand panel. Row click still activates exactly as
+          the old card grid did (handler, props and store calls unchanged). */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
+          {/* Zone 1: the live model — stays visible at the top of the primary column */}
+          <div className="flex items-center gap-3 rounded-[var(--ui-radius-card)] border border-border bg-card p-3 shadow-[var(--ui-card-panel-shadow)]">
+            <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <Zap className="size-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="truncate text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Mô hình đang dùng
+                </span>
+                {activeGateway ? (
+                  <span className="inline-flex items-center whitespace-nowrap rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                    Đang hoạt động
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center whitespace-nowrap rounded-full bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                    Lõi Offline (Cục bộ)
+                  </span>
+                )}
+              </div>
+              <div className="flex items-baseline gap-2 min-w-0">
+                <strong className="truncate text-sm font-semibold text-foreground">
+                  {selectedModel || "jev-verdict-2.0"}
+                </strong>
+                <span className="truncate text-xs text-muted-foreground">
+                  {activeGateway
+                    ? `${activeGateway.name} · ${activeGateway.latency_ms}ms`
+                    : "Chưa gắn với nhà cung cấp nào"}
+                </span>
+              </div>
+            </div>
           </div>
-          <span className="text-[10px] text-muted-foreground">
-            Bấm "Kích hoạt" để chọn nhà cung cấp làm cổng dịch chính
-          </span>
+
+          {/* Zone 2: configured providers as a data table */}
+          <div className="overflow-hidden rounded-[var(--ui-radius-card)] border border-border bg-card shadow-[var(--ui-card-panel-shadow)]">
+            <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <SlidersHorizontal size={14} className="shrink-0 text-primary" />
+                <h3 className="truncate text-xs font-semibold uppercase tracking-wider text-foreground">
+                  Nhà Cung Cấp Đã Cấu Hình ({configuredProviders.length})
+                </h3>
+              </div>
+              <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">
+                Bấm "Kích hoạt" để chọn nhà cung cấp làm cổng dịch chính
+              </span>
+            </div>
+
+            {configuredProviders.length > 0 ? (
+              <div className="max-h-80 overflow-y-auto">
+                <table className="w-full table-fixed">
+                  <caption className="sr-only">Danh sách nhà cung cấp AI đã cấu hình</caption>
+                  <thead className="sticky top-0 z-10 bg-card">
+                    <tr className="h-9 border-b border-border text-xs font-medium text-muted-foreground">
+                      <th className="w-[52px] px-2.5 text-left">
+                        <span className="sr-only">Biểu tượng</span>
+                      </th>
+                      <th className="px-3 text-left">Nhà cung cấp</th>
+                      <th className="hidden w-[15rem] px-3 text-left sm:table-cell">Endpoint · Mô hình</th>
+                      <th className="w-12 px-2">
+                        <span className="sr-only">Thao tác</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {configuredProviders.map((prov) => {
+                      const isCurrentActive = Boolean(activeGateway && activeGateway.name === prov.name);
+                      const presetInfo = LINGUAGACHA_PRESETS.find((p) => p.id === prov.presetId);
+                      const accentColor = presetInfo?.accent || "var(--primary)";
+                      const latencyMs = isCurrentActive ? activeGateway?.latency_ms : undefined;
+                      const metaLine = `${prov.baseUrl} · ${prov.availableModels.length} model${
+                        latencyMs ? ` · ${latencyMs}ms` : ""
+                      }`;
+
+                      return (
+                        <tr
+                          key={prov.id}
+                          data-selected={isCurrentActive ? "true" : undefined}
+                          onClick={(e) => {
+                            // Clicks inside the action cell must not activate the provider
+                            // (mirrors the old per-card buttons that stopped propagation).
+                            if ((e.target as HTMLElement).closest("[data-row-actions]")) return;
+                            if (!isCurrentActive) handleActivateProvider(prov);
+                          }}
+                          title={
+                            isCurrentActive
+                              ? `${prov.name} đang là nhà cung cấp chính`
+                              : `Kích hoạt ${prov.name}`
+                          }
+                          className={`h-[38px] transition-colors ${
+                            isCurrentActive
+                              ? "bg-[var(--ui-table-selected)]"
+                              : "cursor-pointer hover:bg-[var(--ui-table-hover)]"
+                          }`}
+                        >
+                          <td className="px-2.5">
+                            <span
+                              className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+                              style={{
+                                backgroundColor: `color-mix(in srgb, ${accentColor} 16%, transparent)`,
+                                color: accentColor,
+                              }}
+                              aria-hidden="true"
+                            >
+                              {providerInitials(prov.name, presetInfo?.name || `#${prov.id.slice(-2)}`)}
+                            </span>
+                          </td>
+                          <td className="min-w-0 px-3">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="truncate text-sm font-medium text-foreground">{prov.name}</span>
+                              {isCurrentActive ? (
+                                <span className="inline-flex items-center whitespace-nowrap rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                                  Đang dùng
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center whitespace-nowrap rounded-full bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                                  {presetInfo?.name || "Custom"}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="hidden min-w-0 px-3 sm:table-cell">
+                            <span className="block truncate text-xs text-muted-foreground" title={metaLine}>
+                              {metaLine}
+                            </span>
+                          </td>
+                          <td data-row-actions className="px-2 text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  onClick={(e) => e.stopPropagation()}
+                                  aria-label={`Thao tác cho ${prov.name}`}
+                                  title="Thao tác"
+                                  className="inline-flex size-7 items-center justify-center rounded-[var(--ui-radius-button)] text-muted-foreground hover:bg-secondary hover:text-foreground"
+                                >
+                                  <MoreHorizontal className="size-4" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-44">
+                                <DropdownMenuItem
+                                  disabled={isCurrentActive}
+                                  onSelect={() => handleActivateProvider(prov)}
+                                  className="gap-2 text-xs"
+                                >
+                                  <Play className="size-3.5" />
+                                  <span>{isCurrentActive ? "Đang dùng" : "Kích hoạt"}</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onSelect={() => {
+                                    setEditingProvider(prov);
+                                    setIsModalOpen(true);
+                                  }}
+                                  className="gap-2 text-xs"
+                                >
+                                  <Pencil className="size-3.5" />
+                                  <span>Chỉnh sửa</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => handleDuplicate(prov)} className="gap-2 text-xs">
+                                  <Copy className="size-3.5" />
+                                  <span>Tạo bản sao</span>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="p-6 text-center text-xs text-muted-foreground">
+                Chưa có nhà cung cấp nào được cấu hình. Nhấn "Thêm Provider Mới" để thiết lập DeepSeek, Gemini, Claude hoặc OpenAI.
+              </div>
+            )}
+          </div>
         </div>
 
-        {configuredProviders.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {configuredProviders.map((prov) => {
-              const isCurrentActive = Boolean(activeGateway && activeGateway.name === prov.name);
-              const presetInfo = LINGUAGACHA_PRESETS.find((p) => p.id === prov.presetId);
-              const accentColor = presetInfo?.accent || "var(--primary)";
-
-              return (
-                <Card
-                  key={prov.id}
-                  onClick={() => !isCurrentActive && handleActivateProvider(prov)}
-                  className={`p-3.5 flex flex-col justify-between gap-2.5 transition-all bg-card ${
-                    isCurrentActive
-                      ? "ring-2 ring-primary shadow-xs border-primary/50"
-                      : "hover:border-primary/40 border-border cursor-pointer hover:shadow-xs"
-                  }`}
-                >
-                  <div className="flex flex-col gap-1.5 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className="size-2.5 rounded-full shrink-0"
-                          style={{ backgroundColor: accentColor }}
-                        />
-                        <strong className="text-xs font-semibold text-foreground truncate">
-                          {prov.name}
-                        </strong>
-                      </div>
-
-                      {isCurrentActive ? (
-                        <Badge
-                          variant="outline"
-                          className="text-[9px] h-4 px-1.5 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 gap-1 font-mono shrink-0"
-                        >
-                          <Check size={9} />
-                          <span>Đang dùng</span>
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary" className="text-[9px] h-4 px-1 text-muted-foreground shrink-0">
-                          {presetInfo?.name || "Custom"}
-                        </Badge>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col gap-0.5 text-[10px] font-mono text-muted-foreground">
-                      <span className="truncate" title={prov.baseUrl}>
-                        {prov.baseUrl}
-                      </span>
-                      <div className="flex items-center gap-1.5 mt-0.5 text-foreground">
-                        <span className="text-muted-foreground">Model:</span>
-                        <strong className="text-primary truncate">{prov.selectedModel}</strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-1 pt-2 border-t border-border/60">
-                    <div className="flex items-center gap-1">
-                      <Button
-                        type="button"
-                        variant={isCurrentActive ? "secondary" : "default"}
-                        size="xs"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleActivateProvider(prov);
-                        }}
-                        disabled={isCurrentActive}
-                        className="h-6 px-2 text-[10px] font-medium cursor-pointer"
-                        title={isCurrentActive ? "Đang là provider chính" : "Kích hoạt provider này"}
-                      >
-                        {isCurrentActive ? "Đang dùng" : "Kích hoạt"}
-                      </Button>
-
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDuplicate(prov);
-                        }}
-                        className="size-6 text-muted-foreground hover:text-foreground"
-                        title="Tạo bản sao provider này (Endpoint Duplicate)"
-                      >
-                        <Copy size={11} />
-                      </Button>
-
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingProvider(prov);
-                          setIsModalOpen(true);
-                        }}
-                        className="size-6 text-muted-foreground hover:text-foreground"
-                        title="Chỉnh sửa cấu hình"
-                      >
-                        <Pencil size={11} />
-                      </Button>
-                    </div>
-
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteProvider(prov.id);
-                      }}
-                      className="size-6 text-muted-foreground hover:text-destructive"
-                      title="Xóa cấu hình này"
-                    >
-                      <Trash2 size={11} />
-                    </Button>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="p-4 rounded-xl border border-dashed border-border text-center text-xs text-muted-foreground bg-muted/10">
-            Chưa có nhà cung cấp nào được cấu hình. Nhấn "Thêm Provider Mới" để thiết lập DeepSeek, Gemini, Claude hoặc OpenAI.
-          </div>
-        )}
+        <GatewaySettingsModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          initialProvider={editingProvider}
+          onDuplicate={handleDuplicate}
+          onDelete={(id) => {
+            handleDeleteProvider(id);
+            setIsModalOpen(false);
+          }}
+          onSaved={() => setConfiguredProviders(loadConfiguredProviders())}
+        />
       </div>
 
       {/* Section 2: Detected Localhost Gateways */}
@@ -476,7 +556,7 @@ export function GatewayView() {
                         <span className="text-xs font-semibold text-foreground truncate block">
                           {gw.name}
                         </span>
-                        <span className="text-[10px] font-mono text-muted-foreground truncate block">
+                        <span className="text-xs font-mono text-muted-foreground truncate block">
                           {gw.base_url}
                         </span>
                       </div>
@@ -484,12 +564,12 @@ export function GatewayView() {
 
                     <div className="flex items-center gap-2 shrink-0">
                       {gw.is_online && (
-                        <Badge variant="secondary" className="text-[9px] h-4 px-1 font-mono">
+                        <Badge variant="secondary" className="text-xs font-mono">
                           {gw.models.length} models
                         </Badge>
                       )}
                       {isSelected && (
-                        <Badge variant="outline" className="text-[9px] h-4 px-1 gap-1 border-primary/40 text-primary">
+                        <Badge variant="outline" className="text-xs gap-1 border-primary/40 text-primary">
                           <Check className="size-2.5" />
                           <span>Đang chọn</span>
                         </Badge>
@@ -511,7 +591,7 @@ export function GatewayView() {
             <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground">
               Mô Hình Khả Dụng (Available Models)
             </h3>
-            <Badge variant="secondary" className="text-[10px] h-4.5">
+            <Badge variant="secondary" className="text-xs">
               {categorizedModels.reduce((acc, c) => acc + c.models.length, 0)} mô hình
             </Badge>
           </div>
@@ -543,15 +623,15 @@ export function GatewayView() {
                       <div className="flex items-center gap-2">
                         <h4 className="model-page__category-title">{category.name}</h4>
                         {category.accountBadge && (
-                          <Badge variant="outline" className="text-[9px] h-4.5 border-primary/40 text-primary">
+                          <Badge variant="outline" className="text-xs border-primary/40 text-primary">
                             {category.accountBadge}
                           </Badge>
                         )}
-                        <Badge variant="secondary" className="text-[10px] h-4.5">
+                        <Badge variant="secondary" className="text-xs">
                           {category.models.length} mô hình
                         </Badge>
                       </div>
-                      <p className="model-page__category-description">{category.description}</p>
+                      <p className="model-page__category-description text-xs!">{category.description}</p>
                     </div>
                   </div>
 
@@ -577,22 +657,34 @@ export function GatewayView() {
                     const testResult = modelTestResults[model];
                     const isFallback = fallbackModels.includes(model);
 
+                    // Mouse and keyboard activation share this one handler (behaviour unchanged).
+                    const handleSelectModel = () => {
+                      setSelectedModel(model);
+                      toast.success(`Đã kích hoạt mô hình: ${model}`);
+                    };
+
                     return (
                       <div
                         key={model}
-                        onClick={() => {
-                          setSelectedModel(model);
-                          toast.success(`Đã kích hoạt mô hình: ${model}`);
+                        role="button"
+                        tabIndex={0}
+                        onClick={handleSelectModel}
+                        onKeyDown={(e) => {
+                          if (e.target !== e.currentTarget) return;
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            handleSelectModel();
+                          }
                         }}
                         data-selected={isSelected ? "true" : undefined}
-                        className="model-page__item-chip group cursor-pointer"
+                        className="model-page__item-chip group cursor-pointer text-xs!"
                         title={`Chọn mô hình ${model}${testResult ? ` • ${testResult.message}` : ""}`}
                       >
                         <span>{model}</span>
 
                         {testResult && (
                           <span 
-                            className={`text-[9px] font-mono px-1 rounded ${
+                            className={`text-xs font-mono px-1.5 py-0.5 rounded ${
                               testResult.success 
                                 ? "bg-emerald-500/20 text-emerald-400" 
                                 : "bg-red-500/20 text-red-400"
@@ -604,7 +696,7 @@ export function GatewayView() {
                         )}
 
                         {isFallback && (
-                          <Badge variant="outline" className="text-[8px] h-4 px-1 font-mono border-primary/40 text-primary">
+                          <Badge variant="outline" className="text-xs font-mono border-primary/40 text-primary">
                             Fallback
                           </Badge>
                         )}
@@ -655,7 +747,7 @@ export function GatewayView() {
                 ? `Chưa có danh sách mô hình từ ${activeGateway.name}`
                 : "Chưa kích hoạt AI Provider"}
             </EmptyTitle>
-            <EmptyDescription className="text-[11px] text-muted-foreground max-w-sm mx-auto leading-relaxed">
+            <EmptyDescription className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
               Chọn hoặc kích hoạt một nhà cung cấp ở danh sách trên hoặc nhấn "Thêm Provider Mới" để thiết lập DeepSeek, Gemini, Claude, OpenAI...
             </EmptyDescription>
             <EmptyContent className="flex items-center gap-2 mt-2">
@@ -684,10 +776,10 @@ export function GatewayView() {
                 <h3 className="text-sm font-semibold text-foreground">
                   Lõi Xử Lý Cục Bộ Jev Core (Tự động 100% Offline)
                 </h3>
-                <Badge variant="secondary" className="text-[10px] h-4.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                <Badge variant="secondary" className="text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                   100% Offline
                 </Badge>
-                <Badge variant="outline" className="text-[10px] h-4.5">
+                <Badge variant="outline" className="text-xs">
                   Zero API Key
                 </Badge>
               </div>
@@ -707,15 +799,15 @@ export function GatewayView() {
             <div className="text-left lg:text-right">
               {jevDecision ? (
                 <>
-                  <span className="text-[10px] text-muted-foreground block">Phân loại sách</span>
+                  <span className="text-xs text-muted-foreground block">Phân loại sách</span>
                   <span className="text-xs font-semibold text-primary">{jevDecision.genre_label}</span>
-                  <span className="text-[10px] font-mono text-muted-foreground block mt-0.5">
+                  <span className="text-xs font-mono text-muted-foreground block mt-0.5">
                     {(jevDecision.confidence * 100).toFixed(0)}% độ tin cậy
                   </span>
                 </>
               ) : (
                 <>
-                  <span className="text-[10px] text-muted-foreground block">Trạng thái</span>
+                  <span className="text-xs text-muted-foreground block">Trạng thái</span>
                   <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Lõi Sẵn Sàng</span>
                 </>
               )}
@@ -730,18 +822,11 @@ export function GatewayView() {
               title="Kiểm tra thời gian phản hồi của lõi cục bộ"
             >
               <Activity className={`size-3.5 ${isTestingJev ? "animate-spin text-primary" : "text-emerald-500"}`} />
-              <span>{isTestingJev ? "Đang đo..." : jevTestResult ? `${jevTestResult.latencyMs}ms` : "Đo độ trễ"}</span>
+              <span>{jevLatencyLabel(isTestingJev, jevTestResult)}</span>
             </Button>
           </div>
         </div>
       </Card>
-
-      <GatewaySettingsModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        initialProvider={editingProvider}
-        onSaved={() => setConfiguredProviders(loadConfiguredProviders())}
-      />
     </div>
   );
 }

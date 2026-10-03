@@ -716,19 +716,19 @@ export function BookTranslatorView() {
               <h1 className="text-xs font-semibold text-foreground leading-none">
                 Bước 2: Dịch Thuật Sách AI
               </h1>
-              <Badge variant="secondary" className="bg-primary/10 text-primary text-[9px] px-1.5 h-4">
+              <Badge variant="secondary" className="bg-primary/10 text-primary text-xs px-1.5 h-4">
                 Surgical XHTML Preserved
               </Badge>
               {isCurrentChapterTranslated && (
                 <Badge
                   variant="secondary"
-                  className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[9px] px-1.5 h-4"
+                  className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-xs px-1.5 h-4"
                 >
                   Chương này đã dịch
                 </Badge>
               )}
             </div>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Tác phẩm: <strong className="text-foreground font-medium">{currentBook.title}</strong>
             </p>
           </div>
@@ -736,7 +736,7 @@ export function BookTranslatorView() {
 
         {/* Header Stats & Gateway indicator */}
         <div className="flex items-center gap-2">
-          <Badge variant="secondary" className="h-7 gap-1.5 px-2.5 text-[11px] font-normal">
+          <Badge variant="secondary" className="h-7 gap-1.5 px-2.5 text-xs font-normal">
             <Layers className="text-primary" />
             <span className="text-muted-foreground">Đã dịch:</span>
             <strong className="text-foreground">{translatedCount}/{totalChapters} ch.</strong>
@@ -752,10 +752,12 @@ export function BookTranslatorView() {
         <WorkflowBanner />
       </div>
 
-      {/* Main Body Split: Left Settings & Controls (360px), Right Preview / Logs (flex-1) */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Bố cục A (ba vùng): vùng giữa là bảng/nhật ký, cột cấu hình 22rem dựng bên phải.
+          DOM giữ nguyên thứ tự (panel trước, vùng chính sau) và đảo chiều bằng flex-row-reverse,
+          nên không phải di chuyển khối JSX nào — xem ghi chú đổi thứ tự Tab ở journal. */}
+      <div className="flex-1 flex flex-row-reverse overflow-hidden">
         {/* Left Control Panel */}
-        <div className="w-[360px] flex-shrink-0 border-r border-border bg-card/30 flex flex-col overflow-y-auto p-4 gap-4">
+        <div className="w-[22rem] flex-shrink-0 border-l border-border bg-card/30 flex flex-col overflow-y-auto p-4 gap-4">
           {/* Workflow context: what the ingest router detected for this book */}
           {bookProfile && (
             <div className="workflow-context">
@@ -797,14 +799,14 @@ export function BookTranslatorView() {
                   variant="secondary"
                   className={
                     autoConfigResult
-                      ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[9px] px-1.5 h-4 font-medium"
-                      : "bg-primary/10 text-primary text-[9px] px-1.5 h-4"
+                      ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs px-1.5 h-4 font-medium"
+                      : "bg-primary/10 text-primary text-xs px-1.5 h-4"
                   }
                 >
                   {autoConfigResult ? "Đã lưu 1 lần" : "Tự động 1-Click"}
                 </Badge>
               </div>
-              <CardDescription className="text-[10px] leading-relaxed mt-0.5">
+              <CardDescription className="text-xs leading-relaxed mt-0.5">
                 {autoConfigResult
                   ? "Sách này đã được AI tự động phân tích và lưu cấu hình. AI sẽ dùng cấu hình này cho mọi chương, trừ khi bạn ấn cấu hình lại."
                   : "Tự động nhận diện ngôn ngữ, phân tích thể loại đề xuất văn phong, trích xuất thuật ngữ &amp; nghiên cứu bối cảnh sách trong 1 lượt."}
@@ -814,7 +816,7 @@ export function BookTranslatorView() {
             <CardContent className="flex flex-col gap-2">
               {autoConfigResult ? (
                 <>
-                  <div className="p-2.5 rounded bg-card/90 border border-border text-[10px] flex flex-col gap-1.5 text-foreground animate-in fade-in duration-200">
+                  <div className="p-2.5 rounded bg-card/90 border border-border text-xs flex flex-col gap-1.5 text-foreground animate-in fade-in duration-200">
                     <div className="flex items-center justify-between font-semibold text-emerald-600 dark:text-emerald-400">
                       <span className="flex items-center gap-1">
                         <Check className="size-3" />
@@ -875,16 +877,16 @@ export function BookTranslatorView() {
           {/* Section: AI Model & Gateway Selection */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Cổng AI &amp; Mô hình dịch
               </span>
               {activeGateway ? (
-                <Badge variant="outline" className="text-[9px] h-4 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 gap-1 font-mono">
+                <Badge variant="outline" className="text-xs h-4 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 gap-1 font-mono">
                   <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
                   <span>{activeGateway.name}</span>
                 </Badge>
               ) : (
-                <Badge variant="secondary" className="text-[9px] h-4">
+                <Badge variant="secondary" className="text-xs h-4">
                   Lõi Cục Bộ
                 </Badge>
               )}
@@ -895,7 +897,7 @@ export function BookTranslatorView() {
           {/* Section 1: Language Pairs */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 1. Cặp ngôn ngữ
               </span>
               <Button
@@ -912,7 +914,7 @@ export function BookTranslatorView() {
             </div>
 
             {detectedLangInfo && (
-              <div className="flex items-center gap-1.5 text-[10px] bg-secondary/60 px-2 py-1 rounded border border-border">
+              <div className="flex items-center gap-1.5 text-xs bg-secondary/60 px-2 py-1 rounded border border-border">
                 <span className="text-primary font-semibold">● Nhận diện:</span>
                 <span className="text-foreground">{detectedLangInfo.languageName}</span>
                 <span className="text-muted-foreground ml-auto font-mono">
@@ -924,7 +926,7 @@ export function BookTranslatorView() {
             {isSameLangWarning && (
               <Alert className="bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400 animate-in fade-in duration-200">
                 <AlertTriangle className="size-3.5" />
-                <AlertDescription className="text-[10px] text-amber-600 dark:text-amber-400">
+                <AlertDescription className="text-xs text-amber-600 dark:text-amber-400">
                   Sách gốc đã là Tiếng Việt. Bạn có muốn đổi ngôn ngữ đích sang tiếng khác hoặc dịch sang Tiếng Anh?
                 </AlertDescription>
               </Alert>
@@ -932,7 +934,7 @@ export function BookTranslatorView() {
 
             <div className="flex items-end gap-2 w-full min-w-0">
               <div className="flex-1 min-w-0 flex flex-col gap-1">
-                <Label htmlFor="translator-source-lang" className="text-[10px] text-muted-foreground font-medium truncate">Ngôn ngữ nguồn</Label>
+                <Label htmlFor="translator-source-lang" className="text-xs text-muted-foreground font-medium truncate">Ngôn ngữ nguồn</Label>
                 <Select
                   value={translationConfig.sourceLang}
                   onValueChange={(value) => setTranslationConfig({ sourceLang: value })}
@@ -962,7 +964,7 @@ export function BookTranslatorView() {
               </Button>
 
               <div className="flex-1 min-w-0 flex flex-col gap-1">
-                <Label htmlFor="translator-target-lang" className="text-[10px] text-muted-foreground font-medium truncate">Ngôn ngữ đích</Label>
+                <Label htmlFor="translator-target-lang" className="text-xs text-muted-foreground font-medium truncate">Ngôn ngữ đích</Label>
                 <Select
                   value={translationConfig.targetLang}
                   onValueChange={(value) => setTranslationConfig({ targetLang: value })}
@@ -984,7 +986,7 @@ export function BookTranslatorView() {
 
           {/* Section 2: Layout Presentation Mode */}
           <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               2. Chế độ hiển thị
             </span>
             <ToggleGroup
@@ -1012,7 +1014,7 @@ export function BookTranslatorView() {
                 Song ngữ đối chiếu
               </ToggleGroupItem>
             </ToggleGroup>
-            <p className="text-[10px] text-muted-foreground leading-relaxed">
+            <p className="text-xs text-muted-foreground leading-relaxed">
               {translationConfig.mode === "replace"
                 ? "Thay thế chữ gốc bằng bản dịch tiếng Việt mượt mà để đọc trọn vẹn tác phẩm."
                 : "Chèn bản dịch ngay dưới mỗi đoạn gốc với định dạng song ngữ, lý tưởng để học ngoại ngữ."}
@@ -1020,7 +1022,7 @@ export function BookTranslatorView() {
 
             <Label
               htmlFor="toggle-translate-titles"
-              className="flex items-center gap-1.5 text-[11px] font-normal text-foreground cursor-pointer select-none mt-1"
+              className="flex items-center gap-1.5 text-xs font-normal text-foreground cursor-pointer select-none mt-1"
             >
               <Checkbox
                 id="toggle-translate-titles"
@@ -1034,7 +1036,7 @@ export function BookTranslatorView() {
 
             <Label
               htmlFor="toggle-convert-currency"
-              className="flex items-center gap-1.5 text-[11px] font-normal text-foreground cursor-pointer select-none"
+              className="flex items-center gap-1.5 text-xs font-normal text-foreground cursor-pointer select-none"
             >
               <Checkbox
                 id="toggle-convert-currency"
@@ -1049,7 +1051,7 @@ export function BookTranslatorView() {
 
           {/* Section 3: Tone Presets */}
           <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               3. Văn phong dịch thuật
             </span>
             <ToggleGroup
@@ -1070,7 +1072,7 @@ export function BookTranslatorView() {
                     className="w-full h-auto flex-col items-start justify-start gap-1 p-2 text-left whitespace-normal data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-foreground"
                   >
                     <span className="text-xs font-semibold">{info.name}</span>
-                    <span className="text-[10px] opacity-80 line-clamp-2 leading-tight">
+                    <span className="text-xs opacity-80 line-clamp-2 leading-tight">
                       {info.description}
                     </span>
                   </ToggleGroupItem>
@@ -1081,7 +1083,7 @@ export function BookTranslatorView() {
 
           {/* Section 4: Contextual Research Brief */}
           <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               4. Nghiên cứu bối cảnh
             </span>
             <Card size="sm" className="shrink-0 bg-secondary/20">
@@ -1095,7 +1097,7 @@ export function BookTranslatorView() {
                 </CardTitle>
                 <Badge
                   variant={translationConfig.useResearchBrief ? "secondary" : "outline"}
-                  className={`text-[10px] px-1.5 h-4 ${
+                  className={`text-xs px-1.5 h-4 ${
                     translationConfig.useResearchBrief ? "bg-primary/10 text-primary" : ""
                   }`}
                 >
@@ -1110,7 +1112,7 @@ export function BookTranslatorView() {
                   <div className="flex items-center justify-between">
                     <Label
                       htmlFor="toggle-research-brief"
-                      className="flex items-center gap-1.5 text-[11px] font-normal text-foreground cursor-pointer select-none"
+                      className="flex items-center gap-1.5 text-xs font-normal text-foreground cursor-pointer select-none"
                     >
                       <Checkbox
                         id="toggle-research-brief"
@@ -1150,10 +1152,10 @@ export function BookTranslatorView() {
                       }
                     }}
                     placeholder="Bấm 'AI Nghiên Cứu' hoặc tự viết quy tắc xưng hô, bối cảnh thời đại, danh xưng nhân vật tại đây..."
-                    className="text-[11px] font-mono resize-none leading-relaxed"
+                    className="text-xs font-mono resize-none leading-relaxed"
                   />
 
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>Tự động đưa vào prompt để định hình văn phong chuẩn.</span>
                     <span className="font-mono">{(translationConfig.researchBrief || "").length}/1200 ký tự</span>
                   </div>
@@ -1166,7 +1168,7 @@ export function BookTranslatorView() {
           {/* Section 5: Glossary / Terminology Accordion */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 5. Thuật ngữ &amp; Tên riêng (Glossary)
               </span>
               <Button
@@ -1210,7 +1212,7 @@ export function BookTranslatorView() {
                     </Button>
                   )}
 
-                  <Badge variant="secondary" className="text-[10px] px-1.5 h-4">
+                  <Badge variant="secondary" className="text-xs px-1.5 h-4">
                     {Object.keys(translationConfig.glossary || {}).length} từ
                   </Badge>
                   <ChevronDown
@@ -1225,14 +1227,14 @@ export function BookTranslatorView() {
               <>
                 <Separator />
                 <CardContent className="flex flex-col gap-2.5 animate-in fade-in duration-150 p-3">
-                  <p className="text-[11px] text-muted-foreground leading-tight">
+                  <p className="text-xs text-muted-foreground leading-tight">
                     Cố định tên nhân vật hoặc thuật ngữ để bản dịch luôn đồng nhất qua mọi chương:
                   </p>
 
                   {/* Term List */}
                   <div className="max-h-52 overflow-y-auto flex flex-col gap-1.5 pr-1">
                     {Object.entries(translationConfig.glossary || {}).length === 0 ? (
-                      <div className="py-3 px-2 text-center text-[11px] text-muted-foreground italic bg-background/50 rounded border border-dashed border-border">
+                      <div className="py-3 px-2 text-center text-xs text-muted-foreground italic bg-background/50 rounded border border-dashed border-border">
                         Chưa có thuật ngữ nào được tạo.
                       </div>
                     ) : (
@@ -1245,7 +1247,7 @@ export function BookTranslatorView() {
                             <span className="font-mono text-xs text-foreground truncate" title={k}>
                               {k}
                             </span>
-                            <span className="text-muted-foreground text-[10px] shrink-0">➔</span>
+                            <span className="text-muted-foreground text-xs shrink-0">➔</span>
                             <span className="font-medium text-xs text-primary truncate" title={v}>
                               {v}
                             </span>
@@ -1301,11 +1303,11 @@ export function BookTranslatorView() {
           {/* Section 6: LinguaGacha Engine Optimizations */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 <Zap className="size-3 text-amber-500" />
                 <span>6. Cơ chế dịch LinguaGacha</span>
               </span>
-              <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 border-primary/40 text-primary">
+              <Badge variant="outline" className="text-xs px-1 py-0 h-3.5 border-primary/40 text-primary">
                 Smart Engine
               </Badge>
             </div>
@@ -1342,7 +1344,7 @@ export function BookTranslatorView() {
               </div>
 
               <div className="flex items-center justify-between pt-1 border-t border-border/50">
-                <span className="text-[11px] text-muted-foreground">Số luồng dịch song song:</span>
+                <span className="text-xs text-muted-foreground">Số luồng dịch song song:</span>
                 <ToggleGroup
                   type="single"
                   value={String(translationConfig.concurrency || 1)}
@@ -1353,13 +1355,13 @@ export function BookTranslatorView() {
                   }}
                   className="border border-border rounded p-0.5 bg-background"
                 >
-                  <ToggleGroupItem value="1" size="sm" className="h-5 px-1.5 text-[10px] data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                  <ToggleGroupItem value="1" size="sm" className="h-5 px-1.5 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
                     1x (Tuần tự)
                   </ToggleGroupItem>
-                  <ToggleGroupItem value="2" size="sm" className="h-5 px-1.5 text-[10px] data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                  <ToggleGroupItem value="2" size="sm" className="h-5 px-1.5 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
                     2x (Nhanh)
                   </ToggleGroupItem>
-                  <ToggleGroupItem value="3" size="sm" className="h-5 px-1.5 text-[10px] data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                  <ToggleGroupItem value="3" size="sm" className="h-5 px-1.5 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
                     3x (Tối đa)
                   </ToggleGroupItem>
                 </ToggleGroup>
@@ -1369,7 +1371,7 @@ export function BookTranslatorView() {
 
           {/* Section 7: Scope & Chapter Selector */}
           <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               7. Phạm vi dịch
             </span>
             <ToggleGroup
@@ -1407,7 +1409,7 @@ export function BookTranslatorView() {
 
             {scope === "single" && (
               <div className="flex flex-col gap-1 mt-1">
-                <Label htmlFor="translator-chapter" className="text-[10px] text-muted-foreground font-medium">Chọn chương cần dịch:</Label>
+                <Label htmlFor="translator-chapter" className="text-xs text-muted-foreground font-medium">Chọn chương cần dịch:</Label>
                 <Select
                   value={isViewingCover ? "cover" : String(activeChapterIndex)}
                   onValueChange={(value) => {
@@ -1458,7 +1460,7 @@ export function BookTranslatorView() {
                   Đã dịch xong toàn bộ {totalChapters} chương
                 </AlertTitle>
                 <AlertDescription className="flex items-center gap-2">
-                  <Button type="button" size="sm" className="flex-1 text-[11px]" onClick={() => setActiveTab("reader")}>
+                  <Button type="button" size="sm" className="flex-1 text-xs" onClick={() => setActiveTab("reader")}>
                     <BookOpenCheck />
                     <span>Đọc bản dịch</span>
                   </Button>
@@ -1478,7 +1480,7 @@ export function BookTranslatorView() {
                   </span>
                 </div>
                 <Progress value={translationProgress.percent} className="h-1.5" />
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   Chương {translationProgress.currentChapterIndex}/{translationProgress.totalChapters}
                   {translationProgress.totalBlocks > 0 &&
                     ` • ${translationProgress.currentBlock}/${translationProgress.totalBlocks} đoạn`}
@@ -1558,7 +1560,7 @@ export function BookTranslatorView() {
 
             {/* Scope guidance hints */}
             {!isTranslating && scope === "single" && unprocessedCount > 0 && (
-              <p className="text-[10px] text-muted-foreground text-center">
+              <p className="text-xs text-muted-foreground text-center">
                 Còn <strong className="text-foreground">{unprocessedCount}</strong> chương chưa dịch. Chuyển phạm vi sang{" "}
                 <button
                   type="button"
@@ -1572,7 +1574,7 @@ export function BookTranslatorView() {
             )}
 
             {!isTranslating && scope === "unprocessed" && unprocessedCount === 0 && totalChapters > 0 && (
-              <p className="text-[10px] text-muted-foreground text-center">
+              <p className="text-xs text-muted-foreground text-center">
                 Tất cả các chương đã có bản dịch. Chọn{" "}
                 <button
                   type="button"
@@ -1597,6 +1599,96 @@ export function BookTranslatorView() {
           </div>
         </div>
 
+        {/* Vùng chính (phương án A, ba vùng): bảng chương là bề mặt chính, nằm trên khu xem trước / nhật ký.
+            Bảng chỉ đọc dữ liệu sẵn có (translatedChapters, translationProgress, activeChapterIndex) và gọi
+            đúng hai handler cũ (setActiveChapterIndex, translateSingleChapter) — không thêm logic. */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="shrink-0 border-b border-border bg-card/30 px-4 py-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">
+                Danh sách chương
+                <span className="ml-2 text-xs font-normal tabular-nums text-muted-foreground">
+                  {translatedCount}/{currentBook.chapters.length} đã dịch
+                </span>
+              </h2>
+              {isTranslating && translationProgress && (
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  Đang dịch chương {translationProgress.currentChapterIndex} · {translationProgress.percent}%
+                </span>
+              )}
+            </div>
+
+            <div className="max-h-64 overflow-y-auto rounded-[var(--ui-radius-card)] border border-border bg-card">
+              <table className="w-full table-fixed">
+                <caption className="sr-only">Danh sách chương và trạng thái dịch</caption>
+                <thead className="sticky top-0 z-10 bg-card">
+                  <tr className="h-9 border-b border-border text-xs font-medium text-muted-foreground">
+                    <th className="hidden w-[52px] px-3 text-left tabular-nums sm:table-cell">#</th>
+                    <th className="w-full px-3 text-left">Chương</th>
+                    <th className="w-[104px] px-3 text-left">Trạng thái</th>
+                    <th className="w-12 px-3"><span className="sr-only">Thao tác</span></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {currentBook.chapters.map((chapter, index) => {
+                    const isTranslated = Boolean(translatedChapters[chapter.href]);
+                    const isCurrent = index === activeChapterIndex;
+                    const isRunning =
+                      isTranslating && translationProgress?.currentChapterIndex === index + 1;
+
+                    return (
+                      <tr
+                        key={chapter.id || chapter.href}
+                        data-active={isCurrent ? "true" : undefined}
+                        className={`h-[38px] cursor-pointer ${
+                          isCurrent ? "bg-[var(--ui-table-selected)]" : "hover:bg-[var(--ui-table-hover)]"
+                        }`}
+                        onClick={() => setActiveChapterIndex(index)}
+                      >
+                        <td className="hidden px-3 text-sm tabular-nums text-muted-foreground sm:table-cell">
+                          {String(index + 1).padStart(3, "0")}
+                        </td>
+                        <td className="min-w-0 px-3">
+                          <p className="truncate text-sm font-medium">{chapter.title}</p>
+                        </td>
+                        <td className="px-3">
+                          {isRunning ? (
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                              <Loader2 className="size-3 animate-spin" />
+                              Đang dịch
+                            </span>
+                          ) : isTranslated ? (
+                            <span className="inline-flex items-center whitespace-nowrap rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                              Đã dịch
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center whitespace-nowrap rounded-full bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                              Chưa dịch
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 text-right">
+                          <button
+                            type="button"
+                            className="inline-flex h-7 items-center whitespace-nowrap rounded-[var(--ui-radius-button)] border border-border px-2 text-xs font-medium text-foreground hover:bg-secondary"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void translateSingleChapter(index);
+                            }}
+                            disabled={isTranslating}
+                            title={isTranslated ? `Dịch lại chương ${index + 1}` : `Dịch chương ${index + 1}`}
+                          >
+                            {isTranslated ? "Dịch lại" : "Dịch"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         {/* Right Panel: Preview & Terminal Logs */}
         <Tabs
           value={rightTab}
@@ -1616,7 +1708,7 @@ export function BookTranslatorView() {
                 <Terminal />
                 <span>Nhật Ký Terminal Log</span>
                 {translationLogs.length > 0 && (
-                  <Badge variant="secondary" className="bg-primary/10 text-primary text-[9px] px-1 h-3.5 ml-1">
+                  <Badge variant="secondary" className="bg-primary/10 text-primary text-xs px-1 h-3.5 ml-1">
                     {translationLogs.length}
                   </Badge>
                 )}
@@ -1651,7 +1743,7 @@ export function BookTranslatorView() {
             ) : (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 {isTranslating && (
-                  <Badge variant="outline" className="border-emerald-500/50 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] gap-1.5 px-2 h-5 font-medium animate-pulse">
+                  <Badge variant="outline" className="border-emerald-500/50 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs gap-1.5 px-2 h-5 font-medium animate-pulse">
                     <span className="size-1.5 rounded-full bg-emerald-500" />
                     <span>Real-time Stream</span>
                   </Badge>
@@ -1662,7 +1754,7 @@ export function BookTranslatorView() {
                     variant={isViewingCover ? "default" : "outline"}
                     size="xs"
                     onClick={() => setIsViewingCover((v) => !v)}
-                    className="h-6 text-[10px] gap-1 shadow-2xs cursor-pointer"
+                    className="h-6 text-xs gap-1 shadow-2xs cursor-pointer"
                     title={isViewingCover ? "Quay lại xem chương đang dịch" : "Xem trang bìa tác phẩm"}
                   >
                     <ImageIcon className="size-3" />
@@ -1685,7 +1777,7 @@ export function BookTranslatorView() {
                       Chương {activeChapterIndex + 1}: <strong className="text-foreground">{activeChapter.title}</strong>
                     </span>
                     {isTranslating && translationProgress && translationProgress.percent > 0 && (
-                      <Badge variant="outline" className="text-[9px] h-4 font-mono text-primary border-primary/30 px-1 ml-0.5">
+                      <Badge variant="outline" className="text-xs h-4 font-mono text-primary border-primary/30 px-1 ml-0.5">
                         {translationProgress.percent}%
                       </Badge>
                     )}
@@ -1765,6 +1857,7 @@ export function BookTranslatorView() {
             />
           </TabsContent>
         </Tabs>
+        </div>
       </div>
 
       {/* Entity & Terminology Review Modal */}
@@ -1774,11 +1867,11 @@ export function BookTranslatorView() {
             <DialogTitle className="flex items-center gap-2 text-xs">
               <Search className="size-4 text-primary" />
               <span>Kết Quả Trích Xuất Thuật Ngữ &amp; Tên Riêng</span>
-              <Badge variant="secondary" className="bg-primary/10 text-primary text-[10px] px-1.5 h-4">
+              <Badge variant="secondary" className="bg-primary/10 text-primary text-xs px-1.5 h-4">
                 {extractedCandidates.length} thực thể
               </Badge>
             </DialogTitle>
-            <DialogDescription className="text-[11px] leading-relaxed">
+            <DialogDescription className="text-xs leading-relaxed">
               Các tên nhân vật, địa danh và thuật ngữ quan trọng được phát hiện từ các chương sách. Bạn có thể chỉnh sửa bản dịch đề xuất trước khi thêm vào bộ từ điển Glossary:
             </DialogDescription>
           </DialogHeader>
@@ -1787,7 +1880,7 @@ export function BookTranslatorView() {
           <div className="min-h-0 flex-1 overflow-y-auto flex flex-col gap-3">
             <div className="border border-border rounded-lg overflow-hidden">
               <Table className="text-xs">
-                <TableHeader className="bg-secondary/60 text-[10px] uppercase font-semibold text-muted-foreground">
+                <TableHeader className="bg-secondary/60 text-xs uppercase font-semibold text-muted-foreground">
                   <TableRow>
                     <TableHead className="p-2 w-10 text-center">Chọn</TableHead>
                     <TableHead className="p-2">Tên / Thuật ngữ gốc</TableHead>
@@ -1815,15 +1908,15 @@ export function BookTranslatorView() {
                             className="cursor-pointer"
                           />
                         </TableCell>
-                        <TableCell className="p-2 font-mono text-[11px] text-foreground font-medium">
+                        <TableCell className="p-2 font-mono text-xs text-foreground font-medium">
                           {c.name}
                         </TableCell>
                         <TableCell className="p-2">
-                          <Badge variant="secondary" className="text-[9px] px-1 h-3.5">
+                          <Badge variant="secondary" className="text-xs px-1 h-3.5">
                             {c.category === "person" ? "Nhân vật" : c.category === "place" ? "Địa danh" : "Thuật ngữ"}
                           </Badge>
                         </TableCell>
-                        <TableCell className="p-2 text-center text-[10px] font-mono text-muted-foreground">
+                        <TableCell className="p-2 text-center text-xs font-mono text-muted-foreground">
                           {c.count}x
                         </TableCell>
                         <TableCell className="p-2">
@@ -1849,7 +1942,7 @@ export function BookTranslatorView() {
 
           {/* Modal Footer */}
           <DialogFooter className="sm:justify-between">
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               Đã chọn: <strong className="text-foreground">{Object.values(selectedEntityNames).filter(Boolean).length}</strong> mục
             </span>
             <div className="flex items-center gap-2">

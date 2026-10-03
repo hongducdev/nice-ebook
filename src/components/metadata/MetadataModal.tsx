@@ -22,6 +22,7 @@ import {
   Compass
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
+import { Button } from "../ui/button";
 import { BookMetadataService, BookMetadataItem, CoverOption, normalizeAuthor } from "../../services/metadata/bookMetadataService";
 import { AiMetadataEnricher } from "../../services/metadata/aiMetadataEnricher";
 import { AiCoverTab } from "./AiCoverTab";
@@ -644,200 +645,170 @@ export function MetadataModal({
         onChange={handleFileInputChange}
       />
 
-      <div className="card-surface rounded-2xl w-full max-w-5xl xl:max-w-6xl h-[92vh] max-h-[880px] flex flex-col overflow-hidden shadow-2xl border border-[var(--border)] transition-all">
-        {/* Top Header Bar */}
-        <div className="h-14 px-6 border-b border-[var(--border)] flex items-center justify-between bg-[var(--ui-titlebar-surface)] shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[var(--primary)]/10 border border-[var(--primary)]/20 flex items-center justify-center text-[var(--primary)]">
+      <div className="card-surface rounded-[var(--ui-radius-overlay)] w-full max-w-5xl xl:max-w-6xl h-[92vh] max-h-[880px] flex flex-col overflow-hidden shadow-2xl border border-border transition-all">
+        {/* Fixed Header */}
+        <header className="shrink-0 min-h-14 px-5 py-2 border-b border-border flex items-center justify-between gap-3 bg-[var(--ui-titlebar-surface)]">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-[var(--ui-radius-card)] border border-primary/20 bg-primary/10 text-primary">
               <BookOpen size={16} />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="font-bold text-sm text-[var(--foreground)]">Chỉnh Sửa Metadata &amp; Ảnh Bìa</h2>
-                <span className="app-badge app-badge--brand text-[10px]">Đa Nền Tảng &amp; Wattpad</span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <h2 className="truncate text-base font-semibold text-foreground">Chỉnh Sửa Metadata &amp; Ảnh Bìa</h2>
+                <span className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-primary/30 bg-primary/10 px-2 text-xs font-medium text-primary">
+                  Đa Nền Tảng &amp; Wattpad
+                </span>
                 {saveStatus === "saving" ? (
-                  <span className="flex items-center gap-1 text-[11px] text-[var(--muted-foreground)] bg-[var(--muted)]/50 px-2 py-0.5 rounded-full border border-[var(--border)] animate-pulse">
-                    <Loader2 size={11} className="animate-spin text-[var(--primary)]" />
+                  <span className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-muted/50 px-2 text-xs text-muted-foreground animate-pulse">
+                    <Loader2 size={12} className="animate-spin text-primary" />
                     <span>Đang lưu...</span>
                   </span>
                 ) : (
-                  <span className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-medium">
-                    <Check size={11} />
+                  <span className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    <Check size={12} />
                     <span>Tự động lưu</span>
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-[var(--muted-foreground)]">
+              <p className="truncate text-sm text-muted-foreground">
                 Bổ sung thông tin sách xuất bản, truyện mạng/Wattpad &amp; tìm kiếm ảnh bìa đẹp
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
               type="button"
+              variant="secondary"
               onClick={handleQuickAutoEnrich}
               disabled={isSearchingOnline}
-              className="lg-button lg-button--secondary text-xs h-8 px-3 gap-1.5 font-medium text-[var(--primary)] shadow-2xs"
+              className="h-7 gap-1.5 rounded-[var(--ui-radius-button)] px-2.5 text-xs text-primary"
               title="Tự động tìm kiếm thông tin khớp nhất trên mạng và hiển thị so sánh"
             >
               {isSearchingOnline ? (
-                <Loader2 size={13} className="animate-spin text-[var(--primary)]" />
+                <Loader2 size={13} className="animate-spin" />
               ) : (
                 <Sparkles size={13} />
               )}
               <span>{isSearchingOnline ? "Đang tìm kiếm..." : "⚡ Bổ Sung Nhanh"}</span>
-            </button>
+            </Button>
 
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
               onClick={handleClose}
-              className="p-1.5 rounded-lg text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--accent)] transition-colors"
+              className="size-8 rounded-[var(--ui-radius-button)] text-muted-foreground hover:text-foreground"
             >
-              <X size={16} />
-            </button>
+              <X className="size-4" />
+            </Button>
           </div>
-        </div>
+        </header>
 
-        {/* Modal Body: Left Cover Panel + Right Main Tabbed Area */}
-        <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
-          {/* Left Column: Cover Panel (Hidden in AI Cover tab so AI Studio has the full spacious width) */}
+        {/* Modal Body: compact cover column + tabbed form area */}
+        <div className="flex-1 flex flex-col sm:flex-row min-h-0 overflow-hidden">
+          {/* Left Column: Cover Preview (hidden in AI Cover tab so the AI Studio gets the full width) */}
           {activeTab !== "ai-cover" && (
-            <div className="w-full md:w-72 shrink-0 p-5 border-b md:border-b-0 md:border-r border-[var(--border)] bg-[var(--card)]/40 flex flex-col items-center justify-between gap-4 overflow-y-auto">
-              <div className="w-full flex flex-col items-center">
-                <span className="text-[11px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2.5 self-start">
-                  Ảnh bìa tác phẩm
-                </span>
+            <aside className="w-full sm:w-32 shrink-0 p-3 border-b sm:border-b-0 sm:border-r border-border bg-card flex flex-col gap-3 overflow-y-auto">
+              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Ảnh bìa tác phẩm
+              </span>
 
-                {/* Cover Card Display */}
-                <div className="relative group w-44 aspect-[2/3] rounded-xl overflow-hidden border-2 border-[var(--border)] bg-[var(--secondary)] shadow-md flex items-center justify-center">
-                  {coverDataUrl ? (
-                    <img
-                      src={coverDataUrl}
-                      alt="Book Cover"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center p-4 text-center text-[var(--muted-foreground)]">
-                      <ImageIcon size={32} className="opacity-40 mb-2" />
-                      <span className="text-xs font-medium">Chưa có ảnh bìa</span>
-                      <span className="text-[10px] opacity-70 mt-0.5">Nhấn "Tìm ảnh bìa" bên dưới</span>
-                    </div>
-                  )}
-
-                  {/* Hover overlay actions */}
-                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCoverSearchQuery(title);
-                        setActiveTab("covers");
-                        if (coverGallery.length === 0) handleSearchCovers();
-                      }}
-                      className="lg-button lg-button--primary text-xs h-7 px-2.5 gap-1 w-full"
-                    >
-                      <Search size={12} />
-                      <span>Đổi ảnh bìa</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("ai-cover")}
-                      className="lg-button lg-button--secondary text-xs h-7 px-2.5 gap-1 w-full text-amber-500 font-medium hover:bg-amber-500/10"
-                    >
-                      <Wand2 size={12} />
-                      <span>Tạo bìa AI</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="lg-button lg-button--secondary text-xs h-7 px-2.5 gap-1 w-full"
-                    >
-                      <Upload size={12} />
-                      <span>Tải ảnh lên</span>
-                    </button>
-
-                    {coverDataUrl && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCoverDataUrl(null);
-                          performSave({ coverDataUrl: null });
-                          toast.success("Đã xóa và tự động lưu ảnh bìa!");
-                        }}
-                        className="lg-button lg-button--ghost text-xs h-7 px-2.5 gap-1 text-[var(--ui-failure)] w-full hover:bg-red-500/10"
-                      >
-                        <Trash2 size={12} />
-                        <span>Xóa bìa</span>
-                      </button>
-                    )}
+              {/* Cover Card Display */}
+              <div className="flex aspect-[2/3] w-full items-center justify-center overflow-hidden rounded-[var(--ui-radius-card)] border border-border bg-secondary">
+                {coverDataUrl ? (
+                  <img
+                    src={coverDataUrl}
+                    alt="Book Cover"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center gap-1 p-2 text-center text-muted-foreground">
+                    <ImageIcon size={20} className="opacity-40" />
+                    <span className="text-xs font-medium">Chưa có ảnh bìa</span>
                   </div>
-                </div>
-
-                {/* Resolution / Status Badge */}
-                <div className="mt-3 flex items-center gap-1.5 text-[11px] text-[var(--muted-foreground)]">
-                  {coverDataUrl ? (
-                    <span className="app-badge app-badge--success text-[10px] gap-1">
-                      <Check size={10} />
-                      <span>Đã gắn ảnh bìa</span>
-                    </span>
-                  ) : (
-                    <span className="app-badge text-[10px] text-[var(--muted-foreground)]">
-                      Tỉ lệ 2:3 chuẩn Ebook
-                    </span>
-                  )}
-                </div>
+                )}
               </div>
 
-              {/* Quick Cover Buttons */}
-              <div className="w-full space-y-2 pt-2 border-t border-[var(--border)]">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("ai-cover")}
-                  className="w-full lg-button lg-button--primary text-xs h-8 px-3 gap-2 font-medium bg-gradient-to-r from-amber-500/15 via-[var(--primary)]/15 to-purple-500/15 hover:from-amber-500/25 hover:to-purple-500/25 border border-amber-500/30 text-[var(--foreground)] shadow-xs"
-                >
-                  <Wand2 size={13} className="text-amber-500 shrink-0" />
-                  <span>✨ Tạo bìa AI độc bản</span>
-                </button>
+              {/* Shared help/status slot */}
+              <div className="min-h-4 text-xs">
+                {coverDataUrl ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    <Check size={12} />
+                    <span>Đã gắn ảnh bìa</span>
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">Tỉ lệ 2:3 chuẩn Ebook</span>
+                )}
+              </div>
 
-                <button
+              {/* Compact cover actions */}
+              <div className="space-y-1.5 border-t border-border pt-3">
+                <Button
                   type="button"
+                  variant="outline"
                   onClick={() => {
                     setCoverSearchQuery(title);
                     setActiveTab("covers");
                     if (coverGallery.length === 0) handleSearchCovers();
                   }}
-                  className="w-full lg-button lg-button--secondary text-xs h-8 px-3 gap-2 font-medium"
+                  className="h-7 w-full gap-1.5 rounded-[var(--ui-radius-button)] px-2 text-xs"
                 >
-                  <Search size={13} className="text-[var(--primary)]" />
-                  <span>Kho ảnh bìa đẹp</span>
-                </button>
+                  <Search size={13} />
+                  <span>Đổi ảnh bìa</span>
+                </Button>
 
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
+                  onClick={() => setActiveTab("ai-cover")}
+                  className="h-7 w-full gap-1.5 rounded-[var(--ui-radius-button)] px-2 text-xs text-amber-600 dark:text-amber-400"
+                >
+                  <Wand2 size={13} />
+                  <span>Tạo bìa AI</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full lg-button lg-button--ghost text-xs h-8 px-3 gap-2"
+                  className="h-7 w-full gap-1.5 rounded-[var(--ui-radius-button)] px-2 text-xs"
                 >
                   <Upload size={13} />
-                  <span>Tải ảnh từ máy tính</span>
-                </button>
+                  <span>Tải ảnh lên</span>
+                </Button>
+
+                {coverDataUrl && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setCoverDataUrl(null);
+                      performSave({ coverDataUrl: null });
+                      toast.success("Đã xóa và tự động lưu ảnh bìa!");
+                    }}
+                    className="h-7 w-full gap-1.5 rounded-[var(--ui-radius-button)] bg-rose-500/10 px-2 text-xs text-rose-700 hover:bg-rose-500/15 dark:text-rose-400"
+                  >
+                    <Trash2 size={13} />
+                    <span>Xóa bìa</span>
+                  </Button>
+                )}
               </div>
-            </div>
+            </aside>
           )}
 
           {/* Right Column: Tabbed Content */}
-          <div className="flex-1 min-w-0 flex flex-col min-h-0 bg-[var(--background)] overflow-hidden">
+          <div className="flex-1 min-w-0 flex flex-col min-h-0 bg-background overflow-hidden">
             {/* Clean Single-Line Tab Switcher */}
-            <div className="h-12 px-5 border-b border-[var(--border)] flex items-center bg-[var(--card)]/50 shrink-0 min-w-0 overflow-x-auto">
-              <div className="flex items-center gap-1 bg-[var(--secondary)] p-1 rounded-xl border border-[var(--border)] shrink-0">
+            <div className="shrink-0 min-h-11 px-5 py-1 border-b border-border flex items-center bg-card overflow-x-auto">
+              <div className="flex items-center gap-1 shrink-0">
                 <button
                   type="button"
                   onClick={() => setActiveTab("metadata")}
-                  className={`flex items-center gap-2 px-3.5 py-1 text-xs font-semibold rounded-lg transition-all whitespace-nowrap ${
+                  className={`inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-[var(--ui-radius-button)] border px-2.5 text-xs font-medium transition-colors ${
                     activeTab === "metadata"
-                      ? "bg-[var(--card)] text-[var(--primary)] shadow-xs border border-[var(--border)]"
-                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                      ? "border-primary/30 bg-primary/10 text-primary"
+                      : "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
                   }`}
                 >
                   <FileText size={13} />
@@ -847,15 +818,15 @@ export function MetadataModal({
                 <button
                   type="button"
                   onClick={() => setActiveTab("ai-cover")}
-                  className={`flex items-center gap-2 px-3.5 py-1 text-xs font-semibold rounded-lg transition-all whitespace-nowrap ${
+                  className={`inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-[var(--ui-radius-button)] border px-2.5 text-xs font-medium transition-colors ${
                     activeTab === "ai-cover"
-                      ? "bg-[var(--card)] text-[var(--primary)] shadow-xs border border-[var(--border)]"
-                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                      ? "border-primary/30 bg-primary/10 text-primary"
+                      : "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
                   }`}
                 >
                   <Wand2 size={13} className="text-amber-500" />
                   <span>✨ Tạo bìa AI</span>
-                  <span className="app-badge bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[9px] px-1 py-0">
+                  <span className="inline-flex h-5 items-center whitespace-nowrap rounded-full border border-amber-500/25 bg-amber-500/10 px-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
                     Mới
                   </span>
                 </button>
@@ -868,16 +839,16 @@ export function MetadataModal({
                       handleSearchCovers();
                     }
                   }}
-                  className={`flex items-center gap-2 px-3.5 py-1 text-xs font-semibold rounded-lg transition-all whitespace-nowrap ${
+                  className={`inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-[var(--ui-radius-button)] border px-2.5 text-xs font-medium transition-colors ${
                     activeTab === "covers"
-                      ? "bg-[var(--card)] text-[var(--primary)] shadow-xs border border-[var(--border)]"
-                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                      ? "border-primary/30 bg-primary/10 text-primary"
+                      : "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
                   }`}
                 >
                   <ImageIcon size={13} />
                   <span>Kho ảnh bìa đẹp</span>
                   {coverGallery.length > 0 && (
-                    <span className="app-badge bg-[var(--primary)]/10 text-[var(--primary)] text-[10px] px-1.5 py-0">
+                    <span className="inline-flex h-5 items-center whitespace-nowrap rounded-full border border-primary/30 bg-primary/10 px-1.5 text-xs font-medium text-primary">
                       {coverGallery.length}
                     </span>
                   )}
@@ -886,10 +857,10 @@ export function MetadataModal({
                 <button
                   type="button"
                   onClick={() => setActiveTab("upload")}
-                  className={`flex items-center gap-2 px-3.5 py-1 text-xs font-semibold rounded-lg transition-all whitespace-nowrap ${
+                  className={`inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-[var(--ui-radius-button)] border px-2.5 text-xs font-medium transition-colors ${
                     activeTab === "upload"
-                      ? "bg-[var(--card)] text-[var(--primary)] shadow-xs border border-[var(--border)]"
-                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                      ? "border-primary/30 bg-primary/10 text-primary"
+                      : "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
                   }`}
                 >
                   <Upload size={13} />
@@ -922,21 +893,21 @@ export function MetadataModal({
               {activeTab === "metadata" && (
                 <div className="space-y-4 w-full min-w-0">
                   {/* Dedicated Search & Enrichment Control Card */}
-                  <div className="p-3.5 rounded-xl border border-[var(--border)] bg-[var(--card)]/60 shadow-xs space-y-3 min-w-0">
+                  <div className="rounded-[var(--ui-radius-card)] border border-border bg-card p-3 shadow-xs space-y-2.5 min-w-0">
                     <div className="flex flex-col gap-2.5 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap min-w-0">
-                        <span className="text-xs font-bold text-[var(--foreground)] flex items-center gap-1.5 shrink-0">
-                          <Compass size={13} className="text-[var(--primary)]" />
+                        <span className="text-xs font-semibold text-foreground flex items-center gap-1.5 shrink-0">
+                          <Compass size={13} className="text-primary" />
                           <span>Nguồn tra cứu:</span>
                         </span>
-                        <div className="flex items-center gap-1 bg-[var(--secondary)] p-0.5 rounded-lg border border-[var(--border)] text-[11px] flex-wrap">
+                        <div className="flex items-center gap-0.5 rounded-[var(--ui-radius-button)] border border-border bg-secondary p-0.5 text-xs flex-wrap">
                           <button
                             type="button"
                             onClick={() => setSearchSourceMode("all")}
-                            className={`px-2.5 py-1 rounded-md transition-all font-medium whitespace-nowrap ${
+                            className={`h-7 whitespace-nowrap rounded-[var(--ui-radius-button)] border px-2.5 font-medium transition-colors ${
                               searchSourceMode === "all"
-                                ? "bg-[var(--primary)] text-white shadow-2xs"
-                                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                                ? "border-border bg-card text-foreground shadow-xs"
+                                : "border-transparent text-muted-foreground hover:text-foreground"
                             }`}
                           >
                             🌐 Đa Nguồn (Goodreads + Wattpad + Fable)
@@ -944,10 +915,10 @@ export function MetadataModal({
                           <button
                             type="button"
                             onClick={() => setSearchSourceMode("published")}
-                            className={`px-2.5 py-1 rounded-md transition-all font-medium whitespace-nowrap ${
+                            className={`h-7 whitespace-nowrap rounded-[var(--ui-radius-button)] border px-2.5 font-medium transition-colors ${
                               searchSourceMode === "published"
-                                ? "bg-[var(--primary)] text-white shadow-2xs"
-                                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                                ? "border-border bg-card text-foreground shadow-xs"
+                                : "border-transparent text-muted-foreground hover:text-foreground"
                             }`}
                           >
                             📚 Sách (Goodreads / Fable / Google)
@@ -955,10 +926,10 @@ export function MetadataModal({
                           <button
                             type="button"
                             onClick={() => setSearchSourceMode("wattpad")}
-                            className={`px-2.5 py-1 rounded-md transition-all font-medium whitespace-nowrap ${
+                            className={`h-7 whitespace-nowrap rounded-[var(--ui-radius-button)] border px-2.5 font-medium transition-colors ${
                               searchSourceMode === "wattpad"
-                                ? "bg-[var(--primary)] text-white shadow-2xs"
-                                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                                ? "border-border bg-card text-foreground shadow-xs"
+                                : "border-transparent text-muted-foreground hover:text-foreground"
                             }`}
                           >
                             📖 Wattpad &amp; Truyện Mạng
@@ -966,12 +937,13 @@ export function MetadataModal({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-[var(--border)]/50">
-                        <button
+                      <div className="flex items-center gap-2 flex-wrap border-t border-border/50 pt-2">
+                        <Button
                           type="button"
+                          variant="secondary"
                           onClick={handleSearchOnline}
                           disabled={isSearchingOnline}
-                          className="lg-button lg-button--primary text-xs h-8 px-3.5 gap-1.5 font-medium shadow-2xs"
+                          className="h-7 gap-1.5 rounded-[var(--ui-radius-button)] px-2.5 text-xs text-primary"
                         >
                           {isSearchingOnline ? (
                             <Loader2 size={13} className="animate-spin" />
@@ -979,13 +951,14 @@ export function MetadataModal({
                             <Search size={13} />
                           )}
                           <span>{isSearchingOnline ? "Đang tra cứu..." : "Tra cứu trực tuyến"}</span>
-                        </button>
+                        </Button>
 
-                        <button
+                        <Button
                           type="button"
+                          variant="secondary"
                           onClick={handleAiEnrich}
                           disabled={isAiEnriching}
-                          className="lg-button lg-button--secondary text-xs h-8 px-3.5 gap-1.5 text-[var(--primary)] font-medium"
+                          className="h-7 gap-1.5 rounded-[var(--ui-radius-button)] px-2.5 text-xs text-primary"
                           title={activeGateway ? `Dùng mô hình ${selectedModel}` : "Chưa kết nối AI Gateway"}
                         >
                           {isAiEnriching ? (
@@ -994,30 +967,43 @@ export function MetadataModal({
                             <Wand2 size={13} />
                           )}
                           <span>{isAiEnriching ? "AI đang đọc..." : "AI Tóm tắt & Văn án"}</span>
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   </div>
 
-                  {/* Title & Author row */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
-                    <div className="space-y-1 min-w-0">
-                      <label className="text-xs font-semibold text-[var(--foreground)] flex items-center gap-1.5 truncate">
-                        <BookOpen size={13} className="text-[var(--primary)] shrink-0" />
-                        <span>Tựa đề / Tên truyện (Title) *</span>
+                  {/* Two-column form grid (title & description span both columns) */}
+                  <div className="grid gap-4 sm:grid-cols-2 min-w-0">
+                    {/* Title */}
+                    <div className="sm:col-span-2 min-w-0">
+                      <label className="flex items-center gap-1.5 text-sm font-medium text-foreground truncate">
+                        <BookOpen size={14} className="text-primary shrink-0" />
+                        <span>
+                          Tựa đề / Tên truyện (Title) <span className="text-red-600">*</span>
+                        </span>
                       </label>
                       <input
                         type="text"
                         value={title}
                         onChange={(e) => setTitle(e.target.value)}
                         placeholder="Nhập tên truyện hoặc tựa sách..."
-                        className="w-full min-w-0 text-xs px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] focus:outline-hidden focus:border-[var(--primary)]"
+                        className="mt-1.5 h-10 w-full min-w-0 rounded-[var(--ui-radius-card)] border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/25"
                       />
+                      <div className="mt-1 min-h-4 text-xs">
+                        {saveStatus === "unsaved" ? (
+                          <span className="text-red-600">Tựa đề không được để trống</span>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            Bắt buộc, hiển thị làm tên sách trong thư viện
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="space-y-1 min-w-0">
-                      <label className="text-xs font-semibold text-[var(--foreground)] flex items-center gap-1.5 truncate">
-                        <Globe size={13} className="text-[var(--primary)] shrink-0" />
+                    {/* Author */}
+                    <div className="min-w-0">
+                      <label className="flex items-center gap-1.5 text-sm font-medium text-foreground truncate">
+                        <Globe size={14} className="text-primary shrink-0" />
                         <span>Tác giả / Dịch giả / Editor (Author)</span>
                       </label>
                       <input
@@ -1025,16 +1011,17 @@ export function MetadataModal({
                         value={author}
                         onChange={(e) => setAuthor(e.target.value)}
                         placeholder="Tên tác giả gốc hoặc người dịch..."
-                        className="w-full min-w-0 text-xs px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] focus:outline-hidden focus:border-[var(--primary)]"
+                        className="mt-1.5 h-10 w-full min-w-0 rounded-[var(--ui-radius-card)] border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/25"
                       />
+                      <div className="mt-1 min-h-4 text-xs">
+                        <span className="text-muted-foreground">Để trống sẽ lưu là Khuyết Danh</span>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Genre & Source / Publisher */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
-                    <div className="space-y-1 min-w-0">
-                      <label className="text-xs font-semibold text-[var(--foreground)] flex items-center gap-1.5 truncate">
-                        <Tag size={13} className="text-[var(--muted-foreground)] shrink-0" />
+                    {/* Genre */}
+                    <div className="min-w-0">
+                      <label className="flex items-center gap-1.5 text-sm font-medium text-foreground truncate">
+                        <Tag size={14} className="text-muted-foreground shrink-0" />
                         <span>Thể loại / Tags (Genre)</span>
                       </label>
                       <input
@@ -1042,13 +1029,17 @@ export function MetadataModal({
                         value={genre}
                         onChange={(e) => setGenre(e.target.value)}
                         placeholder="Ngôn tình, Tiên hiệp, Đam mỹ, Tiểu thuyết, Trinh thám..."
-                        className="w-full min-w-0 text-xs px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] focus:outline-hidden focus:border-[var(--primary)]"
+                        className="mt-1.5 h-10 w-full min-w-0 rounded-[var(--ui-radius-card)] border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/25"
                       />
+                      <div className="mt-1 min-h-4 text-xs">
+                        <span className="text-muted-foreground">Nhiều thể loại, cách nhau bằng dấu phẩy</span>
+                      </div>
                     </div>
 
-                    <div className="space-y-1 min-w-0">
-                      <label className="text-xs font-semibold text-[var(--foreground)] flex items-center gap-1.5 truncate">
-                        <Building2 size={13} className="text-[var(--muted-foreground)] shrink-0" />
+                    {/* Publisher */}
+                    <div className="min-w-0">
+                      <label className="flex items-center gap-1.5 text-sm font-medium text-foreground truncate">
+                        <Building2 size={14} className="text-muted-foreground shrink-0" />
                         <span>Nguồn truyện / Nhà xuất bản</span>
                       </label>
                       <input
@@ -1056,16 +1047,15 @@ export function MetadataModal({
                         value={publisher}
                         onChange={(e) => setPublisher(e.target.value)}
                         placeholder="Goodreads, Wattpad, TruyenFull, TangThuVien, NXB Trẻ..."
-                        className="w-full min-w-0 text-xs px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] focus:outline-hidden focus:border-[var(--primary)]"
+                        className="mt-1.5 h-10 w-full min-w-0 rounded-[var(--ui-radius-card)] border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/25"
                       />
+                      <div className="mt-1 min-h-4 text-xs" />
                     </div>
-                  </div>
 
-                  {/* Status / Year, Language & ISBN */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-0">
-                    <div className="space-y-1 min-w-0">
-                      <label className="text-xs font-semibold text-[var(--foreground)] flex items-center gap-1.5 truncate">
-                        <Calendar size={13} className="text-[var(--muted-foreground)] shrink-0" />
+                    {/* Published year */}
+                    <div className="min-w-0">
+                      <label className="flex items-center gap-1.5 text-sm font-medium text-foreground truncate">
+                        <Calendar size={14} className="text-muted-foreground shrink-0" />
                         <span>Tình trạng / Năm phát hành</span>
                       </label>
                       <input
@@ -1073,13 +1063,15 @@ export function MetadataModal({
                         value={publishedYear}
                         onChange={(e) => setPublishedYear(e.target.value)}
                         placeholder="Hoàn thành, Đang ra, hoặc 2024..."
-                        className="w-full min-w-0 text-xs px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] focus:outline-hidden focus:border-[var(--primary)]"
+                        className="mt-1.5 h-10 w-full min-w-0 rounded-[var(--ui-radius-card)] border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/25"
                       />
+                      <div className="mt-1 min-h-4 text-xs" />
                     </div>
 
-                    <div className="space-y-1 min-w-0">
-                      <label className="text-xs font-semibold text-[var(--foreground)] flex items-center gap-1.5 truncate">
-                        <Globe size={13} className="text-[var(--muted-foreground)] shrink-0" />
+                    {/* Language */}
+                    <div className="min-w-0">
+                      <label className="flex items-center gap-1.5 text-sm font-medium text-foreground truncate">
+                        <Globe size={14} className="text-muted-foreground shrink-0" />
                         <span>Mã ngôn ngữ</span>
                       </label>
                       <input
@@ -1087,13 +1079,15 @@ export function MetadataModal({
                         value={language}
                         onChange={(e) => setLanguage(e.target.value)}
                         placeholder="vi, en, zh, ja..."
-                        className="w-full min-w-0 text-xs px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] focus:outline-hidden focus:border-[var(--primary)] font-mono"
+                        className="mt-1.5 h-10 w-full min-w-0 rounded-[var(--ui-radius-card)] border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/25 font-mono"
                       />
+                      <div className="mt-1 min-h-4 text-xs" />
                     </div>
 
-                    <div className="space-y-1 min-w-0">
-                      <label className="text-xs font-semibold text-[var(--foreground)] flex items-center gap-1.5 truncate">
-                        <Hash size={13} className="text-[var(--muted-foreground)] shrink-0" />
+                    {/* ISBN */}
+                    <div className="min-w-0">
+                      <label className="flex items-center gap-1.5 text-sm font-medium text-foreground truncate">
+                        <Hash size={14} className="text-muted-foreground shrink-0" />
                         <span>Mã ISBN (tùy chọn)</span>
                       </label>
                       <input
@@ -1101,41 +1095,40 @@ export function MetadataModal({
                         value={isbn}
                         onChange={(e) => setIsbn(e.target.value)}
                         placeholder="978-604-..."
-                        className="w-full min-w-0 text-xs px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] focus:outline-hidden focus:border-[var(--primary)] font-mono"
+                        className="mt-1.5 h-10 w-full min-w-0 rounded-[var(--ui-radius-card)] border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/25 font-mono"
                       />
+                      <div className="mt-1 min-h-4 text-xs" />
                     </div>
-                  </div>
 
-                  {/* Description / Synopsis / Van An */}
-                  <div className="space-y-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-semibold text-[var(--foreground)] flex items-center gap-1.5">
-                        <Layers size={13} className="text-[var(--primary)]" />
+                    {/* Description */}
+                    <div className="sm:col-span-2 min-w-0">
+                      <label className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                        <Layers size={14} className="text-primary shrink-0" />
                         <span>Văn án / Lời giới thiệu &amp; Tóm tắt nội dung</span>
                       </label>
-                      <span className="text-[10px] text-[var(--muted-foreground)]">
-                        {(description || "").length} ký tự
-                      </span>
+                      <textarea
+                        rows={6}
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        placeholder="Nhập văn án tác phẩm hoặc tóm tắt nội dung sách, hoặc nhấn 'AI Tóm tắt & Văn án' để hệ thống tự động bóc tách từ chương đầu..."
+                        className="mt-1.5 w-full min-w-0 rounded-[var(--ui-radius-card)] border border-border bg-card px-3 py-2 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/25 resize-y"
+                      />
+                      <div className="mt-1 min-h-4 text-xs">
+                        <span className="text-muted-foreground">{(description || "").length} ký tự</span>
+                      </div>
                     </div>
-                    <textarea
-                      rows={6}
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      placeholder="Nhập văn án tác phẩm hoặc tóm tắt nội dung sách, hoặc nhấn 'AI Tóm tắt & Văn án' để hệ thống tự động bóc tách từ chương đầu..."
-                      className="w-full min-w-0 text-xs px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] focus:outline-hidden focus:border-[var(--primary)] leading-relaxed resize-y"
-                    />
                   </div>
 
                   {/* Search Results Drawer if user searched */}
                   {showSearchResults && (
-                    <div className="mt-4 p-4 rounded-xl border border-[var(--primary)]/30 bg-[var(--primary)]/5 space-y-3 animate-in fade-in duration-150 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Search size={14} className="text-[var(--primary)]" />
-                          <h4 className="text-xs font-bold text-[var(--foreground)]">
+                    <div className="rounded-[var(--ui-radius-card)] border border-primary/30 bg-primary/5 p-3 space-y-3 animate-in fade-in duration-150 min-w-0">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Search size={14} className="text-primary shrink-0" />
+                          <h4 className="text-xs font-semibold text-foreground truncate">
                             Kết Quả Tra Cứu Trực Tuyến ({searchResults.length})
                           </h4>
-                          <span className="app-badge app-badge--brand text-[10px]">
+                          <span className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-primary/30 bg-primary/10 px-2 text-xs font-medium text-primary">
                             {searchSourceMode === "wattpad"
                               ? "Wattpad"
                               : searchSourceMode === "published"
@@ -1146,14 +1139,14 @@ export function MetadataModal({
                         <button
                           type="button"
                           onClick={() => setShowSearchResults(false)}
-                          className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                          className="h-7 shrink-0 rounded-[var(--ui-radius-button)] px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                         >
                           Đóng
                         </button>
                       </div>
 
                       {searchResults.length === 0 ? (
-                        <p className="text-xs text-[var(--muted-foreground)]">
+                        <p className="text-xs text-muted-foreground">
                           Không tìm thấy kết quả nào khớp với "{title}". Hãy thử đổi sang nguồn khác hoặc dùng AI.
                         </p>
                       ) : (
@@ -1161,27 +1154,27 @@ export function MetadataModal({
                           {searchResults.map((item) => (
                             <div
                               key={item.id}
-                              className="p-3 rounded-lg border border-[var(--border)] bg-[var(--card)] flex items-start justify-between gap-3 hover:border-[var(--primary)] transition-all shadow-2xs min-w-0"
+                              className="flex items-start justify-between gap-3 rounded-[var(--ui-radius-card)] border border-border bg-card p-3 shadow-xs hover:border-primary transition-colors min-w-0"
                             >
                               <div className="flex items-start gap-3 min-w-0">
                                 {item.coverUrl ? (
                                   <img
                                     src={item.coverUrl}
                                     alt=""
-                                    className="w-12 h-16 object-cover rounded shrink-0 border border-[var(--border)] shadow-xs"
+                                    className="h-16 w-12 shrink-0 rounded-[var(--ui-radius-card)] border border-border object-cover shadow-xs"
                                   />
                                 ) : (
-                                  <div className="w-12 h-16 bg-[var(--secondary)] rounded shrink-0 flex items-center justify-center text-[var(--muted-foreground)]">
+                                  <div className="flex h-16 w-12 shrink-0 items-center justify-center rounded-[var(--ui-radius-card)] bg-secondary text-muted-foreground">
                                     <BookOpen size={18} />
                                   </div>
                                 )}
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1.5 flex-wrap">
-                                    <h5 className="text-xs font-bold text-[var(--foreground)] line-clamp-1">
+                                    <h5 className="text-xs font-semibold text-foreground line-clamp-1">
                                       {item.title}
                                     </h5>
                                     <span
-                                      className={`app-badge text-[9px] px-1.5 py-0.5 ${
+                                      className={`inline-flex h-5 items-center whitespace-nowrap rounded-full border px-1.5 text-xs font-medium ${
                                         item.source === "goodreads"
                                           ? "bg-amber-500/10 text-amber-500 border-amber-500/30"
                                           : item.source === "fable"
@@ -1204,27 +1197,28 @@ export function MetadataModal({
                                         : "Open Library"}
                                     </span>
                                   </div>
-                                  <p className="text-[11px] text-[var(--muted-foreground)] line-clamp-1 mt-0.5">
-                                    Tác giả: <strong className="text-[var(--foreground)]">{normalizeAuthor(item.author)}</strong>
+                                  <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">
+                                    Tác giả: <strong className="text-foreground">{normalizeAuthor(item.author)}</strong>
                                     {item.publisher ? ` • ${item.publisher}` : ""}
                                     {item.publishedYear ? ` • ${item.publishedYear}` : ""}
                                   </p>
                                   {item.description && (
-                                    <p className="text-[11px] text-[var(--muted-foreground)] line-clamp-2 mt-1 italic">
+                                    <p className="mt-1 text-xs text-muted-foreground italic line-clamp-2">
                                       "{item.description}"
                                     </p>
                                   )}
                                 </div>
                               </div>
 
-                              <button
+                              <Button
                                 type="button"
+                                variant="secondary"
                                 onClick={() => openDiffConfirmation(item)}
-                                className="lg-button lg-button--primary text-xs h-7 px-3 gap-1 shrink-0"
+                                className="h-7 shrink-0 gap-1 rounded-[var(--ui-radius-button)] px-2.5 text-xs text-primary"
                               >
                                 <Check size={12} />
                                 <span>Áp Dụng</span>
-                              </button>
+                              </Button>
                             </div>
                           ))}
                         </div>
@@ -1238,24 +1232,22 @@ export function MetadataModal({
               {activeTab === "covers" && (
                 <div className="space-y-4">
                   {/* Cover search bar with source mode */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-[var(--border)] bg-[var(--card)]/60">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-[var(--ui-radius-card)] border border-border bg-card p-3">
                     <div className="flex items-center gap-2 flex-1 max-w-md">
-                      <div className="relative flex-1">
-                        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
-                        <input
-                          type="text"
-                          placeholder="Tìm ảnh bìa theo tên sách hoặc tác giả..."
-                          value={coverSearchQuery}
-                          onChange={(e) => setCoverSearchQuery(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && handleSearchCovers()}
-                          className="w-full text-xs pl-8 pr-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] focus:outline-hidden focus:border-[var(--primary)]"
-                        />
-                      </div>
-                      <button
+                      <input
+                        type="text"
+                        placeholder="Tìm ảnh bìa theo tên sách hoặc tác giả..."
+                        value={coverSearchQuery}
+                        onChange={(e) => setCoverSearchQuery(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleSearchCovers()}
+                        className="h-10 w-full min-w-0 rounded-[var(--ui-radius-card)] border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/25"
+                      />
+                      <Button
                         type="button"
+                        variant="secondary"
                         onClick={handleSearchCovers}
                         disabled={isSearchingCovers}
-                        className="lg-button lg-button--primary text-xs h-8 px-3 gap-1.5 font-medium shrink-0"
+                        className="h-7 shrink-0 gap-1.5 rounded-[var(--ui-radius-button)] px-2.5 text-xs text-primary"
                       >
                         {isSearchingCovers ? (
                           <Loader2 size={13} className="animate-spin" />
@@ -1263,18 +1255,18 @@ export function MetadataModal({
                           <Search size={13} />
                         )}
                         <span>{isSearchingCovers ? "Đang quét..." : "Tìm Bìa"}</span>
-                      </button>
+                      </Button>
                     </div>
 
-                    <div className="flex items-center gap-1 bg-[var(--secondary)] p-0.5 rounded-lg border border-[var(--border)] text-[11px] flex-wrap">
+                    <div className="flex items-center gap-0.5 rounded-[var(--ui-radius-button)] border border-border bg-secondary p-0.5 text-xs flex-wrap">
                       <button
                         type="button"
                         onClick={() => {
                           setCoverSourceMode("all");
                           handleSearchCovers();
                         }}
-                        className={`px-2.5 py-1 rounded-md transition-all font-medium ${
-                          coverSourceMode === "all" ? "bg-[var(--primary)] text-white shadow-2xs" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                        className={`h-7 whitespace-nowrap rounded-[var(--ui-radius-button)] border px-2.5 font-medium transition-colors ${
+                          coverSourceMode === "all" ? "border-border bg-card text-foreground shadow-xs" : "border-transparent text-muted-foreground hover:text-foreground"
                         }`}
                       >
                         🌐 Tất Cả Nguồn
@@ -1285,8 +1277,8 @@ export function MetadataModal({
                           setCoverSourceMode("published");
                           handleSearchCovers();
                         }}
-                        className={`px-2.5 py-1 rounded-md transition-all font-medium ${
-                          coverSourceMode === "published" ? "bg-[var(--primary)] text-white shadow-2xs" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                        className={`h-7 whitespace-nowrap rounded-[var(--ui-radius-button)] border px-2.5 font-medium transition-colors ${
+                          coverSourceMode === "published" ? "border-border bg-card text-foreground shadow-xs" : "border-transparent text-muted-foreground hover:text-foreground"
                         }`}
                       >
                         📚 Sách (Goodreads / Fable)
@@ -1297,8 +1289,8 @@ export function MetadataModal({
                           setCoverSourceMode("wattpad");
                           handleSearchCovers();
                         }}
-                        className={`px-2.5 py-1 rounded-md transition-all font-medium ${
-                          coverSourceMode === "wattpad" ? "bg-[var(--primary)] text-white shadow-2xs" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                        className={`h-7 whitespace-nowrap rounded-[var(--ui-radius-button)] border px-2.5 font-medium transition-colors ${
+                          coverSourceMode === "wattpad" ? "border-border bg-card text-foreground shadow-xs" : "border-transparent text-muted-foreground hover:text-foreground"
                         }`}
                       >
                         📖 Wattpad (HD)
@@ -1308,20 +1300,21 @@ export function MetadataModal({
 
                   {/* Covers Grid */}
                   {coverGallery.length === 0 ? (
-                    <div className="p-12 text-center border-2 border-dashed border-[var(--border)] rounded-xl flex flex-col items-center justify-center">
-                      <ImageIcon size={32} className="text-[var(--muted-foreground)] opacity-40 mb-2" />
-                      <p className="text-xs font-semibold text-[var(--foreground)]">Chưa có kết quả ảnh bìa</p>
-                      <p className="text-[11px] text-[var(--muted-foreground)] mt-0.5 max-w-sm">
+                    <div className="flex flex-col items-center justify-center rounded-[var(--ui-radius-card)] border border-dashed border-border p-12 text-center">
+                      <ImageIcon size={32} className="text-muted-foreground opacity-40 mb-2" />
+                      <p className="text-sm font-semibold text-foreground">Chưa có kết quả ảnh bìa</p>
+                      <p className="mt-0.5 max-w-sm text-xs text-muted-foreground">
                         Nhấn "Tìm Bìa" để hệ thống tự động quét kho ảnh bìa chất lượng cao từ Wattpad, Google Books và Open Library.
                       </p>
-                      <button
+                      <Button
                         type="button"
+                        variant="secondary"
                         onClick={handleSearchCovers}
-                        className="mt-3 lg-button lg-button--secondary text-xs h-7 px-3 gap-1.5"
+                        className="mt-3 h-7 gap-1.5 rounded-[var(--ui-radius-button)] px-2.5 text-xs"
                       >
                         <Search size={12} />
                         <span>Quét ảnh bìa ngay</span>
-                      </button>
+                      </Button>
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
@@ -1329,7 +1322,7 @@ export function MetadataModal({
                         <div
                           key={idx}
                           onClick={() => handleSelectCover(cov)}
-                          className="group relative aspect-[2/3] rounded-xl overflow-hidden border-2 border-[var(--border)] hover:border-[var(--primary)] bg-[var(--secondary)] cursor-pointer transition-all shadow-xs hover:shadow-lg flex flex-col justify-end"
+                          className="group relative flex aspect-[2/3] cursor-pointer flex-col justify-end overflow-hidden rounded-[var(--ui-radius-card)] border border-border bg-secondary shadow-xs transition-all hover:border-primary hover:shadow-lg"
                         >
                           <img
                             src={cov.url}
@@ -1340,19 +1333,20 @@ export function MetadataModal({
                           <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent opacity-80 group-hover:opacity-95 transition-opacity" />
 
                           <div className="relative p-2 text-white">
-                            <span className="app-badge bg-black/60 text-[9px] px-1.5 py-0.5 border-white/20">
+                            <span className="inline-flex h-5 items-center whitespace-nowrap rounded-full border border-white/20 bg-black/60 px-1.5 text-xs font-medium text-white">
                               {cov.source} {cov.quality === "high" ? "• HD" : ""}
                             </span>
-                            <p className="text-[10px] text-white/90 line-clamp-1 mt-1 font-medium">
+                            <p className="mt-1 text-xs font-medium text-white/90 line-clamp-1">
                               {cov.label}
                             </p>
-                            <button
+                            <Button
                               type="button"
-                              className="mt-1 w-full lg-button lg-button--primary text-[10px] h-6 py-0 gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                              variant="secondary"
+                              className="mt-1 h-7 w-full gap-1 rounded-[var(--ui-radius-button)] px-2 text-xs opacity-0 transition-opacity group-hover:opacity-100"
                             >
-                              <Check size={11} />
+                              <Check size={12} />
                               <span>Chọn bìa này</span>
-                            </button>
+                            </Button>
                           </div>
                         </div>
                       ))}
@@ -1363,33 +1357,34 @@ export function MetadataModal({
 
               {/* TAB 3: CUSTOM UPLOAD / URL */}
               {activeTab === "upload" && (
-                <div className="space-y-6 max-w-xl">
+                <div className="space-y-4 max-w-xl">
                   {/* File Upload Box */}
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    className="p-8 border-2 border-dashed border-[var(--border)] rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer hover:border-[var(--primary)] hover:bg-[var(--accent)]/10 transition-all select-none"
+                    className="flex flex-col items-center justify-center gap-2 rounded-[var(--ui-radius-card)] border border-dashed border-border p-8 text-center cursor-pointer hover:border-primary hover:bg-accent/10 transition-colors select-none"
                   >
-                    <div className="w-12 h-12 rounded-full bg-[var(--primary)]/10 text-[var(--primary)] flex items-center justify-center mb-2 shadow-xs">
-                      <Upload size={20} />
+                    <div className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <Upload size={18} />
                     </div>
-                    <p className="text-xs font-bold text-[var(--foreground)]">
+                    <p className="text-sm font-semibold text-foreground">
                       Chọn file ảnh từ máy tính của bạn
                     </p>
-                    <p className="text-[11px] text-[var(--muted-foreground)] mt-1">
+                    <p className="text-xs text-muted-foreground">
                       Hỗ trợ định dạng JPG, PNG, WebP (Khuyến nghị chuẩn tỉ lệ 2:3, tối thiểu 800x1200 px)
                     </p>
-                    <button
+                    <Button
                       type="button"
-                      className="mt-3 lg-button lg-button--primary text-xs h-7 px-3"
+                      variant="secondary"
+                      className="mt-1 h-7 gap-1.5 rounded-[var(--ui-radius-button)] px-2.5 text-xs text-primary"
                     >
                       Duyệt file trên máy
-                    </button>
+                    </Button>
                   </div>
 
                   {/* URL Paste Box */}
-                  <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-2">
-                    <label className="text-xs font-semibold text-[var(--foreground)] flex items-center gap-1.5">
-                      <ExternalLink size={13} className="text-[var(--primary)]" />
+                  <div className="rounded-[var(--ui-radius-card)] border border-border bg-card p-3 space-y-2">
+                    <label className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                      <ExternalLink size={14} className="text-primary shrink-0" />
                       <span>Hoặc dán trực tiếp đường dẫn URL ảnh</span>
                     </label>
                     <div className="flex items-center gap-2">
@@ -1399,98 +1394,102 @@ export function MetadataModal({
                         value={customImageUrl}
                         onChange={(e) => setCustomImageUrl(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && handleApplyCustomUrl()}
-                        className="flex-1 text-xs px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] focus:outline-hidden focus:border-[var(--primary)]"
+                        className="h-10 flex-1 min-w-0 rounded-[var(--ui-radius-card)] border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/25"
                       />
-                      <button
+                      <Button
                         type="button"
+                        variant="secondary"
                         disabled={isFetchingCustomUrl || !customImageUrl.trim()}
                         onClick={handleApplyCustomUrl}
-                        className="lg-button lg-button--secondary text-xs h-8 px-3 shrink-0 gap-1.5 font-medium"
+                        className="h-7 shrink-0 gap-1.5 rounded-[var(--ui-radius-button)] px-2.5 text-xs text-primary"
                       >
                         {isFetchingCustomUrl ? (
-                          <Loader2 size={13} className="animate-spin text-[var(--primary)]" />
+                          <Loader2 size={13} className="animate-spin" />
                         ) : (
                           <Upload size={13} />
                         )}
                         <span>{isFetchingCustomUrl ? "Đang tải..." : "Tải ảnh"}</span>
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </div>
               )}
             </div>
-
-            {/* Modal Bottom Footer Actions */}
-            <div className="h-14 px-6 border-t border-[var(--border)] flex items-center justify-between bg-[var(--ui-titlebar-surface)] shrink-0">
-              <div className="text-[11px] text-[var(--muted-foreground)] flex items-center gap-3">
-                <div className="flex items-center gap-1.5">
-                  <span>Trạng thái:</span>
-                  <span className="text-[var(--foreground)] font-medium">
-                    {currentBook ? `${currentBook.chapter_count} chương` : "Bản thảo"}
-                  </span>
-                </div>
-                <div className="h-3 w-px bg-[var(--border)]" />
-                {saveStatus === "saving" ? (
-                  <span className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
-                    <Loader2 size={12} className="animate-spin text-[var(--primary)]" />
-                    <span>Đang tự động lưu thay đổi...</span>
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                    <Check size={12} />
-                    <span>Mọi thay đổi đã được tự động lưu</span>
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleClose}
-                  className="lg-button lg-button--ghost text-xs h-8 px-3"
-                >
-                  Đóng
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSaveAll}
-                  className="lg-button lg-button--primary text-xs h-8 px-4 gap-1.5 font-medium shadow-xs"
-                >
-                  <BookmarkCheck size={14} />
-                  <span>Hoàn Tất &amp; Lưu</span>
-                </button>
-              </div>
-            </div>
           </div>
         </div>
+
+        {/* Fixed Footer */}
+        <footer className="shrink-0 min-h-14 px-5 py-1 border-t border-border flex items-center justify-between gap-3 bg-[var(--ui-titlebar-surface)]">
+          <div className="flex items-center gap-3 text-xs text-muted-foreground min-w-0">
+            <div className="flex items-center gap-1.5 whitespace-nowrap">
+              <span>Trạng thái:</span>
+              <span className="font-medium text-foreground">
+                {currentBook ? `${currentBook.chapter_count} chương` : "Bản thảo"}
+              </span>
+            </div>
+            <div className="h-3 w-px bg-border" />
+            {saveStatus === "saving" ? (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap">
+                <Loader2 size={12} className="animate-spin text-primary" />
+                <span>Đang tự động lưu thay đổi...</span>
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                <Check size={12} />
+                <span>Mọi thay đổi đã được tự động lưu</span>
+              </span>
+            )}
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleClose}
+              className="h-9 rounded-[var(--ui-radius-button)] px-3 text-xs"
+            >
+              Đóng
+            </Button>
+
+            <Button
+              type="button"
+              onClick={handleSaveAll}
+              className="h-9 gap-1.5 rounded-[var(--ui-radius-button)] px-4 text-xs"
+            >
+              <BookmarkCheck size={14} />
+              <span>Hoàn Tất &amp; Lưu</span>
+            </Button>
+          </div>
+        </footer>
       </div>
 
       {/* DIFF & CONFIRMATION MODAL POPUP */}
       {diffModalData && (
         <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-100">
-          <div className="card-surface rounded-xl max-w-lg w-full p-5 space-y-4 shadow-2xl border border-[var(--border)]">
-            <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
-              <div className="flex items-center gap-2">
-                <Sparkles size={16} className="text-[var(--primary)]" />
-                <h3 className="text-sm font-bold text-[var(--foreground)]">Xác Nhận Áp Dụng Metadata</h3>
+          <div className="card-surface rounded-[var(--ui-radius-overlay)] w-full max-w-lg p-5 space-y-4 shadow-2xl border border-border">
+            <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <Sparkles size={16} className="text-primary shrink-0" />
+                <h3 className="text-sm font-semibold text-foreground">Xác Nhận Áp Dụng Metadata</h3>
               </div>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon"
                 onClick={() => setDiffModalData(null)}
-                className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                className="size-8 shrink-0 rounded-[var(--ui-radius-button)] text-muted-foreground hover:text-foreground"
               >
-                <X size={15} />
-              </button>
+                <X className="size-4" />
+              </Button>
             </div>
 
-            <p className="text-xs text-[var(--muted-foreground)]">
+            <p className="text-sm text-muted-foreground">
               Chọn các trường bạn muốn cập nhật vào sách từ dữ liệu đối chiếu mới:
             </p>
 
-            <div className="space-y-2 max-h-72 overflow-y-auto pr-1 text-xs">
+            <div className="max-h-72 space-y-2 overflow-y-auto pr-1 text-xs">
               {diffModalData.incoming.title && (
-                <label className="flex items-start gap-2.5 p-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] cursor-pointer hover:border-[var(--primary)]">
+                <label className="flex items-start gap-2.5 rounded-[var(--ui-radius-card)] border border-border bg-secondary p-2 cursor-pointer hover:border-primary transition-colors">
                   <input
                     type="checkbox"
                     checked={diffModalData.fieldsToApply.title}
@@ -1500,18 +1499,18 @@ export function MetadataModal({
                         fieldsToApply: { ...diffModalData.fieldsToApply, title: e.target.checked },
                       })
                     }
-                    className="mt-0.5 rounded text-[var(--primary)]"
+                    className="mt-0.5 rounded text-primary"
                   />
-                  <div>
-                    <span className="font-semibold text-[var(--foreground)]">Tựa đề / Tên truyện:</span>
-                    <p className="text-[var(--primary)] font-medium mt-0.5">{diffModalData.incoming.title}</p>
-                    <span className="text-[10px] text-[var(--muted-foreground)]">Hiện tại: {title || "Chưa có"}</span>
+                  <div className="min-w-0">
+                    <span className="text-xs font-semibold text-foreground">Tựa đề / Tên truyện:</span>
+                    <p className="mt-0.5 text-xs font-medium text-primary">{diffModalData.incoming.title}</p>
+                    <span className="text-xs text-muted-foreground">Hiện tại: {title || "Chưa có"}</span>
                   </div>
                 </label>
               )}
 
               {diffModalData.incoming.author && (
-                <label className="flex items-start gap-2.5 p-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] cursor-pointer hover:border-[var(--primary)]">
+                <label className="flex items-start gap-2.5 rounded-[var(--ui-radius-card)] border border-border bg-secondary p-2 cursor-pointer hover:border-primary transition-colors">
                   <input
                     type="checkbox"
                     checked={diffModalData.fieldsToApply.author}
@@ -1521,18 +1520,18 @@ export function MetadataModal({
                         fieldsToApply: { ...diffModalData.fieldsToApply, author: e.target.checked },
                       })
                     }
-                    className="mt-0.5 rounded text-[var(--primary)]"
+                    className="mt-0.5 rounded text-primary"
                   />
-                  <div>
-                    <span className="font-semibold text-[var(--foreground)]">Tác giả:</span>
-                    <p className="text-[var(--primary)] font-medium mt-0.5">{normalizeAuthor(diffModalData.incoming.author)}</p>
-                    <span className="text-[10px] text-[var(--muted-foreground)]">Hiện tại: {author || "Chưa có"}</span>
+                  <div className="min-w-0">
+                    <span className="text-xs font-semibold text-foreground">Tác giả:</span>
+                    <p className="mt-0.5 text-xs font-medium text-primary">{normalizeAuthor(diffModalData.incoming.author)}</p>
+                    <span className="text-xs text-muted-foreground">Hiện tại: {author || "Chưa có"}</span>
                   </div>
                 </label>
               )}
 
               {diffModalData.incoming.publisher && (
-                <label className="flex items-start gap-2.5 p-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] cursor-pointer hover:border-[var(--primary)]">
+                <label className="flex items-start gap-2.5 rounded-[var(--ui-radius-card)] border border-border bg-secondary p-2 cursor-pointer hover:border-primary transition-colors">
                   <input
                     type="checkbox"
                     checked={diffModalData.fieldsToApply.publisher}
@@ -1542,18 +1541,18 @@ export function MetadataModal({
                         fieldsToApply: { ...diffModalData.fieldsToApply, publisher: e.target.checked },
                       })
                     }
-                    className="mt-0.5 rounded text-[var(--primary)]"
+                    className="mt-0.5 rounded text-primary"
                   />
-                  <div>
-                    <span className="font-semibold text-[var(--foreground)]">Nguồn / Nhà xuất bản:</span>
-                    <p className="text-[var(--primary)] font-medium mt-0.5">{diffModalData.incoming.publisher}</p>
-                    <span className="text-[10px] text-[var(--muted-foreground)]">Hiện tại: {publisher || "Chưa có"}</span>
+                  <div className="min-w-0">
+                    <span className="text-xs font-semibold text-foreground">Nguồn / Nhà xuất bản:</span>
+                    <p className="mt-0.5 text-xs font-medium text-primary">{diffModalData.incoming.publisher}</p>
+                    <span className="text-xs text-muted-foreground">Hiện tại: {publisher || "Chưa có"}</span>
                   </div>
                 </label>
               )}
 
               {diffModalData.incoming.description && (
-                <label className="flex items-start gap-2.5 p-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] cursor-pointer hover:border-[var(--primary)]">
+                <label className="flex items-start gap-2.5 rounded-[var(--ui-radius-card)] border border-border bg-secondary p-2 cursor-pointer hover:border-primary transition-colors">
                   <input
                     type="checkbox"
                     checked={diffModalData.fieldsToApply.description}
@@ -1563,11 +1562,11 @@ export function MetadataModal({
                         fieldsToApply: { ...diffModalData.fieldsToApply, description: e.target.checked },
                       })
                     }
-                    className="mt-0.5 rounded text-[var(--primary)]"
+                    className="mt-0.5 rounded text-primary"
                   />
-                  <div>
-                    <span className="font-semibold text-[var(--foreground)]">Văn án / Tóm tắt nội dung:</span>
-                    <p className="text-[11px] text-[var(--foreground)] line-clamp-3 mt-0.5 italic">
+                  <div className="min-w-0">
+                    <span className="text-xs font-semibold text-foreground">Văn án / Tóm tắt nội dung:</span>
+                    <p className="mt-0.5 text-xs italic text-foreground line-clamp-3">
                       "{diffModalData.incoming.description}"
                     </p>
                   </div>
@@ -1575,7 +1574,7 @@ export function MetadataModal({
               )}
 
               {diffModalData.incoming.coverUrl && (
-                <label className="flex items-start gap-2.5 p-2 rounded-lg border border-[var(--border)] bg-[var(--secondary)] cursor-pointer hover:border-[var(--primary)]">
+                <label className="flex items-start gap-2.5 rounded-[var(--ui-radius-card)] border border-border bg-secondary p-2 cursor-pointer hover:border-primary transition-colors">
                   <input
                     type="checkbox"
                     checked={diffModalData.fieldsToApply.cover}
@@ -1585,39 +1584,41 @@ export function MetadataModal({
                         fieldsToApply: { ...diffModalData.fieldsToApply, cover: e.target.checked },
                       })
                     }
-                    className="mt-0.5 rounded text-[var(--primary)]"
+                    className="mt-0.5 rounded text-primary"
                   />
                   <div className="flex items-center gap-3">
                     <img
                       src={diffModalData.incoming.coverUrl}
                       alt=""
-                      className="w-10 h-14 object-cover rounded border border-[var(--border)]"
+                      className="h-14 w-10 rounded-[var(--ui-radius-card)] border border-border object-cover"
                     />
-                    <div>
-                      <span className="font-semibold text-[var(--foreground)]">Cập nhật ảnh bìa mới</span>
-                      <p className="text-[10px] text-[var(--muted-foreground)]">Độ nét cao từ ấn bản tìm thấy</p>
+                    <div className="min-w-0">
+                      <span className="text-xs font-semibold text-foreground">Cập nhật ảnh bìa mới</span>
+                      <p className="text-xs text-muted-foreground">Độ nét cao từ ấn bản tìm thấy</p>
                     </div>
                   </div>
                 </label>
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
-              <button
+            <div className="flex items-center justify-end gap-2 border-t border-border pt-3">
+              <Button
                 type="button"
+                variant="secondary"
                 onClick={() => setDiffModalData(null)}
-                className="lg-button lg-button--ghost text-xs h-7 px-3"
+                className="h-9 rounded-[var(--ui-radius-button)] px-3 text-xs"
               >
                 Hủy bỏ
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="secondary"
                 onClick={applyDiffFields}
-                className="lg-button lg-button--primary text-xs h-7 px-3 gap-1 font-medium"
+                className="h-9 gap-1 rounded-[var(--ui-radius-button)] px-3 text-xs text-primary"
               >
                 <Check size={12} />
                 <span>Áp Dụng Các Mục Đã Chọn</span>
-              </button>
+              </Button>
             </div>
           </div>
         </div>
