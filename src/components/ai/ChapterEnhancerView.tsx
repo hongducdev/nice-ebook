@@ -295,39 +295,39 @@ export function ChapterEnhancerView() {
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
       {/* Top Header */}
-      <div className="px-5 py-3 border-b border-border flex items-center justify-between bg-card/40 flex-shrink-0">
+      <div className="px-4 py-2.5 bg-transparent flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-3">
-          <div className="size-8 rounded-md bg-primary/15 border border-primary/40 flex items-center justify-center text-primary shadow-xs">
+          <div className="size-8 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center text-primary shrink-0">
             <Wand2 className="size-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-sm font-semibold text-foreground">
+              <h1 className="font-heading font-medium text-sm text-foreground tracking-tight">
                 Bước 3: Biên Tập &amp; Soát Lỗi AI
               </h1>
-              <Badge variant="outline" className="text-[10px] font-mono border-primary/40 text-primary">
+              <Badge variant="outline" className="text-[10px] font-mono border-primary/40 text-primary px-2 h-4.5 rounded-full">
                 {selectedModel || "gemini-3.6-flash"}
               </Badge>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Chuẩn hóa H1, dọn dẹp thẻ top rác, chèn heading H2/H3 phân cấp và sửa lỗi chính tả tiếng Việt.
             </p>
           </div>
         </div>
 
         {/* Top actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <AgentModelSelector compact className="h-7" />
           {modifiedCount > 0 && (
             <Button
               type="button"
-              variant="secondary"
-              size="sm"
+              variant="outline"
+              size="xs"
               onClick={() => setActiveTab("reader")}
-              className="gap-1.5"
+              className="h-7 px-3 text-xs gap-1.5 rounded-full text-foreground hover:text-primary hover:border-primary/40 transition-colors shadow-2xs"
               title="Xem trực tiếp các chương đã biên tập"
             >
-              <BookOpen className="size-3.5 text-primary" />
+              <BookOpen className="size-3 text-primary" />
               <span>Xem Trình Đọc</span>
             </Button>
           )}
@@ -335,13 +335,13 @@ export function ChapterEnhancerView() {
           {modifiedCount > 0 && (
             <Button
               type="button"
-              variant="destructive"
-              size="sm"
+              variant="outline"
+              size="xs"
               onClick={resetChapterOverrides}
-              className="gap-1.5"
+              className="h-7 px-3 text-xs gap-1.5 rounded-full text-destructive border-destructive/30 hover:bg-destructive/10 transition-colors shadow-2xs"
               title="Hoàn tác tất cả các thay đổi nội dung"
             >
-              <RotateCcw className="size-3.5" />
+              <RotateCcw className="size-3" />
               <span>Hoàn Tác</span>
             </Button>
           )}

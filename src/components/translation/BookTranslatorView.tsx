@@ -39,7 +39,6 @@ import { generateEpubCss, injectCssIntoHtml } from "../../utils/cssGenerator";
 import { combinePreviewCss } from "../../utils/bookStyleAnalyzer";
 import { sanitizeEpubHtml } from "../../utils/htmlSanitizer";
 import { LanguageDetectionResult } from "../../utils/languageDetector";
-import { WorkflowBanner } from "../workflow/WorkflowBanner";
 import { AgentModelSelector } from "../agent/AgentModelSelector";
 import { toast } from "sonner";
 import { invoke } from "@tauri-apps/api/core";
@@ -706,23 +705,23 @@ export function BookTranslatorView() {
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
       {/* Top Header */}
-      <header className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-border bg-card/50 backdrop-blur-sm">
+      <header className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 bg-transparent">
         <div className="flex items-center gap-3">
-          <div className="size-8 rounded-lg flex items-center justify-center bg-primary/10 text-primary border border-primary/30">
-            <Languages size={18} />
+          <div className="size-8 rounded-lg flex items-center justify-center bg-primary/15 text-primary border border-primary/30 shrink-0">
+            <Languages size={16} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xs font-semibold text-foreground leading-none">
+              <h1 className="font-heading font-medium text-sm text-foreground leading-none">
                 Bước 2: Dịch Thuật Sách AI
               </h1>
-              <Badge variant="secondary" className="bg-primary/10 text-primary text-xs px-1.5 h-4">
+              <Badge variant="secondary" className="bg-primary/10 text-primary text-xs px-2 h-4.5 rounded-full">
                 Surgical XHTML Preserved
               </Badge>
               {isCurrentChapterTranslated && (
                 <Badge
                   variant="secondary"
-                  className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-xs px-1.5 h-4"
+                  className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-xs px-2 h-4.5 rounded-full"
                 >
                   Chương này đã dịch
                 </Badge>
@@ -747,10 +746,6 @@ export function BookTranslatorView() {
           </div>
         </div>
       </header>
-
-      <div className="px-4 pt-3 flex-shrink-0">
-        <WorkflowBanner />
-      </div>
 
       {/* Bố cục A (ba vùng): vùng giữa là bảng/nhật ký, cột cấu hình 22rem dựng bên phải.
           DOM giữ nguyên thứ tự (panel trước, vùng chính sau) và đảo chiều bằng flex-row-reverse,
@@ -1343,8 +1338,13 @@ export function BookTranslatorView() {
                 </Label>
               </div>
 
-              <div className="flex items-center justify-between pt-1 border-t border-border/50">
-                <span className="text-xs text-muted-foreground">Số luồng dịch song song:</span>
+              <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground font-medium">Số luồng dịch song song:</span>
+                  <span className="font-mono text-[11px] font-semibold text-primary">
+                    {translationConfig.concurrency || 1}x ({translationConfig.concurrency === 3 ? "Tối đa" : translationConfig.concurrency === 2 ? "Nhanh" : "Tuần tự"})
+                  </span>
+                </div>
                 <ToggleGroup
                   type="single"
                   value={String(translationConfig.concurrency || 1)}
@@ -1353,15 +1353,15 @@ export function BookTranslatorView() {
                       setTranslationConfig({ concurrency: Number(val) as 1 | 2 | 3 });
                     }
                   }}
-                  className="border border-border rounded p-0.5 bg-background"
+                  className="grid grid-cols-3 border border-border rounded-xl p-0.5 bg-secondary/50 w-full"
                 >
-                  <ToggleGroupItem value="1" size="sm" className="h-5 px-1.5 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                  <ToggleGroupItem value="1" size="sm" className="h-7 text-xs rounded-lg font-medium data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:shadow-xs">
                     1x (Tuần tự)
                   </ToggleGroupItem>
-                  <ToggleGroupItem value="2" size="sm" className="h-5 px-1.5 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                  <ToggleGroupItem value="2" size="sm" className="h-7 text-xs rounded-lg font-medium data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:shadow-xs">
                     2x (Nhanh)
                   </ToggleGroupItem>
-                  <ToggleGroupItem value="3" size="sm" className="h-5 px-1.5 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                  <ToggleGroupItem value="3" size="sm" className="h-7 text-xs rounded-lg font-medium data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:shadow-xs">
                     3x (Tối đa)
                   </ToggleGroupItem>
                 </ToggleGroup>
@@ -1618,18 +1618,18 @@ export function BookTranslatorView() {
               )}
             </div>
 
-            <div className="max-h-64 overflow-y-auto rounded-[var(--ui-radius-card)] border border-border bg-card">
+            <div className="max-h-64 overflow-y-auto overflow-x-hidden rounded-xl border border-border bg-card shadow-xs">
               <table className="w-full table-fixed">
                 <caption className="sr-only">Danh sách chương và trạng thái dịch</caption>
-                <thead className="sticky top-0 z-10 bg-card">
+                <thead className="sticky top-0 z-10 bg-secondary/80 backdrop-blur-xs">
                   <tr className="h-9 border-b border-border text-xs font-medium text-muted-foreground">
-                    <th className="hidden w-[52px] px-3 text-left tabular-nums sm:table-cell">#</th>
-                    <th className="w-full px-3 text-left">Chương</th>
-                    <th className="w-[104px] px-3 text-left">Trạng thái</th>
-                    <th className="w-12 px-3"><span className="sr-only">Thao tác</span></th>
+                    <th className="hidden w-[52px] px-2 text-center tabular-nums sm:table-cell">#</th>
+                    <th className="px-3 text-left">Chương</th>
+                    <th className="w-[104px] px-2 text-center whitespace-nowrap">Trạng thái</th>
+                    <th className="w-[88px] px-3 text-right"><span className="sr-only">Thao tác</span></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody className="divide-y divide-border/60">
                   {currentBook.chapters.map((chapter, index) => {
                     const isTranslated = Boolean(translatedChapters[chapter.href]);
                     const isCurrent = index === activeChapterIndex;
@@ -1640,37 +1640,40 @@ export function BookTranslatorView() {
                       <tr
                         key={chapter.id || chapter.href}
                         data-active={isCurrent ? "true" : undefined}
-                        className={`h-[38px] cursor-pointer ${
+                        className={`h-10 cursor-pointer transition-colors ${
                           isCurrent ? "bg-[var(--ui-table-selected)]" : "hover:bg-[var(--ui-table-hover)]"
                         }`}
                         onClick={() => setActiveChapterIndex(index)}
                       >
-                        <td className="hidden px-3 text-sm tabular-nums text-muted-foreground sm:table-cell">
+                        <td className="hidden px-2 text-xs tabular-nums text-muted-foreground sm:table-cell text-center font-mono">
                           {String(index + 1).padStart(3, "0")}
                         </td>
                         <td className="min-w-0 px-3">
-                          <p className="truncate text-sm font-medium">{chapter.title}</p>
+                          <p className={`truncate text-xs sm:text-sm ${isCurrent ? "font-semibold text-foreground" : "font-medium text-foreground"}`}>
+                            {chapter.title}
+                          </p>
                         </td>
-                        <td className="px-3">
+                        <td className="w-[104px] px-2 text-center">
                           {isRunning ? (
-                            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-primary/15 border border-primary/30 px-2 py-0.5 text-[11px] font-medium text-primary animate-pulse">
                               <Loader2 className="size-3 animate-spin" />
                               Đang dịch
                             </span>
                           ) : isTranslated ? (
-                            <span className="inline-flex items-center whitespace-nowrap rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-500/15 border border-emerald-500/25 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                              <Check className="size-3" />
                               Đã dịch
                             </span>
                           ) : (
-                            <span className="inline-flex items-center whitespace-nowrap rounded-full bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                            <span className="inline-flex items-center whitespace-nowrap rounded-full bg-secondary/80 border border-border/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                               Chưa dịch
                             </span>
                           )}
                         </td>
-                        <td className="px-3 text-right">
+                        <td className="w-[88px] px-3 text-right">
                           <button
                             type="button"
-                            className="inline-flex h-7 items-center whitespace-nowrap rounded-[var(--ui-radius-button)] border border-border px-2 text-xs font-medium text-foreground hover:bg-secondary"
+                            className="inline-flex h-7 items-center whitespace-nowrap rounded-lg border border-border/80 bg-secondary/60 hover:bg-secondary px-2.5 text-xs font-medium text-foreground transition-colors shadow-xs"
                             onClick={(event) => {
                               event.stopPropagation();
                               void translateSingleChapter(index);

@@ -215,7 +215,7 @@ export default function App() {
         {/* LinguaGacha Workspace Frame with 8px Corner */}
         <main className="workspace-frame">
           {currentBook && activeTab !== "books" && activeTab !== "settings" && activeTab !== "agent" && (
-            <div className="px-4 py-1.5 border-b border-[var(--border)] bg-[var(--card)]/40 flex-shrink-0 flex items-center justify-between">
+            <div className="px-4 py-1.5 bg-transparent flex-shrink-0 flex items-center justify-between">
               <BookPipelineStepper compact className="flex-1" />
             </div>
           )}
@@ -245,7 +245,7 @@ export default function App() {
                     <div className="flex flex-col gap-1 pr-4">
                       <div className="flex items-center gap-2">
                         <CardTitle className="text-sm font-medium">Chủ đề giao diện (Appearance Theme)</CardTitle>
-                        <Badge variant="outline" className="text-[10px] h-4.5 border-primary/40 text-primary">LinguaGacha Design</Badge>
+                        <Badge variant="outline" className="text-[10px] h-4.5 border-primary/40 text-primary">Pistachio Design</Badge>
                       </div>
                       <CardDescription className="text-xs">
                         Chuyển đổi giữa chế độ Sáng (Light), Tối (Dark) hoặc đồng bộ theo cấu hình Hệ điều hành (System).
@@ -257,17 +257,17 @@ export default function App() {
                       onValueChange={(val) => {
                         if (val) setTheme(val as "light" | "dark" | "system");
                       }}
-                      className="border border-border rounded-md p-0.5 bg-muted/40"
+                      className="border border-border rounded-xl p-0.5 bg-secondary/50"
                     >
-                      <ToggleGroupItem value="light" size="sm" className="h-7 text-xs px-2.5 gap-1.5 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs">
+                      <ToggleGroupItem value="light" size="sm" className="h-7 text-xs px-2.5 gap-1.5 rounded-lg data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs">
                         <Sun size={13} />
                         Sáng
                       </ToggleGroupItem>
-                      <ToggleGroupItem value="dark" size="sm" className="h-7 text-xs px-2.5 gap-1.5 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs">
+                      <ToggleGroupItem value="dark" size="sm" className="h-7 text-xs px-2.5 gap-1.5 rounded-lg data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs">
                         <Moon size={13} />
                         Tối
                       </ToggleGroupItem>
-                      <ToggleGroupItem value="system" size="sm" className="h-7 text-xs px-2.5 gap-1.5 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs">
+                      <ToggleGroupItem value="system" size="sm" className="h-7 text-xs px-2.5 gap-1.5 rounded-lg data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs">
                         <Monitor size={13} />
                         Hệ thống
                       </ToggleGroupItem>
@@ -290,12 +290,12 @@ export default function App() {
                       onValueChange={(val) => {
                         if (val) setAutoRouteOnIngest(val === "on");
                       }}
-                      className="border border-border rounded-md p-0.5 bg-muted/40"
+                      className="border border-border rounded-xl p-0.5 bg-secondary/50"
                     >
-                      <ToggleGroupItem value="on" size="sm" className="h-7 text-xs px-3 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs">
+                      <ToggleGroupItem value="on" size="sm" className="h-7 text-xs px-3 rounded-lg data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs">
                         Bật
                       </ToggleGroupItem>
-                      <ToggleGroupItem value="off" size="sm" className="h-7 text-xs px-3 data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs">
+                      <ToggleGroupItem value="off" size="sm" className="h-7 text-xs px-3 rounded-lg data-[state=on]:bg-background data-[state=on]:text-primary data-[state=on]:shadow-xs">
                         Tắt
                       </ToggleGroupItem>
                     </ToggleGroup>
@@ -338,7 +338,7 @@ export default function App() {
                         <CardTitle className="text-sm font-medium">Về NiceEbook Studio</CardTitle>
                       </div>
                       <CardDescription className="text-xs">
-                        Phần mềm thiết kế và làm đẹp sách điện tử (EPUB) tự động bằng AI, phong cách thẩm mỹ chuẩn mực lấy cảm hứng từ LinguaGacha, tích hợp lõi phân loại và chuẩn hóa siêu tốc chạy trực tiếp trong Rust.
+                        Phần mềm thiết kế và làm đẹp sách điện tử (EPUB) tự động bằng AI, giao diện Pistachio thanh lịch với typography Fredoka &amp; Inter, tích hợp lõi phân loại và chuẩn hóa siêu tốc chạy trực tiếp trong Rust.
                       </CardDescription>
                     </div>
                     <Badge variant="secondary" className="font-mono text-xs">v0.1.0-alpha</Badge>
