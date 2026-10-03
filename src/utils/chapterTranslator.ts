@@ -338,14 +338,14 @@ export class ChapterTranslator {
 
   /**
    * Chunks extracted blocks into manageable batches to maintain context
-   * without exceeding LLM context windows (default: 10-15 blocks or ~1500 chars).
+   * without exceeding LLM context windows (LinguaGacha standard: 6-8 blocks or ~1200 chars).
    */
   public static chunkBlocks(
     blocks: TranslatableBlock[],
     options?: ChunkOptions
   ): TranslatableBlock[][] {
-    const maxBlocks = options?.maxBlocks ?? 12;
-    const maxChars = options?.maxChars ?? 2000;
+    const maxBlocks = options?.maxBlocks ?? 8;
+    const maxChars = options?.maxChars ?? 1200;
 
     const chunks: TranslatableBlock[][] = [];
     let currentChunk: TranslatableBlock[] = [];

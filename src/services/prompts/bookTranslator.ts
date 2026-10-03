@@ -102,8 +102,8 @@ ${toneInfo.instructions}
 QUY TẮC CỐT LÕI BẮT BUỘC:
 1. Bạn sẽ nhận một mảng JSON các đoạn văn: [{"id": "p_0", "text": "..."}, {"id": "p_1", "text": "..."}].
 2. Bạn PHẢI trả về một mảng JSON có đúng cấu trúc: [{"id": "p_0", "text": "<bản dịch>"}, ...].
-3. DỊCH TRIỆT ĐỂ 100%: Dịch toàn bộ mọi đoạn văn và mọi tiêu đề, tuyệt đối KHÔNG bỏ sót bất kỳ đoạn nào. Không để sót chữ Hán hoặc ngôn ngữ nguồn chưa dịch trong văn bản tiếng Việt.
-4. Giữ NGUYÊN VẸN các mã ID ("id"), KHÔNG ĐƯỢC gộp, tách, xóa bỏ hay tự ý sinh thêm bất kỳ đoạn nào. Mỗi đoạn văn có mã 'id' riêng phải có một bản dịch tương ứng. Số lượng phần tử trả về phải khớp đúng số lượng phần tử đầu vào.
+3. DỊCH TRIỆT ĐỂ 100% - TUYỆT ĐỐI KHÔNG TÓM TẮT: Dịch toàn bộ mọi đoạn văn, từng câu thoại và từng tình tiết miêu tả. Tuyệt đối KHÔNG tóm tắt, KHÔNG rút gọn, KHÔNG cắt bớt vế câu. Không để sót chữ Hán hoặc ngôn ngữ nguồn chưa dịch trong văn bản tiếng Việt.
+4. ĐỐI ỨNG 1-1 TUYỆT ĐỐI (LINE-FOR-LINE): Giữ NGUYÊN VẸN các mã ID ("id"), KHÔNG ĐƯỢC gộp 2 đoạn thành 1, KHÔNG tách hay xóa bỏ bất kỳ đoạn nào. Mỗi đoạn văn có mã 'id' riêng phải có một bản dịch tương ứng. Số lượng phần tử trả về phải khớp đúng 100% số lượng phần tử đầu vào.
 5. Giữ nguyên các ký tự đặc biệt, dấu ngoặc kép, dấu chấm lửng (...), dấu gạch ngang thoại nếu có trong văn bản gốc. Nếu đoạn văn có dấu xuống dòng thơ ca, hãy giữ nguyên vị trí xuống dòng.
 6. DỊCH SẠCH HOÀN TOÀN: Tuyệt đối KHÔNG tự ý thêm lời dẫn (preamble), không thêm chú thích người dịch (translator's note), không thêm lời cảm ơn, không chèn watermark quảng cáo.
 7. CHỈ TRẢ VỀ DUY NHẤT MÃ RAW JSON dạng mảng [...]. Tuyệt đối KHÔNG bọc trong \`\`\`json hoặc thêm bất kỳ lời chào/lời dẫn nào.
@@ -186,7 +186,7 @@ export function buildUserPrompt(options: BuildTranslationPromptOptions): string 
   }
 
   // Multilingual & paired tag translation guidance
-  prompt += `\n*Lưu ý quan trọng: Nếu trong văn bản có câu thoại/thuật ngữ tiếng Anh xen lẫn, hãy dịch linh hoạt sang ${targetLangName}. Nếu có các cặp thẻ dạng ⟦TAG_N⟧văn bản⟦/TAG_N⟧ (đường link, trích dẫn), BẮT BUỘC dịch phần văn bản bên trong sang ${targetLangName} và giữ nguyên cặp thẻ bao quanh, không bỏ sót.*\n`;
+  prompt += `\n*Lưu ý quan trọng: Dịch đầy đủ trọn vẹn 100% từng câu (chuẩn LinguaGacha), tuyệt đối không tóm tắt hay cắt bớt vế câu, không để sót chữ Hán nào trong kết quả tiếng Việt. Nếu trong văn bản có câu thoại/thuật ngữ tiếng Anh xen lẫn, hãy dịch linh hoạt sang ${targetLangName}. Nếu có các cặp thẻ dạng ⟦TAG_N⟧văn bản⟦/TAG_N⟧ (đường link, trích dẫn), BẮT BUỘC dịch phần văn bản bên trong sang ${targetLangName} và giữ nguyên cặp thẻ bao quanh, không bỏ sót.*\n`;
 
   prompt += `\n[DANH SÁCH ĐOẠN VĂN CẦN DỊCH]:\n`;
   prompt += JSON.stringify(
@@ -194,6 +194,115 @@ export function buildUserPrompt(options: BuildTranslationPromptOptions): string 
     null,
     2
   );
+
+  return prompt;
+}
+
+/**
+ * Extracts untranslated CJK fragments from a partially translated text.
+ * Returns the fragments so they can be specifically retried with targeted prompts.
+ */
+export function extractUntranslatedFragments(
+  translatedText: string,
+  sourceLang?: string
+): string[] {
+  if (!translatedText) return [];
+
+  const hasChineseSource =
+    Boolean(sourceLang && (sourceLang.toLowerCase().includes("zh") || sourceLang.toLowerCase().includes("trung") || sourceLang.toLowerCase().includes("chinese"))) ||
+    /[\u4e00-\u9fff]/.test(translatedText);
+
+  const hasJapaneseSource =
+    Boolean(sourceLang && (sourceLang.toLowerCase().includes("ja") || sourceLang.toLowerCase().includes("nhật") || sourceLang.toLowerCase().includes("japanese"))) ||
+    /[\u3040-\u309f\u30a0-\u30ff]/.test(translatedText);
+
+  const hasKoreanSource =
+    Boolean(sourceLang && (sourceLang.toLowerCase().includes("ko") || sourceLang.toLowerCase().includes("hàn") || sourceLang.toLowerCase().includes("korean"))) ||
+    /[\uac00-\ud7af]/.test(translatedText);
+
+  if (!hasChineseSource && !hasJapaneseSource && !hasKoreanSource) return [];
+
+  // Match runs of CJK characters (with interspersed punctuation) that form untranslated phrases
+  const fragmentRegex = /[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af][，。、！？：；""''（）\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af\s]{2,}/g;
+  const matches = translatedText.match(fragmentRegex);
+  if (!matches) return [];
+  return Array.from(new Set(matches.map((m) => m.trim()).filter(Boolean)));
+}
+
+/**
+ * Builds a correction prompt for blocks that were partially translated or missed —
+ * includes the prior failed attempt and extracted untranslated fragments so the LLM
+ * knows exactly what was missed, dramatically improving recovery success rate.
+ */
+export interface CorrectionBlock {
+  id: string;
+  originalText: string;
+  priorTranslation?: string;
+}
+
+export interface BuildCorrectionPromptOptions {
+  sourceLangName: string;
+  targetLangName: string;
+  tone: TranslationTone;
+  blocks: CorrectionBlock[];
+  previousContextBlocks?: Array<{ id?: string; text: string }>;
+  glossary?: Record<string, string>;
+  bookTitle?: string;
+  chapterTitle?: string;
+  researchBrief?: string;
+  convertCurrency?: boolean;
+}
+
+export function buildCorrectionPrompt(options: BuildCorrectionPromptOptions): string {
+  const {
+    sourceLangName,
+    targetLangName,
+    tone,
+    blocks,
+    previousContextBlocks,
+    glossary,
+    bookTitle,
+    chapterTitle,
+    researchBrief,
+    convertCurrency,
+  } = options;
+
+  let prompt = buildUserPrompt({
+    sourceLangName,
+    targetLangName,
+    tone,
+    blocks: blocks.map((b) => ({ id: b.id, text: b.originalText })),
+    previousContextBlocks,
+    glossary,
+    bookTitle,
+    chapterTitle,
+    researchBrief,
+    convertCurrency,
+  });
+
+  const partialBlocks = blocks.filter(
+    (b) => b.priorTranslation && b.priorTranslation.trim().length > 0
+  );
+
+  if (partialBlocks.length > 0) {
+    prompt += `\n\n[CẢNH BÁO QUAN TRỌNG - SỬA LỖI DỊCH THIẾU]:\n`;
+    prompt += `Các đoạn văn dưới đây đã được dịch trước đó nhưng VẪN CÒN SÓT chữ ${sourceLangName} chưa dịch bên trong văn bản ${targetLangName}.\n`;
+    prompt += `BẠN PHẢI DỊCH TRIỆT ĐỂ 100% - tuyệt đối KHÔNG để sót bất kỳ ký tự ${sourceLangName} nào trong bản dịch ${targetLangName}.\n`;
+    prompt += `Bản dịch trước đó bị lỗi (để tham khảo):\n`;
+
+    for (const b of partialBlocks) {
+      prompt += `- [${b.id}] BẢN DỊCH CŨ (LỖI): "${b.priorTranslation}"\n`;
+      const fragments = extractUntranslatedFragments(b.priorTranslation || "", sourceLangName);
+      if (fragments.length > 0) {
+        prompt += `  -> Ký tự/cụm từ sót cần dịch: "${fragments.join('", "')}"\n`;
+      }
+      if (isTranslationTruncated(b.priorTranslation || "", b.originalText, sourceLangName, targetLangName)) {
+        prompt += `  -> CẢNH BÁO: Bản dịch cũ bị cắt ngắn/tóm tắt bất thường so với bản gốc. BẠN PHẢI DỊCH ĐẦY ĐỦ TRỌN VẸN 100% TỪNG CÂU, TỪNG VẾ, KHÔNG ĐƯỢC TÓM TẮT.\n`;
+      }
+    }
+
+    prompt += `\nHãy dịch lại TOÀN BỘ từng đoạn trên, đảm bảo KHÔNG còn chữ ${sourceLangName} nào trong bản dịch.`;
+  }
 
   return prompt;
 }
@@ -226,6 +335,8 @@ export function cleanTranslatedText(rawText: string): string {
 
 /**
  * Detects if a translated block is an untranslated echo of the source language.
+ * Also detects PARTIAL untranslated fragments — e.g. a mostly-Vietnamese paragraph
+ * that still contains a Chinese sentence fragment like "倒不如说是两个女生凑到一起学习更合适。"
  */
 export function isUntranslatedEcho(
   translatedText: string,
@@ -240,16 +351,44 @@ export function isUntranslatedEcho(
 
   const isTargetVi = !targetLang || targetLang.toLowerCase().includes("vi");
 
-  // 1. Source contains Chinese/Japanese Hanzi, target is Vietnamese
+  // 1. Source contains Chinese/Japanese Hanzi/Kana, target is Vietnamese
   const hasChineseSource =
     Boolean(sourceLang && (sourceLang.toLowerCase().includes("zh") || sourceLang.toLowerCase().includes("trung") || sourceLang.toLowerCase().includes("chinese"))) ||
     /[\u4e00-\u9fff]/.test(orig);
 
-  if (hasChineseSource && isTargetVi) {
-    const hanziMatches = trans.match(/[\u4e00-\u9fff]/g);
-    const hanziCount = hanziMatches?.length || 0;
-    // If output still contains > 20% Chinese characters, it is an untranslated echo
-    if (hanziCount > 0 && hanziCount / trans.length > 0.2) {
+  const hasJapaneseSource =
+    Boolean(sourceLang && (sourceLang.toLowerCase().includes("ja") || sourceLang.toLowerCase().includes("nhật") || sourceLang.toLowerCase().includes("japanese"))) ||
+    /[\u3040-\u309f\u30a0-\u30ff]/.test(orig);
+
+  const hasKoreanSource =
+    Boolean(sourceLang && (sourceLang.toLowerCase().includes("ko") || sourceLang.toLowerCase().includes("hàn") || sourceLang.toLowerCase().includes("korean"))) ||
+    /[\uac00-\ud7af]/.test(orig);
+
+  const hasCJKSource = hasChineseSource || hasJapaneseSource || hasKoreanSource;
+
+  if (hasCJKSource && isTargetVi) {
+    // Count ALL CJK characters remaining in translated output
+    // CJK Unified Ideographs + Hiragana + Katakana + Hangul
+    const cjkMatches = trans.match(/[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g);
+    const cjkCount = cjkMatches?.length || 0;
+
+    // A. Whole-block echo: > 20% CJK characters → clearly untranslated
+    if (cjkCount > 0 && cjkCount / trans.length > 0.2) {
+      return true;
+    }
+
+    // B. Partial fragment detection: even a small cluster of consecutive CJK chars
+    //    indicates an untranslated name, term, or phrase left behind by the LLM (e.g. "唐静", "萧炎", "倒不如说").
+    //    Threshold: ≥ 2 consecutive CJK characters catches 2-character Chinese names & terms.
+    if (cjkCount >= 2) {
+      const consecutiveCJK = /[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]{2,}/;
+      if (consecutiveCJK.test(trans)) {
+        return true;
+      }
+    }
+
+    // C. Scattered CJK: ≥ 4 total CJK chars even if non-consecutive (mixed into Vietnamese)
+    if (cjkCount >= 4) {
       return true;
     }
   }
@@ -257,6 +396,56 @@ export function isUntranslatedEcho(
   // 2. Exact verbatim echo for Latin source languages (> 15 chars)
   if (trans.toLowerCase() === orig.toLowerCase() && orig.length > 15) {
     return true;
+  }
+
+  // 3. Length-ratio truncation check (LinguaGacha style):
+  // Catches cases where LLM dropped sentences, truncated, or summarized long CJK paragraphs
+  if (isTranslationTruncated(trans, orig, sourceLang, targetLang)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Detects if a translation has been aggressively truncated, summarized, or has omitted sentences.
+ * LinguaGacha-style length-ratio inspection:
+ * For CJK (Chinese/Japanese/Korean) -> Vietnamese:
+ * Vietnamese text is naturally 1.5x - 3.0x the character length of the original CJK text.
+ * If original has substantial text (>= 40 chars) but translation is less than 65% of original length,
+ * the LLM has almost certainly dropped clauses, skipped sentences, or produced a truncated summary.
+ */
+export function isTranslationTruncated(
+  translatedText: string,
+  originalText: string,
+  sourceLang?: string,
+  targetLang?: string
+): boolean {
+  if (!translatedText || !originalText) return false;
+  const trans = translatedText.trim();
+  const orig = originalText.trim();
+
+  const isTargetVi = !targetLang || targetLang.toLowerCase().includes("vi");
+
+  const hasChineseSource =
+    Boolean(sourceLang && (sourceLang.toLowerCase().includes("zh") || sourceLang.toLowerCase().includes("trung") || sourceLang.toLowerCase().includes("chinese"))) ||
+    /[\u4e00-\u9fff]/.test(orig);
+
+  const hasJapaneseSource =
+    Boolean(sourceLang && (sourceLang.toLowerCase().includes("ja") || sourceLang.toLowerCase().includes("nhật") || sourceLang.toLowerCase().includes("japanese"))) ||
+    /[\u3040-\u309f\u30a0-\u30ff]/.test(orig);
+
+  const hasKoreanSource =
+    Boolean(sourceLang && (sourceLang.toLowerCase().includes("ko") || sourceLang.toLowerCase().includes("hàn") || sourceLang.toLowerCase().includes("korean"))) ||
+    /[\uac00-\ud7af]/.test(orig);
+
+  const hasCJKSource = hasChineseSource || hasJapaneseSource || hasKoreanSource;
+
+  // Substantial CJK text translated to Vietnamese with severe character deficit (< 65% length)
+  if (hasCJKSource && isTargetVi && orig.length >= 40) {
+    if (trans.length < orig.length * 0.65) {
+      return true;
+    }
   }
 
   return false;

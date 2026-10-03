@@ -2158,12 +2158,20 @@ describe("useAppStore - AI Style Audit & Fix on Original Styles", () => {
     expect(useAppStore.getState().isAuditingStyle).toBe(false);
   });
 
-  it("applyAiStyleFixes updates typography and customCss and marks style step complete", async () => {
+  it("applyAiStyleFixes updates typography, neutralizes fixed colors, and marks audit items as passed", async () => {
     const mockReport = {
-      overallScore: 88,
-      summary: "Tốt",
+      overallScore: 85,
+      summary: "Có lỗi màu nền cố định",
       preservationNotes: "Bảo tồn màu sắc",
-      auditItems: [],
+      auditItems: [
+        {
+          category: "compatibility" as const,
+          status: "issue" as const,
+          title: "Màu nền và màu chữ cố định gây lỗi hiển thị trên máy đọc sách",
+          detail: "CSS gốc định nghĩa background-color: #161618 và color: #f4f4f5",
+          fixRecommendation: "Gỡ bỏ các quy tắc background-color và color",
+        },
+      ],
       suggestedTypography: {
         fontFamily: "'Literata', serif",
         lineHeight: 1.75,
@@ -2181,8 +2189,32 @@ describe("useAppStore - AI Style Audit & Fix on Original Styles", () => {
     expect(state.lineHeight).toBe(1.75);
     expect(state.firstLineIndent).toBe("1.5em");
     expect(state.textAlign).toBe("justify");
-    expect(state.customCss).toBe("p { text-indent: 1.5em; }");
+    // Verify fixed colors are neutralized with background-color: transparent !important
+    expect(state.customCss).toContain("background-color: transparent !important");
+    expect(state.customCss).toContain("color: inherit !important");
     expect(state.workflowCompletedSteps).toContain("style");
+
+    // Verify all audit items are now marked as pass and score is 100
+    expect(state.styleAuditReport?.overallScore).toBe(100);
+    expect(state.styleAuditReport?.auditItems[0].status).toBe("pass");
+    expect(state.styleAuditReport?.auditItems[0].detail).toContain("[Đã sửa]");
+  });
+
+  it("clearStyleAuditReport resets styleAuditReport to null", () => {
+    useAppStore.setState({
+      styleAuditReport: {
+        overallScore: 90,
+        summary: "Test",
+        preservationNotes: "Notes",
+        auditItems: [],
+        suggestedTypography: {},
+        customCssOverrides: "",
+        explanation: "",
+      },
+    });
+
+    useAppStore.getState().clearStyleAuditReport();
+    expect(useAppStore.getState().styleAuditReport).toBeNull();
   });
 
   it("revertToOriginalStyle clears customCss and restores native style patch", () => {

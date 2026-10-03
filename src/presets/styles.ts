@@ -26,6 +26,29 @@ export interface StylePreset {
   derivedFromBook?: boolean;
 }
 
+export const DEFAULT_NATIVE_FALLBACK: StylePreset = {
+  id: "book-native",
+  name: "Bản Gốc Tự Động",
+  genre: "book-native",
+  genreLabel: "Bản Gốc",
+  description: "Tự động kế thừa và bảo tồn định dạng của nhà xuất bản.",
+  fontFamily: "system-ui, -apple-system, sans-serif",
+  vietnameseFontFamily: "'Literata', 'Noto Serif', serif",
+  lineHeight: 1.65,
+  firstLineIndent: "1.5em",
+  dropCaps: false,
+  sceneDivider: "* * *",
+  colors: {
+    bg: "#ffffff",
+    text: "#1a1a1a",
+    accent: "#0d9488",
+    border: "#e5e7eb",
+    cardBg: "#f8fafc",
+  },
+  cssTemplate: "",
+  derivedFromBook: true,
+};
+
 export const STYLE_PRESETS: StylePreset[] = [
   {
     id: "wuxia-ancient",

@@ -4,6 +4,7 @@ import {
   isVietnameseLanguage,
   detectIsVietnameseBook,
   getRecommendedVietnameseFont,
+  healVietnameseTypographyAndDiacritics,
   VIETNAMESE_FONTS,
 } from "./vietnameseHelper";
 import { EpubMetadata } from "../stores/useAppStore";
@@ -139,6 +140,26 @@ describe("vietnameseHelper", () => {
       expect(fontIds).toContain("be-vietnam-pro");
       expect(fontIds).toContain("lora");
       expect(fontIds).toContain("merriweather");
+    });
+  });
+
+  describe("healVietnameseTypographyAndDiacritics", () => {
+    it("repairs decomposed diacritics, detached vowels, and broken spaces from user screenshot", () => {
+      expect(healVietnameseTypographyAndDiacritics("Cô Ấ y Chế t Trên QQ")).toBe("Cô Ấy Chết Trên QQ");
+      expect(healVietnameseTypographyAndDiacritics("Cuố n sách này")).toBe("Cuốn sách này");
+      expect(healVietnameseTypographyAndDiacritics("sưu tâ`m")).toBe("sưu tầm");
+      expect(healVietnameseTypographyAndDiacritics("Bản quyê`n thuộc vê` tác giả gố c và nhà xuất bản")).toBe(
+        "Bản quyền thuộc về tác giả gốc và nhà xuất bản"
+      );
+      expect(healVietnameseTypographyAndDiacritics("Nếu yêu thích")).toBe("Nếu yêu thích");
+      expect(healVietnameseTypographyAndDiacritics("bă`ng cách")).toBe("bằng cách");
+      expect(healVietnameseTypographyAndDiacritics("phản chiếu những đám mây trắng")).toBe(
+        "phản chiếu những đám mây trắng"
+      );
+      expect(healVietnameseTypographyAndDiacritics("trên bầu trời")).toBe("trên bầu trời");
+      expect(healVietnameseTypographyAndDiacritics("suốt đêm qua cuối cùng")).toBe("suốt đêm qua cuối cùng");
+      expect(healVietnameseTypographyAndDiacritics("Dưới ánh nắng ban mai")).toBe("Dưới ánh nắng ban mai");
+      expect(healVietnameseTypographyAndDiacritics("chiếc ô")).toBe("chiếc ô");
     });
   });
 });

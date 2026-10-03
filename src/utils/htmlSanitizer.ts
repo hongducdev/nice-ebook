@@ -7,6 +7,8 @@
  * Used by `EpubReaderViewer.tsx` (Live Reader Preview).
  */
 
+import { healVietnameseTypographyAndDiacritics } from "./vietnameseHelper";
+
 export const READER_BLOCKED_ELEMENTS: ReadonlySet<string> = new Set([
   "script",
   "noscript",
@@ -235,7 +237,7 @@ export function sanitizeEpubHtml(html: string): string {
 
     if (token.kind === "text") {
       if (blockedDepth > 0) continue;
-      output.push(token.raw);
+      output.push(healVietnameseTypographyAndDiacritics(token.raw));
       continue;
     }
 

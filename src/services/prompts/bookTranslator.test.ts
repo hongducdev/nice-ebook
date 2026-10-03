@@ -3,9 +3,12 @@ import {
   filterGlossaryForBatch,
   buildSystemPrompt,
   buildUserPrompt,
+  buildCorrectionPrompt,
   cleanTranslatedText,
   parseTranslationResponse,
   isUntranslatedEcho,
+  extractUntranslatedFragments,
+  isTranslationTruncated,
   normalizeBlockId,
 } from "./bookTranslator";
 
@@ -182,6 +185,32 @@ describe("bookTranslator - LinguaGacha style prompt & glossary engine", () => {
       // Chinese echo to Vietnamese
       expect(isUntranslatedEcho("今天天气很好这是一个中文句子", "今天天气很好这是一个中文句子", "zh", "vi")).toBe(true);
     });
+
+    it("detects PARTIAL untranslated Chinese fragments within Vietnamese text", () => {
+      // Screenshot bug: Vietnamese text with Chinese sentence fragment at the end
+      const partialTranslation = "Tiểu Nặc và Đường Tĩnh chơi với nhau từ nhỏ đến lớn, tình cảm thân thiết như chị em ruột, không có chuyện gì là không nói. Mẹ của Đường Tĩnh lại đặc biệt quý mến Tiểu Nặc, thế nên công việc gia sư này cũng vô cùng nhẹ nhàng, không chút áp lực. Nói là phụ đạo gia đình,倒不如说是两个女生凑到一起学习更合适。";
+      const original = "小诺和唐静从小玩到大,感情亲密如姐妹,没有什么事情是不说的。唐静的妈妈又特别喜欢小诺,所以这份家教工作也十分轻松,没有压力。说是辅导家庭,倒不如说是两个女生凑到一起学习更合适。";
+      expect(isUntranslatedEcho(partialTranslation, original, "zh", "vi")).toBe(true);
+    });
+
+    it("detects consecutive CJK characters (>=2) as untranslated names or terms", () => {
+      // 2+ consecutive Chinese chars = untranslated fragment (catches 2-char and 3-char Chinese names)
+      expect(isUntranslatedEcho("Hắn nói rằng 修炼功法 rất quan trọng", "他说修炼功法很重要", "zh", "vi")).toBe(true);
+      expect(isUntranslatedEcho("Hắn nhìn thấy 唐静 đứng ở cổng", "他看到唐静站在门口", "zh", "vi")).toBe(true);
+      expect(isUntranslatedEcho("Người đó chính là 萧炎 trong truyền thuyết", "那人正是传说中的萧炎", "zh", "vi")).toBe(true);
+      // Single isolated Hanzi in a longer sentence with < 20% ratio is not flagged
+      expect(isUntranslatedEcho("Hắn luyện tập 功 rất chăm chỉ mỗi ngày", "他练功很努力", "zh", "vi")).toBe(false);
+    });
+
+    it("detects scattered CJK characters (>=4 total) as untranslated", () => {
+      // 4+ total scattered CJK chars across the text
+      expect(isUntranslatedEcho("Nàng 静 rất 美 và 聪 cũng rất 明", "她静美聪明", "zh", "vi")).toBe(true);
+    });
+
+    it("does not false-positive on normal Vietnamese text", () => {
+      expect(isUntranslatedEcho("Đây là một câu bình thường", "This is a normal sentence")).toBe(false);
+      expect(isUntranslatedEcho("Tiểu Nặc và Đường Tĩnh chơi với nhau", "小诺和唐静从小玩到大", "zh", "vi")).toBe(false);
+    });
   });
 
   describe("Currency Conversion Prompts", () => {
@@ -222,6 +251,104 @@ describe("bookTranslator - LinguaGacha style prompt & glossary engine", () => {
 
       expect(prompt).toContain("[Lưu ý quy đổi tiền tệ]");
       expect(prompt).toContain("5000 NDT (19.3 triệu VND)");
+    });
+  });
+
+  describe("extractUntranslatedFragments", () => {
+    it("returns empty array for text without CJK fragments", () => {
+      expect(extractUntranslatedFragments("Đây là câu tiếng Việt hoàn chỉnh.")).toEqual([]);
+      expect(extractUntranslatedFragments("")).toEqual([]);
+    });
+
+    it("extracts Chinese sentence fragments from Vietnamese text", () => {
+      const mixedText = "Nói là phụ đạo gia đình,倒不如说是两个女生凑到一起学习更合适。";
+      const fragments = extractUntranslatedFragments(mixedText, "zh");
+      expect(fragments.length).toBeGreaterThan(0);
+      expect(fragments[0]).toContain("倒不如说是两个女生凑到一起学习更合适。");
+    });
+
+    it("extracts Japanese fragments from text", () => {
+      const mixedText = "Cô ấy chào một câu おはようございます rồi rời đi.";
+      const fragments = extractUntranslatedFragments(mixedText, "ja");
+      expect(fragments.length).toBeGreaterThan(0);
+      expect(fragments[0]).toContain("おはようございます");
+    });
+  });
+
+  describe("isTranslationTruncated - LinguaGacha style length ratio validation", () => {
+    const originalChinese = "小诺和唐静从小玩到大,感情亲密如姐妹,没有什么事情是不说的。唐静的妈妈又特别喜欢小诺,所以这份家教工作也十分轻松,没有压力。说是辅导家庭,倒不如说是两个女生凑到一起学习更合适。";
+
+    it("flags severely truncated or summarized translations (< 65% length for CJK -> VI)", () => {
+      // Original has 97 Chinese chars. A 30-char Vietnamese translation is a massive omission
+      const truncatedVi = "Tiểu Nặc và Đường Tĩnh là bạn thân.";
+      expect(isTranslationTruncated(truncatedVi, originalChinese, "zh", "vi")).toBe(true);
+      // isUntranslatedEcho also integrates this check
+      expect(isUntranslatedEcho(truncatedVi, originalChinese, "zh", "vi")).toBe(true);
+    });
+
+    it("passes full and complete translations", () => {
+      // Natural Vietnamese translation is ~210 chars (> 2x original)
+      const completeVi = "Tiểu Nặc và Đường Tĩnh chơi với nhau từ nhỏ đến lớn, tình cảm thân thiết như chị em ruột, không có chuyện gì là không nói. Mẹ của Đường Tĩnh lại đặc biệt quý mến Tiểu Nặc, thế nên công việc gia sư này cũng vô cùng nhẹ nhàng, không chút áp lực. Nói là dạy kèm tại nhà, chi bằng nói là hai cô gái tụ tập lại học bài cùng nhau thì đúng hơn.";
+      expect(isTranslationTruncated(completeVi, originalChinese, "zh", "vi")).toBe(false);
+      expect(isUntranslatedEcho(completeVi, originalChinese, "zh", "vi")).toBe(false);
+    });
+
+    it("does not trigger on short dialogue or headings (< 40 chars)", () => {
+      // Short text like headings or quick dialogue should not be falsely flagged
+      expect(isTranslationTruncated("Được thôi", "好吧", "zh", "vi")).toBe(false);
+      expect(isTranslationTruncated("Chương 1", "第一章", "zh", "vi")).toBe(false);
+    });
+  });
+
+  describe("buildCorrectionPrompt", () => {
+    it("builds standard user prompt when no blocks have prior partial translations", () => {
+      const prompt = buildCorrectionPrompt({
+        sourceLangName: "zh",
+        targetLangName: "vi",
+        tone: "literary",
+        blocks: [{ id: "p_0", originalText: "你好世界" }],
+      });
+
+      expect(prompt).toContain("你好世界");
+      expect(prompt).not.toContain("[CẢNH BÁO QUAN TRỌNG - SỬA LỖI DỊCH THIẾU]");
+    });
+
+    it("appends correction warning and prior attempt when partial translation exists", () => {
+      const prompt = buildCorrectionPrompt({
+        sourceLangName: "zh",
+        targetLangName: "vi",
+        tone: "literary",
+        blocks: [
+          {
+            id: "p_0",
+            originalText: "说是辅导家庭,倒不如说是两个女生凑到一起学习更合适。",
+            priorTranslation: "Nói là phụ đạo gia đình,倒不如说是两个女生凑到一起学习更合适。",
+          },
+        ],
+      });
+
+      expect(prompt).toContain("[CẢNH BÁO QUAN TRỌNG - SỬA LỖI DỊCH THIẾU]");
+      expect(prompt).toContain("BẢN DỊCH CŨ (LỖI)");
+      expect(prompt).toContain("Ký tự/cụm từ sót cần dịch");
+      expect(prompt).toContain("倒不如说是两个女生凑到一起学习更合适。");
+    });
+
+    it("appends truncation warning when previous translation was cut short", () => {
+      const prompt = buildCorrectionPrompt({
+        sourceLangName: "zh",
+        targetLangName: "vi",
+        tone: "literary",
+        blocks: [
+          {
+            id: "p_0",
+            originalText: "小诺和唐静从小玩到大,感情亲密如姐妹,没有什么事情是不说的。唐静的妈妈又特别喜欢小诺,所以这份家教工作也十分轻松,没有压力。说是辅导家庭,倒不如说是两个女生凑到一起学习更合适。",
+            priorTranslation: "Tiểu Nặc và Đường Tĩnh thân nhau.",
+          },
+        ],
+      });
+
+      expect(prompt).toContain("[CẢNH BÁO QUAN TRỌNG - SỬA LỖI DỊCH THIẾU]");
+      expect(prompt).toContain("Bản dịch cũ bị cắt ngắn/tóm tắt bất thường");
     });
   });
 });

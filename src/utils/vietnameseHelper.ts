@@ -134,3 +134,55 @@ export function getRecommendedVietnameseFont(genre?: string): FontOption {
       return VIETNAMESE_FONTS.find((f) => f.id === "literata") || VIETNAMESE_FONTS[0];
   }
 }
+
+const GRAVE_MAP: Record<string, string> = {
+  a: "à", A: "À", ă: "ằ", Ă: "Ằ", â: "ầ", Â: "Ầ",
+  e: "è", E: "È", ê: "ề", Ê: "Ề",
+  i: "ì", I: "Ì",
+  o: "ò", O: "Ò", ô: "ồ", Ô: "Ồ", ơ: "ờ", Ơ: "Ờ",
+  u: "ù", U: "Ù", ư: "ừ", Ư: "Ừ",
+  y: "ỳ", Y: "Ỳ",
+};
+
+const ACUTE_MAP: Record<string, string> = {
+  a: "á", A: "Á", ă: "ắ", Ă: "Ắ", â: "ấ", Â: "Ấ",
+  e: "é", E: "É", ê: "ế", Ê: "Ế",
+  i: "í", I: "Í",
+  o: "ó", O: "Ó", ô: "ố", Ô: "Ố", ơ: "ớ", Ơ: "Ớ",
+  u: "ú", U: "Ú", ư: "ứ", Ư: "Ứ",
+  y: "ý", Y: "Ý",
+};
+
+/**
+ * Tự động hàn gắn và chuẩn hóa các lỗi dấu tiếng Việt bị tách rời / phân rã Unicode:
+ * - Chuyển NFD sang NFC (dựng sẵn chuẩn quốc tế)
+ * - Hàn gắn các từ bị rách dấu cách sau nguyên âm mang dấu: "Ấ y" -> "Ấy", "Chế t" -> "Chết", "Cuố n" -> "Cuốn"
+ * - Hàn gắn dấu huyền/sắc bị văng thành dấu nháy: "tâ`m" -> "tầm", "quyê`n" -> "quyền", "vê`" -> "về", "bă`ng" -> "bằng"
+ */
+export function healVietnameseTypographyAndDiacritics(text: string): string {
+  if (!text) return "";
+
+  // 1. Chuẩn hóa NFD -> NFC
+  let res = text.normalize("NFC");
+
+  // 2. Hàn gắn dấu huyền ` bị văng rời
+  res = res.replace(/([aAăĂâÂeEêÊiIoOôÔơƠuUưƯyY])\s*[`]/g, (match, char) => {
+    return GRAVE_MAP[char] || match;
+  });
+
+  // 3. Hàn gắn dấu sắc ' hoặc ´ bị văng rời
+  res = res.replace(/([aAăĂâÂeEêÊiIoOôÔơƠuUưƯyY])\s*['´]/g, (match, char) => {
+    return ACUTE_MAP[char] || match;
+  });
+
+  res = res.normalize("NFC");
+
+  // 4. Hàn gắn các từ có nguyên âm mang dấu bị tách rời khoảng trắng với phụ âm cuối:
+  // e.g. "Ấ y" -> "Ấy", "Chế t" -> "Chết", "Cuố n" -> "Cuốn", "gố c" -> "gốc", "xuấ t" -> "xuất", "chiế u" -> "chiếu"
+  res = res.replace(
+    /(?<![\p{L}\p{N}])([\p{L}]*?[áàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵÁÀẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÉÈẺẼẸÊẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÚÙỦŨỤƯỨỪỬỮỰÝỲỶỸỴ])\s+([cmnpt]|ng|ch|nh|[iyu])(?!\p{L})/giu,
+    "$1$2"
+  );
+
+  return res;
+}

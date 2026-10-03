@@ -143,6 +143,25 @@ img {
   font-weight: 500 !important;
 }
 
+/* E-Reader Section & Page Breaks */
+.book-title-page, .title-page, .book-disclaimer-page, .chapter-content-page {
+  page-break-before: always;
+  break-before: page;
+}
+.book-title-page {
+  page-break-after: always;
+  break-after: page;
+}
+.page-break-divider {
+  page-break-after: always;
+  break-after: page;
+}
+@media print, amzn-mobi, amzn-kf8 {
+  .page-break-divider {
+    display: none !important;
+  }
+}
+
 ${customOverrides || ""}
 `;
 }
@@ -295,6 +314,25 @@ img {
   margin-top: 0 !important;
   margin-bottom: 1.2em !important;
   font-weight: 500 !important;
+}
+
+/* E-Reader Section & Page Breaks */
+.book-title-page, .title-page, .book-disclaimer-page, .chapter-content-page {
+  page-break-before: always;
+  break-before: page;
+}
+.book-title-page {
+  page-break-after: always;
+  break-after: page;
+}
+.page-break-divider {
+  page-break-after: always;
+  break-after: page;
+}
+@media print, amzn-mobi, amzn-kf8 {
+  .page-break-divider {
+    display: none !important;
+  }
 }
 
 ${customOverrides || ""}

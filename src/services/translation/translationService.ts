@@ -3,9 +3,11 @@ import { ChapterTranslator } from "../../utils/chapterTranslator";
 import {
   buildSystemPrompt,
   buildUserPrompt,
+  buildCorrectionPrompt,
   parseTranslationResponse,
   cleanTranslatedText,
   isUntranslatedEcho,
+  isTranslationTruncated,
   TranslationTone,
 } from "../prompts/bookTranslator";
 import { getCircuitBreaker } from "../ai/circuitBreaker";
@@ -133,7 +135,7 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
       fallbackModels = [],
       temperature = 0.3,
       timeoutSecs = 90,
-      maxBlocksPerChunk = 10,
+      maxBlocksPerChunk = 8,
       concurrency = 1,
       enableSlidingContext = true,
       enableAdaptiveDownsizing = true,
@@ -162,9 +164,11 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
       };
     }
 
+    // High Attention Density Chunking (LinguaGacha standard: ~800-1200 chars or 6-8 blocks per batch)
+    // Prevents context fatigue, sentence omission, and truncation at the tail of large paragraphs
     const chunks = ChapterTranslator.chunkBlocks(blocks, {
-      maxBlocks: Math.min(maxBlocksPerChunk, 10),
-      maxChars: 2000,
+      maxBlocks: Math.min(maxBlocksPerChunk, 8),
+      maxChars: 1200,
     });
 
     onLog?.({
@@ -288,16 +292,25 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
           );
 
           if (missingInChunk.length > 0 && !abortSignal?.aborted) {
+            const truncatedCount = missingInChunk.filter((b) =>
+              chunkTranslations[b.id] && isTranslationTruncated(chunkTranslations[b.id], b.originalText, sourceLang, targetLang)
+            ).length;
             onLog?.({
               type: "detail",
-              text: `ℹ️ [${chunkLabel}] Phát hiện ${missingInChunk.length}/${chunk.length} đoạn chưa dịch hoặc bị sót, đang gửi yêu cầu dịch bù...`,
+              text: `ℹ️ [${chunkLabel}] Phát hiện ${missingInChunk.length}/${chunk.length} đoạn chưa dịch hoàn chỉnh${
+                truncatedCount > 0 ? ` (${truncatedCount} đoạn bị tóm tắt/cắt ngắn)` : ""
+              }, đang gửi yêu cầu dịch bù...`,
             });
             try {
-              const recoveryPrompt = buildUserPrompt({
+              const recoveryPrompt = buildCorrectionPrompt({
                 sourceLangName: sourceLang,
                 targetLangName: targetLang,
                 tone,
-                blocks: missingInChunk.map((b) => ({ id: b.id, text: b.originalText })),
+                blocks: missingInChunk.map((b) => ({
+                  id: b.id,
+                  originalText: b.originalText,
+                  priorTranslation: chunkTranslations[b.id],
+                })),
                 previousContextBlocks: contextBlocks,
                 glossary,
                 bookTitle,
@@ -578,11 +591,15 @@ Yêu cầu bắt buộc: Chỉ trả về duy nhất tên bản dịch đã chuy
         const subChunk = microChunks[sIdx];
         sweepRequests++;
 
-        const subPrompt = buildUserPrompt({
+        const subPrompt = buildCorrectionPrompt({
           sourceLangName: sourceLang,
           targetLangName: targetLang,
           tone,
-          blocks: subChunk.map((b) => ({ id: b.id, text: b.originalText })),
+          blocks: subChunk.map((b) => ({
+            id: b.id,
+            originalText: b.originalText,
+            priorTranslation: allTranslations[b.id],
+          })),
           glossary,
           bookTitle,
           chapterTitle,
