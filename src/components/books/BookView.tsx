@@ -226,27 +226,27 @@ export function BookViewPresentation(props: BookViewPresentationProps) {
                     <h3 className="font-semibold text-xs text-foreground truncate group-hover:text-primary transition-colors" title={p.name}>
                       {p.name}
                     </h3>
-                    <span className="text-[11px] text-muted-foreground truncate mt-0.5">
+                    <span className="text-xs text-muted-foreground truncate mt-0.5">
                       {p.filePath ? p.filePath.split(/[\\/]/).pop() : "Dự án lưu trên bộ nhớ"}
                     </span>
 
                     <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                      <Badge variant="secondary" className="text-[10px] px-1.5 h-4">
+                      <Badge variant="secondary" className="text-xs px-2 h-5">
                         {p.chapterCount} chương
                       </Badge>
                       {modChCount > 0 && (
-                        <Badge variant="secondary" className="text-[10px] px-1.5 h-4 font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                        <Badge variant="secondary" className="text-xs px-2 h-5 font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                           ✨ {modChCount} ch. đã sửa AI
                         </Badge>
                       )}
-                      <Badge variant="outline" className="text-[10px] px-1.5 h-4 border-primary/40 text-primary">
+                      <Badge variant="outline" className="text-xs px-2 h-5 border-primary/40 text-primary">
                         {p.activePresetId || "classic"}
                       </Badge>
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-border flex items-center justify-between text-[11px] text-muted-foreground">
+                <div className="pt-2 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
                   <div className="flex items-center gap-1">
                     <Clock className="size-3" />
                     <span>{formatLastOpened(p.lastOpenedAt)}</span>
@@ -299,7 +299,7 @@ export function BookViewPresentation(props: BookViewPresentationProps) {
           <p className="text-xs font-semibold text-foreground">
             Kéo thả file sách điện tử <span className="font-mono text-primary">.epub</span> vào đây
           </p>
-          <p className="text-[11px] text-muted-foreground mt-0.5">
+          <p className="text-xs text-muted-foreground mt-0.5">
             Tự động tạo dự án mới và mở trong không gian làm việc
           </p>
         </div>
@@ -381,7 +381,7 @@ export function BookViewPresentation(props: BookViewPresentationProps) {
           {Object.keys(modifiedChapters).length > 0 && (
             <Badge
               variant="secondary"
-              className="text-[10px] h-4.5 px-2 rounded-full font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0"
+              className="text-xs h-5 px-2 rounded-full font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0"
             >
               ✨ {Object.keys(modifiedChapters).length} chương đã sửa AI
             </Badge>
@@ -441,13 +441,13 @@ export function BookViewPresentation(props: BookViewPresentationProps) {
                   ) : (
                     <div className="flex flex-col items-center justify-center text-center p-2 text-muted-foreground">
                       <ImageIcon size={26} className="opacity-40 mb-1" />
-                      <span className="text-[10px] leading-tight font-medium">Chưa có bìa</span>
+                      <span className="text-xs leading-tight font-medium">Chưa có bìa</span>
                       <button
                         type="button"
                         onClick={() => onOpenMetadataModal("ai-cover")}
-                        className="text-[10px] text-primary hover:underline font-semibold flex items-center gap-1 mt-2"
+                        className="text-xs text-primary hover:underline font-semibold flex items-center gap-1 mt-2"
                       >
-                        <Wand2 size={10} />
+                        <Wand2 size={11} />
                         <span>Tạo bìa AI</span>
                       </button>
                     </div>
@@ -459,15 +459,15 @@ export function BookViewPresentation(props: BookViewPresentationProps) {
                   <div>
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {bookProfile ? (
-                        <Badge variant="outline" className="text-[10px] px-1.5 h-4.5 font-mono border-primary/40 text-primary">
+                        <Badge variant="outline" className="text-xs px-2 h-5 font-mono border-primary/40 text-primary">
                           {bookProfile.languageFlag} {bookProfile.languageCode.toUpperCase()} · {workflowLabel(bookProfile)}
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="text-[10px] px-1.5 h-4.5 font-mono">
+                        <Badge variant="outline" className="text-xs px-2 h-5 font-mono">
                           {currentBook.language ? currentBook.language.toUpperCase() : "EPUB"}
                         </Badge>
                       )}
-                      <Badge variant="secondary" className="text-[10px] px-1.5 h-4.5">
+                      <Badge variant="secondary" className="text-xs px-2 h-5">
                         {jevDecision ? jevDecision.genre_label : activePreset.name}
                       </Badge>
                     </div>
@@ -479,7 +479,7 @@ export function BookViewPresentation(props: BookViewPresentationProps) {
                       Tác giả: <strong className="text-foreground font-medium">{currentBook.author || "Khuyết danh"}</strong>
                     </p>
                     {currentBook.publisher && (
-                      <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">
                         NXB: {currentBook.publisher} {currentBook.published_year ? `(${currentBook.published_year})` : ""}
                       </p>
                     )}
@@ -490,16 +490,16 @@ export function BookViewPresentation(props: BookViewPresentationProps) {
                     <button
                       type="button"
                       onClick={() => onOpenMetadataModal("ai-cover")}
-                      className="text-[11px] text-primary hover:underline font-medium inline-flex items-center gap-1"
+                      className="text-xs text-primary hover:underline font-medium inline-flex items-center gap-1"
                     >
                       <Wand2 size={11} />
                       <span>Bìa AI</span>
                     </button>
-                    <span className="text-muted-foreground/40 text-[10px]">•</span>
+                    <span className="text-muted-foreground/40 text-xs">•</span>
                     <button
                       type="button"
                       onClick={() => onOpenMetadataModal("metadata")}
-                      className="text-[11px] text-muted-foreground hover:text-foreground font-medium inline-flex items-center gap-1"
+                      className="text-xs text-muted-foreground hover:text-foreground font-medium inline-flex items-center gap-1"
                     >
                       <Sparkles size={11} />
                       <span>Sửa metadata</span>
@@ -512,17 +512,17 @@ export function BookViewPresentation(props: BookViewPresentationProps) {
               <div className="grid grid-cols-3 gap-2 py-2.5 px-3 rounded-lg bg-secondary/50 border border-border text-center">
                 <div>
                   <span className="block text-xs font-bold text-foreground">{currentBook.chapter_count}</span>
-                  <span className="text-[10px] text-muted-foreground">Chương</span>
+                  <span className="text-xs text-muted-foreground">Chương</span>
                 </div>
                 <div>
                   <span className="block text-xs font-bold text-foreground">{formatFileSize(currentBook.file_size_bytes)}</span>
-                  <span className="text-[10px] text-muted-foreground">Dung lượng</span>
+                  <span className="text-xs text-muted-foreground">Dung lượng</span>
                 </div>
                 <div>
                   <span className="block text-xs font-bold text-foreground truncate" title={jevDecision?.genre_label || "Chuẩn"}>
                     {jevDecision?.genre_label || "Ebook"}
                   </span>
-                  <span className="text-[10px] text-muted-foreground">Thể loại</span>
+                  <span className="text-xs text-muted-foreground">Thể loại</span>
                 </div>
               </div>
 
@@ -583,17 +583,17 @@ export function BookViewPresentation(props: BookViewPresentationProps) {
                   <h3 className="text-xs font-bold text-foreground">Gợi ý Jev Heuristics</h3>
                 </div>
                 {jevDecision ? (
-                  <Badge variant="outline" className="text-[10px] px-1.5 h-4.5 font-mono border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">
+                  <Badge variant="outline" className="text-xs px-2 h-5 font-mono border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">
                     {(jevDecision.confidence * 100).toFixed(0)}% tin cậy
                   </Badge>
                 ) : (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 h-4.5">
+                  <Badge variant="secondary" className="text-xs px-2 h-5">
                     Tự động
                   </Badge>
                 )}
               </div>
 
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
+              <p className="text-xs text-muted-foreground leading-relaxed">
                 {jevDecision ? (
                   <>
                     Phát hiện cấu trúc truyện <strong className="text-foreground">{jevDecision.genre_label}</strong>. Khuyên dùng preset typography <strong className="text-primary">{activePreset.name}</strong> để tối ưu độ đọc.
@@ -604,15 +604,15 @@ export function BookViewPresentation(props: BookViewPresentationProps) {
               </p>
 
               {/* AI Gateway connection status indicator */}
-              <div className="flex items-center justify-between text-[11px] py-1 px-2 rounded-md bg-secondary/50 border border-border">
+              <div className="flex items-center justify-between text-xs py-1 px-2 rounded-md bg-secondary/50 border border-border">
                 <span className="text-muted-foreground">Cổng AI Gateway:</span>
                 {activeGateway ? (
-                  <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 text-[10px]">
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 text-xs">
                     <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
                     <span>{activeGateway.name} ({activeGateway.latency_ms}ms)</span>
                   </span>
                 ) : (
-                  <span className="text-muted-foreground text-[10px]">Lõi Offline</span>
+                  <span className="text-muted-foreground text-xs">Lõi Offline</span>
                 )}
               </div>
 
@@ -641,7 +641,7 @@ export function BookViewPresentation(props: BookViewPresentationProps) {
                     <span className="font-semibold text-foreground block">
                       Phát hiện watermark rác!
                     </span>
-                    <p className="text-muted-foreground text-[11px] mt-0.5">
+                    <p className="text-muted-foreground text-xs mt-0.5">
                       Có {watermarkReport.affectedChaptersCount} chương chứa quảng cáo nguồn từ {watermarkReport.detectedDomains.join(", ") || "web truyện"}.
                     </p>
                   </div>
@@ -674,11 +674,11 @@ export function BookViewPresentation(props: BookViewPresentationProps) {
                       <h3 className="font-heading font-semibold text-sm text-foreground tracking-tight">
                         Mục Lục &amp; Danh Sách Chương
                       </h3>
-                      <Badge variant="secondary" className="text-[10px] font-mono h-4.5 px-1.5 rounded-full font-medium">
+                      <Badge variant="secondary" className="text-xs font-mono h-5 px-2 rounded-full font-medium">
                         {currentBook.chapter_count} chương
                       </Badge>
                     </div>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                    <p className="text-xs text-muted-foreground mt-0.5">
                       Tổng cộng {currentBook.chapter_count} chương trong tác phẩm
                     </p>
                   </div>
@@ -753,14 +753,14 @@ export function BookViewPresentation(props: BookViewPresentationProps) {
                             {isModified && (
                               <Badge
                                 variant="secondary"
-                                className="text-[9px] px-1.5 py-0 h-4 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0"
+                                className="text-xs px-2 py-0.5 h-5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0"
                               >
                                 ✨ Sửa AI
                               </Badge>
                             )}
                           </div>
                           {cleanPreview && (
-                            <p className="text-[11px] text-muted-foreground truncate mt-0.5 opacity-80 group-hover:opacity-100 transition-opacity font-serif">
+                            <p className="text-xs text-muted-foreground truncate mt-0.5 opacity-80 group-hover:opacity-100 transition-opacity font-serif">
                               {cleanPreview}
                             </p>
                           )}
@@ -1167,7 +1167,7 @@ export function BookView() {
           <DialogContent className="max-w-lg p-0 gap-0 overflow-hidden bg-card border-border">
             <DialogHeader className="p-3 border-b border-border bg-muted/30 shrink-0">
               <DialogTitle className="text-xs font-bold text-foreground truncate">{currentBook.title}</DialogTitle>
-              <DialogDescription className="text-[10px] text-muted-foreground">Ảnh bìa độ phân giải cao</DialogDescription>
+              <DialogDescription className="text-xs text-muted-foreground">Ảnh bìa độ phân giải cao</DialogDescription>
             </DialogHeader>
             <div className="p-4 flex items-center justify-center bg-black/40">
               <img

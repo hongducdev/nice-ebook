@@ -305,7 +305,7 @@ export function ChapterEnhancerView() {
               <h1 className="font-heading font-medium text-sm text-foreground tracking-tight">
                 Bước 3: Biên Tập &amp; Soát Lỗi AI
               </h1>
-              <Badge variant="outline" className="text-[10px] font-mono border-primary/40 text-primary px-2 h-4.5 rounded-full">
+              <Badge variant="outline" className="text-xs font-mono border-primary/40 text-primary px-2 h-5 rounded-full">
                 {selectedModel || "gemini-3.6-flash"}
               </Badge>
             </div>
@@ -393,7 +393,7 @@ export function ChapterEnhancerView() {
             {scope === "all" && modifiedCount > 0 && (
               <Label
                 htmlFor="skip-already-enhanced"
-                className="flex items-center gap-2 mt-1 px-1 text-[11px] font-normal text-muted-foreground cursor-pointer select-none"
+                className="flex items-center gap-2 mt-1 px-1 text-xs font-normal text-muted-foreground cursor-pointer select-none"
               >
                 <Checkbox
                   id="skip-already-enhanced"
@@ -408,7 +408,7 @@ export function ChapterEnhancerView() {
               <div className="mt-1 flex flex-col gap-1.5">
                 <Label
                   htmlFor="single-chapter-select"
-                  className="text-[11px] font-normal text-muted-foreground"
+                  className="text-xs font-normal text-muted-foreground"
                 >
                   Chọn chương cần biên tập:
                 </Label>
@@ -442,15 +442,15 @@ export function ChapterEnhancerView() {
 
                 {currentBook.chapters[activeChapterIndex] &&
                   modifiedChapters[currentBook.chapters[activeChapterIndex].href] && (
-                    <Alert className="border-emerald-500/20 bg-emerald-500/10 px-2 py-2 text-[11px]">
-                      <AlertTitle className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    <Alert className="border-emerald-500/20 bg-emerald-500/10 px-2 py-2 text-xs">
+                      <AlertTitle className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                         <Check className="size-3" />
                         <span>Chương này đã hoàn thành và lưu trong dự án.</span>
                       </AlertTitle>
-                      <AlertDescription className="text-[11px]">
+                      <AlertDescription className="text-xs">
                         <Label
                           htmlFor="force-reprocess-single"
-                          className="flex items-center gap-1.5 mt-0.5 px-0 text-[11px] font-normal text-muted-foreground cursor-pointer select-none"
+                          className="flex items-center gap-1.5 mt-0.5 px-0 text-xs font-normal text-muted-foreground cursor-pointer select-none"
                         >
                           <Checkbox
                             id="force-reprocess-single"
@@ -473,7 +473,7 @@ export function ChapterEnhancerView() {
                 <Zap className="size-3.5 text-primary" />
                 <span>Động Cơ AI (Engine)</span>
               </Label>
-              <Badge variant="outline" className="text-[9px] font-mono border-primary/40 text-primary">
+              <Badge variant="outline" className="text-xs font-mono border-primary/40 text-primary h-5 px-2">
                 Offline Core
               </Badge>
             </div>
@@ -495,7 +495,7 @@ export function ChapterEnhancerView() {
                   <RadioGroupItem value={option.id} id={`engine-${option.id}`} className="mt-0.5" />
                   <div className="flex flex-col gap-0.5">
                     <span className="text-xs font-semibold text-foreground">{option.title}</span>
-                    <span className="text-[11px] text-muted-foreground leading-snug">
+                    <span className="text-xs text-muted-foreground leading-snug">
                       {option.description}
                     </span>
                   </div>
@@ -517,7 +517,7 @@ export function ChapterEnhancerView() {
                   variant="link"
                   size="xs"
                   onClick={() => setActiveTab("ai")}
-                  className="text-[10px]"
+                  className="text-xs"
                 >
                   Đổi Model
                 </Button>
@@ -531,7 +531,7 @@ export function ChapterEnhancerView() {
                 </span>
               </div>
               <div className="flex flex-col gap-1.5 pt-1 border-t border-border/40">
-                <span className="text-muted-foreground text-[10px] uppercase font-semibold tracking-wider">
+                <span className="text-muted-foreground text-xs uppercase font-semibold tracking-wider">
                   Mô hình chỉ định:
                 </span>
                 <AgentModelSelector className="w-full" />
@@ -560,7 +560,7 @@ export function ChapterEnhancerView() {
                 </Label>
               </CardTitle>
               <CardAction className="self-center">
-                <Badge variant="secondary" className={`text-[9px] font-mono ${TEST_SUCCESS_BADGE}`}>
+                <Badge variant="secondary" className={`text-xs font-mono ${TEST_SUCCESS_BADGE}`}>
                   Zero-Fail
                 </Badge>
               </CardAction>
@@ -569,7 +569,7 @@ export function ChapterEnhancerView() {
             {isFallbackEnabled && (
               <CardContent className="px-0 flex flex-col gap-1.5 mt-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     Chuỗi mô hình dự phòng (theo Gateway):
                   </span>
                   <Button
@@ -578,7 +578,7 @@ export function ChapterEnhancerView() {
                     size="xs"
                     onClick={handleCheckFallbackChain}
                     disabled={isCheckingFallback}
-                    className="text-[10px] gap-1"
+                    className="text-xs gap-1"
                     title="Kiểm tra kết nối và loại bỏ các mô hình lỗi khỏi chuỗi dự phòng"
                   >
                     {isCheckingFallback ? (
@@ -592,16 +592,16 @@ export function ChapterEnhancerView() {
 
                 <div className="flex flex-col gap-1">
                   <Card size="sm" className="gap-0 py-0">
-                    <CardContent className="flex items-center justify-between gap-1.5 py-1.5 font-mono text-[10px] text-primary font-semibold">
+                    <CardContent className="flex items-center justify-between gap-1.5 py-1.5 font-mono text-xs text-primary font-semibold">
                       <div className="flex items-center gap-1.5 truncate">
                         <span className="w-3 text-center">1.</span>
                         <span className="truncate">{selectedModel || "gemini-3.6-flash"}</span>
-                        <span className="text-[9px] opacity-75 font-sans font-normal">(Chính)</span>
+                        <span className="text-xs opacity-75 font-sans font-normal">(Chính)</span>
                       </div>
                       {primaryTestResult && (
                         <Badge
                           variant={primaryTestResult.success ? "secondary" : "destructive"}
-                          className={`text-[9px] font-mono ${
+                          className={`text-xs font-mono ${
                             primaryTestResult.success ? TEST_SUCCESS_BADGE : ""
                           }`}
                           title={primaryTestResult.message}
@@ -616,18 +616,18 @@ export function ChapterEnhancerView() {
                     const test = modelTestResults[m];
                     return (
                       <Card key={m} size="sm" className="gap-0 py-0">
-                        <CardContent className="flex items-center justify-between gap-1.5 py-1.5 font-mono text-[10px] text-muted-foreground">
+                        <CardContent className="flex items-center justify-between gap-1.5 py-1.5 font-mono text-xs text-muted-foreground">
                           <div className="flex items-center gap-1.5 truncate">
                             <span className="w-3 text-center">{idx + 2}.</span>
                             <span className="truncate">{m}</span>
-                            <span className="text-[9px] opacity-60 font-sans">
+                            <span className="text-xs opacity-60 font-sans">
                               {m === "jev-verdict-2.0" ? "(Rust Offline)" : "(Dự phòng)"}
                             </span>
                           </div>
                           {test && (
                             <Badge
                               variant={test.success ? "secondary" : "destructive"}
-                              className={`text-[9px] font-mono ${
+                              className={`text-xs font-mono ${
                                 test.success ? TEST_SUCCESS_BADGE : ""
                               }`}
                               title={test.message}
@@ -666,7 +666,7 @@ export function ChapterEnhancerView() {
                   <span className="text-xs font-medium text-foreground flex items-center gap-1">
                     ✅ Chuẩn Hóa H1 Tiêu Đề
                   </span>
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     Tự động nhận diện và đặt lại H1 chuẩn trang trọng cho từng chương.
                   </span>
                 </div>
@@ -686,7 +686,7 @@ export function ChapterEnhancerView() {
                   <span className="text-xs font-medium text-foreground flex items-center gap-1">
                     🗑️ Dọn Dẹp Các Thẻ Top Rác
                   </span>
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     Xóa bỏ các dòng thừa, tiêu đề sách lặp lại ở đầu chương (index 0, 1, 2...).
                   </span>
                 </div>
@@ -706,7 +706,7 @@ export function ChapterEnhancerView() {
                   <span className="text-xs font-medium text-foreground flex items-center gap-1">
                     📌 Bổ Sung Heading Phân Cấp (H2/H3)
                   </span>
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     Chia nhỏ văn bản dài thành các mục lớn (H2) và tiểu mục phương pháp (H3).
                   </span>
                 </div>
@@ -726,7 +726,7 @@ export function ChapterEnhancerView() {
                   <span className="text-xs font-medium text-foreground flex items-center gap-1">
                     ✍️ Sửa Lỗi Chính Tả Tiếng Việt
                   </span>
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     Sửa lỗi gõ dấu, dấu hỏi/ngã (tiêu sử -&gt; tiểu sử), nhầm lẫn ký tự, sai phụ âm.
                   </span>
                 </div>
@@ -742,18 +742,18 @@ export function ChapterEnhancerView() {
                 <span>Làm Sạch Watermark &amp; Header/Footer</span>
               </CardTitle>
               <CardAction className="self-center">
-                <Badge variant="outline" className="text-[9px] font-mono border-primary/40 text-primary">
+                <Badge variant="outline" className="text-xs font-mono border-primary/40 text-primary">
                   DTV &bull; TVE-4U
                 </Badge>
               </CardAction>
-              <CardDescription className="text-[11px] leading-relaxed col-span-full">
+              <CardDescription className="text-xs leading-relaxed col-span-full">
                 Tự động loại bỏ các đoạn watermark, dấu bản quyền web (dtv-ebook, tve-4u, truyenfull...) và số trang thừa ở đầu/cuối chương.
               </CardDescription>
             </CardHeader>
 
             <CardContent className="px-0 flex flex-col gap-2.5">
               <div className="flex flex-col gap-1">
-                <Label htmlFor="watermark-keywords" className="text-[10px] font-normal text-muted-foreground">
+                <Label htmlFor="watermark-keywords" className="text-xs font-normal text-muted-foreground">
                   Từ khóa / Tên miền watermark bổ sung:
                 </Label>
                 <Input
@@ -815,7 +815,7 @@ export function ChapterEnhancerView() {
 
             {enhanceProgress && (
               <div className="flex flex-col gap-1 mt-1">
-                <div className="flex justify-between text-[11px] text-muted-foreground">
+                <div className="flex justify-between text-xs text-muted-foreground">
                   <span>Tiến trình xử lý:</span>
                   <span className="font-mono font-medium text-foreground">
                     {enhanceProgress.current} / {enhanceProgress.total}
@@ -836,7 +836,7 @@ export function ChapterEnhancerView() {
           <div className="px-4 py-2 bg-muted/30 border-b border-border flex flex-wrap items-center justify-between gap-2 select-none flex-shrink-0">
             <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 flex-1 min-w-0">
               <Card size="sm" className="gap-0 py-0 bg-card">
-                <CardContent className="flex items-center gap-1.5 px-2 py-1.5 font-mono text-[10px] text-muted-foreground">
+                <CardContent className="flex items-center gap-1.5 px-2 py-1.5 font-mono text-xs text-muted-foreground">
                   <CheckCircle2 className="size-3.5 shrink-0 text-sky-600 dark:text-sky-400" />
                   <span className="truncate">
                     Chương đã sửa:{" "}
@@ -848,7 +848,7 @@ export function ChapterEnhancerView() {
               </Card>
 
               <Card size="sm" className="gap-0 py-0 bg-card">
-                <CardContent className="flex items-center gap-1.5 px-2 py-1.5 font-mono text-[10px] text-muted-foreground">
+                <CardContent className="flex items-center gap-1.5 px-2 py-1.5 font-mono text-xs text-muted-foreground">
                   <Heading className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
                   <span className="truncate">
                     Heading bổ sung:{" "}
@@ -858,7 +858,7 @@ export function ChapterEnhancerView() {
               </Card>
 
               <Card size="sm" className="gap-0 py-0 bg-card">
-                <CardContent className="flex items-center gap-1.5 px-2 py-1.5 font-mono text-[10px] text-muted-foreground">
+                <CardContent className="flex items-center gap-1.5 px-2 py-1.5 font-mono text-xs text-muted-foreground">
                   <PenTool className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
                   <span className="truncate">
                     Lỗi chính tả sửa:{" "}
@@ -868,7 +868,7 @@ export function ChapterEnhancerView() {
               </Card>
 
               <Card size="sm" className="gap-0 py-0 bg-card">
-                <CardContent className="flex items-center gap-1.5 px-2 py-1.5 font-mono text-[10px] text-muted-foreground">
+                <CardContent className="flex items-center gap-1.5 px-2 py-1.5 font-mono text-xs text-muted-foreground">
                   <span className="truncate">
                     Top rác đã dọn:{" "}
                     <span className="font-semibold text-foreground">{totalJunkCleaned}</span>

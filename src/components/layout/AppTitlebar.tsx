@@ -118,7 +118,7 @@ export function AppTitlebar({ onOpenExport }: AppTitlebarProps) {
         <div className="topbar__brand flex items-center gap-2">
           <img src="/app-icon.png" alt="NiceEbook Studio" className="size-5 rounded-md object-contain shadow-2xs" />
           <strong className="tracking-tight text-foreground font-semibold text-xs">NiceEbook Studio</strong>
-          <Badge variant="outline" className="text-[10px] px-1.5 h-4.5 font-mono border-primary/40 text-primary">
+          <Badge variant="outline" className="text-xs px-2 h-5 font-mono border-primary/40 text-primary">
             v0.1.0
           </Badge>
         </div>
@@ -127,7 +127,7 @@ export function AppTitlebar({ onOpenExport }: AppTitlebarProps) {
           <div className="flex items-center gap-1.5 ml-2 px-2 py-0.5 rounded-md bg-secondary/60 border border-border text-xs text-foreground">
             <BookOpen size={13} className="text-primary" />
             <span className="max-w-[220px] truncate font-medium">{currentBook.title}</span>
-            <span className="text-[11px] text-muted-foreground font-mono">
+            <span className="text-xs text-muted-foreground font-mono">
               ({currentBook.chapter_count} chương)
             </span>
           </div>

@@ -205,7 +205,7 @@ export function Sidebar() {
                     {!isSidebarCollapsed && item.badge && (
                       <Badge
                         variant={item.badgeTone === "success" ? "secondary" : "outline"}
-                        className={`ml-auto text-[10px] h-4.5 px-1.5 ${
+                        className={`ml-auto text-xs h-5 px-2 ${
                           item.badgeTone === "success"
                             ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
                             : item.badgeTone === "warning"
@@ -248,7 +248,7 @@ export function Sidebar() {
           </div>
         ) : (
           <div className="flex items-center justify-between px-1 py-1">
-            <span className="text-[11px] font-medium text-muted-foreground">Giao diện</span>
+            <span className="text-xs font-medium text-muted-foreground">Giao diện</span>
             <ToggleGroup
               type="single"
               value={theme}
@@ -280,7 +280,7 @@ export function Sidebar() {
               <span className="text-xs font-semibold text-foreground truncate leading-tight">
                 NiceEbook Studio
               </span>
-              <span className="text-[10px] text-muted-foreground truncate font-mono">
+              <span className="text-xs text-muted-foreground truncate font-mono">
                 {activeGateway ? `● ${activeGateway.name}` : "○ Lõi Offline sẵn sàng"}
               </span>
             </div>

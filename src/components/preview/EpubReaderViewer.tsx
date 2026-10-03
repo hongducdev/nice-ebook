@@ -334,7 +334,7 @@ export function EpubReaderViewer() {
                 <span className="max-w-[200px] truncate font-medium">
                   {isViewingCover ? "Trang Bìa Sách (Cover)" : (activeChapter?.title || "Chương")}
                 </span>
-                <Badge variant="secondary" className="text-[10px] h-4.5 px-1.5 font-mono">
+                <Badge variant="secondary" className="text-xs h-5 px-2 font-mono">
                   {isViewingCover ? "Bìa" : `${activeChapterIndex + 1}/${currentBook.chapters.length}`}
                 </Badge>
                 <ChevronDown className={`size-3.5 text-muted-foreground transition-transform duration-200 ${showToc ? "rotate-180" : ""}`} />
@@ -348,7 +348,7 @@ export function EpubReaderViewer() {
                       <List className="size-3.5 text-primary" />
                       <span>Danh Mục Chương</span>
                     </div>
-                    <Badge variant="secondary" className="text-[10px] h-4.5 px-1.5 font-mono">
+                    <Badge variant="secondary" className="text-xs h-5 px-2 font-mono">
                       {currentBook.chapters.length} chương
                     </Badge>
                   </div>
@@ -383,10 +383,10 @@ export function EpubReaderViewer() {
                       }`}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0 ${
+                        <span className={`text-xs px-2 py-0.5 rounded flex items-center gap-1 shrink-0 ${
                           isViewingCover ? "bg-primary-foreground/20 text-primary-foreground" : "bg-secondary text-primary"
                         }`}>
-                          <ImageIcon size={10} />
+                          <ImageIcon size={11} />
                           <span>Bìa</span>
                         </span>
                         <span className="truncate font-medium">Trang Bìa Tác Phẩm (Cover)</span>
@@ -409,7 +409,7 @@ export function EpubReaderViewer() {
                         }`}
                       >
                         <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
-                          <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded shrink-0 ${
+                          <span className={`font-mono text-xs px-2 py-0.5 rounded shrink-0 ${
                             activeChapterIndex === idx 
                               ? "bg-primary-foreground/20 text-primary-foreground" 
                               : "bg-secondary text-muted-foreground"
@@ -477,14 +477,14 @@ export function EpubReaderViewer() {
             </ToggleGroup>
           )}
 
-          <Badge variant="outline" className="text-[10px] h-6 flex items-center gap-1 border-primary/40 text-primary">
-            <Sparkles size={10} />
+          <Badge variant="outline" className="text-xs h-6 flex items-center gap-1 border-primary/40 text-primary">
+            <Sparkles size={11} />
             <span>CSS Hot-Reload</span>
           </Badge>
 
           {activeChapter && modifiedChapters[activeChapter.href] && (
-            <Badge variant="secondary" className="text-[10px] h-6 flex items-center gap-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20" title="Chương này đã được biên tập và chuẩn hóa bằng AI">
-              <Check size={10} />
+            <Badge variant="secondary" className="text-xs h-6 flex items-center gap-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20" title="Chương này đã được biên tập và chuẩn hóa bằng AI">
+              <Check size={11} />
               <span>Đã Biên Tập AI</span>
             </Badge>
           )}
@@ -492,10 +492,10 @@ export function EpubReaderViewer() {
           {activeChapter && translatedChapters[activeChapter.href] && (
             <Badge
               variant="outline"
-              className="text-[10px] h-6 flex items-center gap-1 border-primary/40 text-primary"
+              className="text-xs h-6 flex items-center gap-1 border-primary/40 text-primary"
               title={`Chương này đã được dịch sang ${translationConfig.targetLang}`}
             >
-              <Languages size={10} />
+              <Languages size={11} />
               <span>Bản Dịch AI</span>
             </Badge>
           )}
