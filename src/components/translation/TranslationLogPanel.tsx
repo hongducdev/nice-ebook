@@ -120,7 +120,7 @@ export function TranslationLogPanel({
             onClick={() => onFilterChange(f.key)}
             aria-pressed={filter === f.key}
             title={f.title}
-            className={`shrink-0 h-5 px-2 rounded-full border text-[10px] font-medium cursor-pointer ${
+            className={`shrink-0 h-6 px-2.5 rounded-full border text-xs font-medium cursor-pointer ${
               filter === f.key
                 ? "border-primary/50 text-primary bg-primary/10 hover:bg-primary/15"
                 : "border-border text-muted-foreground hover:text-foreground"
@@ -131,14 +131,14 @@ export function TranslationLogPanel({
         ))}
         <div className="flex items-center gap-1 ml-auto pl-2 shrink-0">
           <div className="relative">
-            <Search size={11} className="absolute left-1.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="text"
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="Tìm trong log..."
               aria-label="Tìm kiếm trong nhật ký"
-              className="w-28 focus:w-44 transition-all rounded pl-6 pr-2 h-5 text-[10px]"
+              className="w-28 focus:w-44 transition-all rounded pl-6 pr-2 h-6 text-xs"
             />
           </div>
           <Button
@@ -148,7 +148,7 @@ export function TranslationLogPanel({
             onClick={onToggleAutoScroll}
             aria-pressed={autoScroll}
             title="Tự động cuộn xuống dòng mới nhất"
-            className={`h-5 px-2 rounded border text-[10px] font-medium cursor-pointer ${
+            className={`h-6 px-2.5 rounded border text-xs font-medium cursor-pointer ${
               autoScroll
                 ? "border-primary/50 text-primary bg-primary/10 hover:bg-primary/15"
                 : "border-border text-muted-foreground hover:text-foreground"
@@ -188,7 +188,7 @@ export function TranslationLogPanel({
       <div
         role="log"
         aria-label={ariaLabel}
-        className="flex-1 overflow-y-auto p-3 font-mono text-[11px] leading-relaxed flex flex-col select-text"
+        className="flex-1 overflow-y-auto p-3 font-mono text-xs leading-relaxed flex flex-col select-text"
       >
         {logs.length === 0 ? (
           <Empty className="flex-1 gap-2 select-none">
@@ -200,12 +200,12 @@ export function TranslationLogPanel({
                 {emptyPlaceholder.title}
               </EmptyTitle>
             )}
-            <EmptyDescription className="text-[11px] text-muted-foreground">
+            <EmptyDescription className="text-xs text-muted-foreground">
               {emptyPlaceholder?.description || "Nhật ký hoạt động dịch AI sẽ xuất hiện tại đây..."}
             </EmptyDescription>
           </Empty>
         ) : visible.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground text-[11px] select-none">
+          <div className="flex-1 flex items-center justify-center text-muted-foreground text-xs select-none">
             Không có dòng log nào khớp bộ lọc hiện tại.
           </div>
         ) : (
@@ -231,11 +231,11 @@ export function TranslationLogPanel({
                         : "border-primary/20 bg-primary/5 hover:bg-primary/10"
                     }`}
                   >
-                    <span className="text-[#555] dark:text-[#777] select-none shrink-0 font-mono text-[10px] mt-0.5">
+                    <span className="text-[#555] dark:text-[#777] select-none shrink-0 font-mono text-xs mt-0.5">
                       [{time}]
                     </span>
                     <span
-                      className={`select-none shrink-0 font-mono text-[10px] font-semibold px-1.5 py-0.5 rounded border mt-0.5 ${
+                      className={`select-none shrink-0 font-mono text-xs font-semibold px-2 py-0.5 rounded border mt-0.5 ${
                         isRecovery
                           ? "text-amber-500 bg-amber-500/10 border-amber-500/20"
                           : "text-primary bg-primary/10 border-primary/20"
@@ -263,7 +263,7 @@ export function TranslationLogPanel({
 
               return (
                 <div key={log.id} className="flex items-start gap-2 py-0.5 border-b border-border/30">
-                  <span className="text-[#555] dark:text-[#777] select-none shrink-0 text-[10px]">
+                  <span className="text-[#555] dark:text-[#777] select-none shrink-0 text-xs">
                     [{time}]
                   </span>
                   <span className={`select-none shrink-0 w-8 ${enhancedClass}`}>{badge}</span>

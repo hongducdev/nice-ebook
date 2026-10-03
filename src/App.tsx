@@ -245,7 +245,7 @@ export default function App() {
                     <div className="flex flex-col gap-1 pr-4">
                       <div className="flex items-center gap-2">
                         <CardTitle className="text-sm font-medium">Chủ đề giao diện (Appearance Theme)</CardTitle>
-                        <Badge variant="outline" className="text-[10px] h-4.5 border-primary/40 text-primary">Pistachio Design</Badge>
+                        <Badge variant="outline" className="text-xs h-5 px-2 border-primary/40 text-primary">Pistachio Design</Badge>
                       </div>
                       <CardDescription className="text-xs">
                         Chuyển đổi giữa chế độ Sáng (Light), Tối (Dark) hoặc đồng bộ theo cấu hình Hệ điều hành (System).

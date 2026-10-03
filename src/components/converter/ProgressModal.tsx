@@ -133,7 +133,7 @@ export function ProgressModal({
           {/* Stepper Stages (if provided) */}
           {steps && steps.length > 0 && (
             <div className="flex flex-col gap-2 pt-2 border-t border-border">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Các bước thực hiện
               </span>
               <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
@@ -143,7 +143,7 @@ export function ProgressModal({
                     className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded-md bg-background border border-border/70 shadow-2xs"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="size-4.5 rounded-full flex items-center justify-center text-[10px] font-mono font-bold bg-muted text-muted-foreground">
+                      <span className="size-5 rounded-full flex items-center justify-center text-xs font-mono font-bold bg-muted text-muted-foreground">
                         {idx + 1}
                       </span>
                       <span
@@ -161,24 +161,24 @@ export function ProgressModal({
 
                     <div>
                       {step.status === "running" && (
-                        <Badge variant="outline" className="h-5 text-[11px] gap-1 border-primary/40 text-primary">
+                        <Badge variant="outline" className="h-5 text-xs px-2 gap-1 border-primary/40 text-primary">
                           <Loader2 className="size-3 animate-spin" />
                           <span>Đang chạy</span>
                         </Badge>
                       )}
                       {step.status === "completed" && (
-                        <Badge variant="secondary" className="h-5 text-[11px] gap-1 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
+                        <Badge variant="secondary" className="h-5 text-xs px-2 gap-1 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
                           <CheckCircle2 className="size-3" />
                           <span>Xong</span>
                         </Badge>
                       )}
                       {step.status === "pending" && (
-                        <span className="text-[11px] text-muted-foreground opacity-70">
+                        <span className="text-xs text-muted-foreground opacity-70">
                           Chờ
                         </span>
                       )}
                       {step.status === "error" && (
-                        <Badge variant="destructive" className="h-5 text-[11px] gap-1">
+                        <Badge variant="destructive" className="h-5 text-xs px-2 gap-1">
                           <AlertCircle className="size-3" />
                           <span>Lỗi</span>
                         </Badge>

@@ -223,9 +223,9 @@ export function BookDropzone() {
         <Card className="p-3.5 bg-card/60 border-border shadow-2xs">
           <div className="flex items-center gap-1.5 mb-1">
             <BookOpen className="size-3.5 text-primary" />
-            <span className="text-[11px] font-semibold text-primary">Xử lý cục bộ (Offline)</span>
+            <span className="text-xs font-semibold text-primary">Xử lý cục bộ (Offline)</span>
           </div>
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
+          <p className="text-xs text-muted-foreground leading-relaxed">
             Nhận diện thể loại và gợi ý phong cách 100% offline không cần API key.
           </p>
         </Card>
@@ -233,9 +233,9 @@ export function BookDropzone() {
         <Card className="p-3.5 bg-card/60 border-border shadow-2xs">
           <div className="flex items-center gap-1.5 mb-1">
             <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">AI Provider Auto-Discovery</span>
+            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">AI Provider Auto-Discovery</span>
           </div>
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
+          <p className="text-xs text-muted-foreground leading-relaxed">
             Hỗ trợ kết nối DeepSeek, Gemini, Claude và tự động quét Ollama trên localhost.
           </p>
         </Card>
@@ -243,9 +243,9 @@ export function BookDropzone() {
         <Card className="p-3.5 bg-card/60 border-border shadow-2xs">
           <div className="flex items-center gap-1.5 mb-1">
             <Sparkles className="size-3.5 text-primary" />
-            <span className="text-[11px] font-semibold text-primary">Live CSS Hot-Reload</span>
+            <span className="text-xs font-semibold text-primary">Live CSS Hot-Reload</span>
           </div>
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
+          <p className="text-xs text-muted-foreground leading-relaxed">
             Xem trước giao diện sách trực tiếp với tốc độ phản hồi dưới 50ms.
           </p>
         </Card>

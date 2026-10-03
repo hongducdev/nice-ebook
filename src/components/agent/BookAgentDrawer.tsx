@@ -158,11 +158,11 @@ export function BookAgentDrawer() {
                 <SheetTitle className="text-xs font-semibold text-foreground truncate">
                   Trợ Lý Dự Án Sách
                 </SheetTitle>
-                <Badge variant="outline" className="text-[9px] px-1.5 h-3.5 border-primary/40 text-primary">
+                <Badge variant="outline" className="text-xs px-2 h-5 border-primary/40 text-primary">
                   Agent AI
                 </Badge>
               </div>
-              <SheetDescription className="text-[10px] text-muted-foreground truncate">
+              <SheetDescription className="text-xs text-muted-foreground truncate">
                 {currentBook ? currentBook.title : "Chưa mở sách"}
               </SheetDescription>
             </div>
@@ -203,12 +203,12 @@ export function BookAgentDrawer() {
               <h3 className="text-xs font-semibold text-foreground mb-1">
                 Chào bạn! Tôi có thể giúp gì cho cuốn sách?
               </h3>
-              <p className="text-[11px] text-muted-foreground max-w-xs leading-relaxed mb-6">
+              <p className="text-xs text-muted-foreground max-w-xs leading-relaxed mb-6">
                 Tôi có thể đọc và tóm tắt các chương, kiểm tra tình trạng sách, cập nhật thông tin tác phẩm, đổi phong cách hoặc điều hướng giao diện giúp bạn.
               </p>
 
               <div className="w-full flex flex-col gap-1.5 text-left">
-                <span className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider">
+                <span className="text-xs uppercase font-semibold text-muted-foreground tracking-wider">
                   Gợi ý thao tác nhanh:
                 </span>
                 {currentQuickActions.map((promptText) => (
@@ -216,7 +216,7 @@ export function BookAgentDrawer() {
                     key={promptText}
                     type="button"
                     onClick={() => sendAgentMessage(promptText)}
-                    className="p-2 rounded-lg border border-border bg-secondary/30 hover:bg-secondary hover:border-primary/50 text-[11px] text-foreground flex items-center justify-between gap-2 transition-all text-left cursor-pointer group"
+                    className="p-2 rounded-lg border border-border bg-secondary/30 hover:bg-secondary hover:border-primary/50 text-xs text-foreground flex items-center justify-between gap-2 transition-all text-left cursor-pointer group"
                   >
                     <span>{promptText}</span>
                     <ChevronRight size={12} className="text-muted-foreground group-hover:text-primary shrink-0 transition-colors" />
@@ -253,7 +253,7 @@ export function BookAgentDrawer() {
                 </div>
 
                 <div className="flex items-center gap-2 px-1">
-                  <span className="text-[9px] text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </span>
                   {msg.role === "assistant" && (
@@ -294,7 +294,7 @@ export function BookAgentDrawer() {
                   key={actionText}
                   type="button"
                   onClick={() => sendAgentMessage(actionText)}
-                  className="whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] bg-secondary border border-border hover:border-primary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  className="whitespace-nowrap px-2 py-0.5 rounded-full text-xs bg-secondary border border-border hover:border-primary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 >
                   {actionText.length > 25 ? `${actionText.slice(0, 24)}...` : actionText}
                 </button>

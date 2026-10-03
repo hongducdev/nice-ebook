@@ -136,7 +136,7 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Số chương:</span>
-                <Badge variant="outline" className="font-mono text-[11px] h-5">
+                <Badge variant="outline" className="font-mono text-xs h-5 px-2">
                   {currentBook.chapter_count} chương
                 </Badge>
               </div>
@@ -149,10 +149,10 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
                   <CheckCircle2 className="size-4" />
                   <span>Đã đóng gói hoàn tất!</span>
                 </div>
-                <p className="text-[11px] text-foreground font-mono break-all bg-background/50 p-1.5 rounded border border-border">
+                <p className="text-xs text-foreground font-mono break-all bg-background/50 p-1.5 rounded border border-border">
                   {exportedPath}
                 </p>
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1 border-t border-border">
+                <div className="flex items-center justify-between text-xs text-muted-foreground pt-1 border-t border-border">
                   <span>Dung lượng tệp:</span>
                   <span className="font-mono font-semibold text-foreground">
                     {formatSize(exportedSize)}
@@ -164,7 +164,7 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
             {/* Honest note about scope */}
             <div className="p-2.5 rounded-lg bg-secondary/40 border border-border flex items-start gap-2">
               <Info className="size-4 text-muted-foreground mt-0.5 shrink-0" />
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
+              <p className="text-xs text-muted-foreground leading-relaxed">
                 File xuất ra là EPUB 3 chuẩn, mở được trên mọi trình đọc (Calibre, Apple Books,
                 Google Play Books, Kobo, Kindle qua Send-to-Kindle).
               </p>

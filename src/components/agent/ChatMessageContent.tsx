@@ -58,7 +58,7 @@ function ListView({ token }: { token: Tokens.List }) {
 function TableView({ token }: { token: Tokens.Table }) {
   return (
     <div className="overflow-x-auto my-2 border border-border rounded-lg bg-card/60 shadow-xs">
-      <table className="w-full text-[11px] text-left border-collapse">
+      <table className="w-full text-xs text-left border-collapse">
         <thead>
           <tr className="bg-muted/70 border-b border-border">
             {token.header.map((col, idx) => (
@@ -157,7 +157,7 @@ function renderSingleInlineToken(t: Tokens.Generic, idx: number): React.ReactNod
     return (
       <code
         key={idx}
-        className="px-1 py-0.5 rounded text-[10px] font-mono bg-muted/80 text-primary border border-border/50"
+        className="px-1 py-0.5 rounded text-xs font-mono bg-muted/80 text-primary border border-border/50"
       >
         {(t as Tokens.Codespan).text}
       </code>
@@ -221,7 +221,7 @@ function CodeBlockView({ code, lang }: { code: string; lang?: string }) {
   return (
     <div className="relative my-2 rounded-lg border border-border/80 bg-muted/40 overflow-hidden group">
       {/* Code Header Bar */}
-      <div className="flex items-center justify-between px-3 py-1 bg-muted/80 border-b border-border/60 text-[10px] font-mono text-muted-foreground">
+      <div className="flex items-center justify-between px-3 py-1 bg-muted/80 border-b border-border/60 text-xs font-mono text-muted-foreground">
         <span className="uppercase">{lang || "code"}</span>
         <button
           type="button"
@@ -244,7 +244,7 @@ function CodeBlockView({ code, lang }: { code: string; lang?: string }) {
       </div>
 
       {/* Code Body */}
-      <pre className="p-3 overflow-x-auto text-[11px] font-mono text-foreground leading-relaxed">
+      <pre className="p-3 overflow-x-auto text-xs font-mono text-foreground leading-relaxed">
         <code>{code}</code>
       </pre>
     </div>

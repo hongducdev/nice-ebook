@@ -29,7 +29,7 @@ export function CodeMirrorCss() {
         <div className="flex items-center gap-2">
           <span className="size-2 rounded-full bg-primary" />
           <span className="font-semibold text-foreground">Biên Tập CSS Trực Tiếp (CodeMirror 6)</span>
-          <span className="text-[10px] font-mono text-muted-foreground">style.css</span>
+          <span className="text-xs font-mono text-muted-foreground">style.css</span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -37,7 +37,7 @@ export function CodeMirrorCss() {
             variant="outline"
             size="sm"
             onClick={handleReset}
-            className="h-6 text-[11px] px-2.5 gap-1 text-muted-foreground hover:text-foreground"
+            className="h-7 text-xs px-2.5 gap-1 text-muted-foreground hover:text-foreground"
             title="Khôi phục về mẫu gốc"
           >
             <RefreshCw className="size-3" />
@@ -46,7 +46,7 @@ export function CodeMirrorCss() {
           <Button
             size="sm"
             onClick={handleCopy}
-            className="h-6 text-[11px] px-2.5 gap-1 font-medium"
+            className="h-7 text-xs px-2.5 gap-1 font-medium"
           >
             {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
             <span>{copied ? "Đã chép" : "Copy CSS"}</span>

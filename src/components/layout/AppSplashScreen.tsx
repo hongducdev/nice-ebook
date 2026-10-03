@@ -61,7 +61,7 @@ export function AppSplashScreen({
           <h1 className="text-xl font-bold tracking-tight text-foreground">
             NiceEbook Studio
           </h1>
-          <Badge variant="outline" className="text-[10px] font-mono h-4 px-1.5 border-primary/40 text-primary">
+          <Badge variant="outline" className="text-xs font-mono h-5 px-2 border-primary/40 text-primary">
             v0.1.0
           </Badge>
         </div>
@@ -80,12 +80,12 @@ export function AppSplashScreen({
           />
         </div>
 
-        <div className="flex items-center justify-between w-full text-[11px] text-muted-foreground">
+        <div className="flex items-center justify-between w-full text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5 min-w-0">
-            {isLoading && <Loader2 size={11} className="animate-spin text-primary shrink-0" />}
+            {isLoading && <Loader2 size={12} className="animate-spin text-primary shrink-0" />}
             <span className="truncate">{stepMessage}</span>
           </div>
-          <span className="font-mono text-[10px] shrink-0 font-medium text-foreground">
+          <span className="font-mono text-xs shrink-0 font-medium text-foreground">
             {clampedProgress}%
           </span>
         </div>

@@ -50,7 +50,7 @@ export function AgentActiveTaskMonitorView({
               <span className="relative inline-flex rounded-full size-2 bg-primary" />
             </span>
             <Languages size={13} className="text-primary shrink-0" />
-            <span className="text-[11px] font-semibold text-foreground truncate">
+            <span className="text-xs font-semibold text-foreground truncate">
               Đang dịch: {title}
             </span>
           </div>
@@ -63,11 +63,11 @@ export function AgentActiveTaskMonitorView({
                 variant="ghost"
                 size="xs"
                 onClick={() => onNavigateTab("translator")}
-                className="h-5 px-1.5 text-[9px] gap-0.5 text-muted-foreground hover:text-foreground cursor-pointer"
+                className="h-5.5 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground cursor-pointer"
                 title="Mở tab Dịch thuật AI để xem chi tiết"
               >
                 <span>Tab Dịch</span>
-                <ArrowUpRight size={10} />
+                <ArrowUpRight size={11} />
               </Button>
             )}
             {onStopTranslation && (
@@ -76,10 +76,10 @@ export function AgentActiveTaskMonitorView({
                 variant="ghost"
                 size="xs"
                 onClick={onStopTranslation}
-                className="h-5 px-1.5 text-[9px] gap-0.5 text-destructive hover:bg-destructive/10 cursor-pointer"
+                className="h-5.5 px-2 text-xs gap-1 text-destructive hover:bg-destructive/10 cursor-pointer"
                 title="Dừng tiến trình dịch"
               >
-                <Square size={9} />
+                <Square size={10} />
                 <span>Dừng</span>
               </Button>
             )}
@@ -88,9 +88,9 @@ export function AgentActiveTaskMonitorView({
 
         <Progress value={pct} className="h-1.5" />
 
-        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{chDetail}{blockDetail}</span>
-          <span className="italic text-[9px]">Đồng bộ realtime với bên Dịch</span>
+          <span className="italic text-xs">Đồng bộ realtime với bên Dịch</span>
         </div>
       </div>
     );
@@ -111,7 +111,7 @@ export function AgentActiveTaskMonitorView({
               <span className="relative inline-flex rounded-full size-2 bg-primary" />
             </span>
             <Wand2 size={13} className="text-primary shrink-0" />
-            <span className="text-[11px] font-semibold text-foreground truncate">
+            <span className="text-xs font-semibold text-foreground truncate">
               Đang biên tập & tối ưu chương
             </span>
           </div>
@@ -124,11 +124,11 @@ export function AgentActiveTaskMonitorView({
                 variant="ghost"
                 size="xs"
                 onClick={() => onNavigateTab("ai-editor")}
-                className="h-5 px-1.5 text-[9px] gap-0.5 text-muted-foreground hover:text-foreground cursor-pointer"
+                className="h-5.5 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground cursor-pointer"
                 title="Mở tab Biên tập để xem chi tiết"
               >
                 <span>Tab AI</span>
-                <ArrowUpRight size={10} />
+                <ArrowUpRight size={11} />
               </Button>
             )}
             {onStopBatchEnhance && (
@@ -137,10 +137,10 @@ export function AgentActiveTaskMonitorView({
                 variant="ghost"
                 size="xs"
                 onClick={onStopBatchEnhance}
-                className="h-5 px-1.5 text-[9px] gap-0.5 text-destructive hover:bg-destructive/10 cursor-pointer"
+                className="h-5.5 px-2 text-xs gap-1 text-destructive hover:bg-destructive/10 cursor-pointer"
                 title="Dừng tiến trình tối ưu"
               >
-                <Square size={9} />
+                <Square size={10} />
                 <span>Dừng</span>
               </Button>
             )}
@@ -149,9 +149,9 @@ export function AgentActiveTaskMonitorView({
 
         <Progress value={pct} className="h-1.5" />
 
-        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>Chương {current}/{total}</span>
-          <span className="italic text-[9px]">Đồng bộ realtime với bên Biên tập</span>
+          <span className="italic text-xs">Đồng bộ realtime với bên Biên tập</span>
         </div>
       </div>
     );
@@ -164,7 +164,7 @@ export function AgentActiveTaskMonitorView({
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <Activity size={13} className="text-primary shrink-0 animate-pulse" />
-            <span className="text-[11px] font-semibold text-foreground truncate">
+            <span className="text-xs font-semibold text-foreground truncate">
               {runningJob.label}
             </span>
           </div>
@@ -173,9 +173,9 @@ export function AgentActiveTaskMonitorView({
 
         <Progress value={runningJob.progress} className="h-1.5" />
 
-        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span className="truncate">{runningJob.detail || "Đang xử lý tác vụ nền..."}</span>
-          <span className="italic text-[9px]">Workflow Job</span>
+          <span className="italic text-xs">Workflow Job</span>
         </div>
       </div>
     );

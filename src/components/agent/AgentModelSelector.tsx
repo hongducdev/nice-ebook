@@ -73,7 +73,7 @@ export function AgentModelSelector({ className, compact = false }: AgentModelSel
           <Cpu className="size-3 text-primary shrink-0" />
           <span className="truncate text-left flex-1 font-medium">{currentModel}</span>
           {cavemanMode !== "off" && !compact && (
-            <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/15 text-amber-500 font-mono shrink-0">
+            <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500 font-mono shrink-0">
               ⚡ Caveman
             </span>
           )}
@@ -83,9 +83,9 @@ export function AgentModelSelector({ className, compact = false }: AgentModelSel
           {categorizedModels.length > 0 ? (
             categorizedModels.map((category) => (
               <SelectGroup key={category.id}>
-                <SelectLabel className="text-[10px] font-sans font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                <SelectLabel className="text-xs font-sans font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
                   <span>{category.name}</span>
-                  <span className="text-[9px] font-mono opacity-70">
+                  <span className="text-xs font-mono opacity-70">
                     {category.models.length}
                   </span>
                 </SelectLabel>
@@ -98,7 +98,7 @@ export function AgentModelSelector({ className, compact = false }: AgentModelSel
             ))
           ) : (
             <SelectGroup>
-              <SelectLabel className="text-[10px] font-sans font-semibold uppercase tracking-wider text-muted-foreground">
+              <SelectLabel className="text-xs font-sans font-semibold uppercase tracking-wider text-muted-foreground">
                 {activeGateway ? activeGateway.name : "Mô hình phổ biến (Cần Gateway)"}
               </SelectLabel>
               {(activeGateway?.models?.length ? activeGateway.models : POPULAR_FALLBACK_MODELS).map(
@@ -114,11 +114,11 @@ export function AgentModelSelector({ className, compact = false }: AgentModelSel
           <SelectSeparator />
           <div className="p-2 flex flex-col gap-1.5 bg-muted/20">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-sans font-semibold uppercase tracking-wider text-foreground flex items-center gap-1">
-                <Zap size={10} className="text-amber-500" />
+              <span className="text-xs font-sans font-semibold uppercase tracking-wider text-foreground flex items-center gap-1">
+                <Zap size={11} className="text-amber-500" />
                 <span>Caveman Token Opt</span>
               </span>
-              <span className="text-[9px] font-mono text-primary font-medium">
+              <span className="text-xs font-mono text-primary font-medium">
                 {cavemanMode.toUpperCase()}
               </span>
             </div>
@@ -132,7 +132,7 @@ export function AgentModelSelector({ className, compact = false }: AgentModelSel
                     setCavemanMode(mode);
                     toast.info(`Caveman: ${mode.toUpperCase()}`);
                   }}
-                  className={`text-[9px] py-0.5 rounded border transition-colors cursor-pointer ${
+                  className={`text-xs py-0.5 rounded border transition-colors cursor-pointer ${
                     cavemanMode === mode
                       ? "border-primary bg-primary/15 text-primary font-bold"
                       : "border-border/60 text-muted-foreground hover:text-foreground"
@@ -151,7 +151,7 @@ export function AgentModelSelector({ className, compact = false }: AgentModelSel
               variant="ghost"
               size="xs"
               onClick={() => setActiveTab("ai")}
-              className="w-full justify-start text-[11px] font-sans gap-1.5 text-muted-foreground hover:text-primary h-7"
+              className="w-full justify-start text-xs font-sans gap-1.5 text-muted-foreground hover:text-primary h-7"
             >
               <Settings2 size={12} />
               <span>Quản lý Cổng AI &amp; Khóa API...</span>

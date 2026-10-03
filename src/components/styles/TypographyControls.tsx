@@ -1080,7 +1080,7 @@ h1, h2, h3, h4, h5, h6 {
                             </span>
                             <Badge
                               variant={item.status === "pass" ? "secondary" : "outline"}
-                              className={`text-[10px] px-1.5 py-0 uppercase tracking-wider shrink-0 ${
+                              className={`text-xs px-2 py-0.5 h-5 uppercase tracking-wider shrink-0 ${
                                 item.status === "pass"
                                   ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
                                   : item.status === "warning"

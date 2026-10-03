@@ -1341,7 +1341,7 @@ export function BookTranslatorView() {
               <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-muted-foreground font-medium">Số luồng dịch song song:</span>
-                  <span className="font-mono text-[11px] font-semibold text-primary">
+                  <span className="font-mono text-xs font-semibold text-primary">
                     {translationConfig.concurrency || 1}x ({translationConfig.concurrency === 3 ? "Tối đa" : translationConfig.concurrency === 2 ? "Nhanh" : "Tuần tự"})
                   </span>
                 </div>
@@ -1655,17 +1655,17 @@ export function BookTranslatorView() {
                         </td>
                         <td className="w-[104px] px-2 text-center">
                           {isRunning ? (
-                            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-primary/15 border border-primary/30 px-2 py-0.5 text-[11px] font-medium text-primary animate-pulse">
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-primary/15 border border-primary/30 px-2 py-0.5 text-xs font-medium text-primary animate-pulse">
                               <Loader2 className="size-3 animate-spin" />
                               Đang dịch
                             </span>
                           ) : isTranslated ? (
-                            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-500/15 border border-emerald-500/25 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-500/15 border border-emerald-500/25 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
                               <Check className="size-3" />
                               Đã dịch
                             </span>
                           ) : (
-                            <span className="inline-flex items-center whitespace-nowrap rounded-full bg-secondary/80 border border-border/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                            <span className="inline-flex items-center whitespace-nowrap rounded-full bg-secondary/80 border border-border/50 px-2 py-0.5 text-xs font-medium text-muted-foreground">
                               Chưa dịch
                             </span>
                           )}

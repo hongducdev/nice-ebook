@@ -133,7 +133,7 @@ export function BookAgentFullView() {
               <h1 className="text-sm font-semibold text-foreground">
                 Trợ Lý Dự Án Sách (Agent AI)
               </h1>
-              <Badge variant="outline" className="text-[10px] h-4.5 px-1.5 border-primary/40 text-primary">
+              <Badge variant="outline" className="text-xs h-5 px-2 border-primary/40 text-primary">
                 Full Workspace View
               </Badge>
             </div>
@@ -206,7 +206,7 @@ export function BookAgentFullView() {
                             </span>
                             <ArrowRight size={13} className="text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                           </div>
-                          <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug line-clamp-1">
+                          <p className="text-xs text-muted-foreground mt-0.5 leading-snug line-clamp-1">
                             {card.desc}
                           </p>
                         </div>
@@ -245,7 +245,7 @@ export function BookAgentFullView() {
                 </div>
 
                 <div className="flex items-center gap-2 px-1">
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </span>
                   {msg.role === "assistant" && (
@@ -288,7 +288,7 @@ export function BookAgentFullView() {
                   key={actionText}
                   type="button"
                   onClick={() => sendAgentMessage(actionText)}
-                  className="whitespace-nowrap px-2.5 py-1 rounded-full text-[11px] bg-secondary border border-border hover:border-primary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  className="whitespace-nowrap px-2.5 py-1 rounded-full text-xs bg-secondary border border-border hover:border-primary text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 >
                   {actionText}
                 </button>
@@ -333,11 +333,11 @@ export function BookAgentFullView() {
             )}
           </div>
 
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground px-1">
+          <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
             <span>Trợ lý có thể thực thi các thao tác thay đổi trực tiếp sau khi bạn xác nhận.</span>
             <div className="flex items-center gap-3">
               <AgentModelSelector compact />
-              <span className="text-[10px] opacity-75">Enter để gửi · Shift+Enter xuống dòng</span>
+              <span className="text-xs opacity-75">Enter để gửi · Shift+Enter xuống dòng</span>
             </div>
           </div>
         </div>

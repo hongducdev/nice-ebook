@@ -68,7 +68,7 @@ export function ActionProposalCardView({
     >
       {/* Proposal Header */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 font-semibold text-[11px] min-w-0">
+        <div className="flex items-center gap-1.5 font-semibold text-xs min-w-0">
           {proposal.toolName === "translate_chapter" || proposal.toolName === "batch_translate_chapters" ? (
             <Languages size={13} className="text-primary shrink-0" />
           ) : proposal.toolName === "enhance_chapter" ? (
@@ -82,41 +82,41 @@ export function ActionProposalCardView({
         {isActive ? (
           <Badge
             variant="outline"
-            className="text-[9px] px-1.5 h-4 bg-primary/10 text-primary border-primary/30 shrink-0 gap-1 animate-pulse"
+            className="text-xs px-2 h-5 bg-primary/10 text-primary border-primary/30 shrink-0 gap-1 animate-pulse"
           >
-            <Loader2 size={10} className="animate-spin" />
+            <Loader2 size={11} className="animate-spin" />
             <span>Đang thực thi...</span>
           </Badge>
         ) : status === "executed" ? (
           <Badge
             variant="secondary"
-            className="text-[9px] px-1.5 h-4 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0 gap-1"
+            className="text-xs px-2 h-5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0 gap-1"
           >
-            <Check size={10} />
+            <Check size={11} />
             <span>Đã thực thi</span>
           </Badge>
         ) : status === "rejected" ? (
-          <Badge variant="outline" className="text-[9px] px-1.5 h-4 text-muted-foreground shrink-0">
+          <Badge variant="outline" className="text-xs px-2 h-5 text-muted-foreground shrink-0">
             Đã bỏ qua
           </Badge>
         ) : (
           <Badge
             variant="outline"
-            className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 text-[9px] px-1.5 h-4 shrink-0"
+            className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 text-xs px-2 h-5 shrink-0"
           >
             Chờ xác nhận
           </Badge>
         )}
       </div>
 
-      <p className="text-[10px] text-muted-foreground leading-tight">
+      <p className="text-xs text-muted-foreground leading-tight">
         {proposal.description}
       </p>
 
       {/* Diffs / Changes Summary */}
       {proposal.diffSummary && proposal.diffSummary.length > 0 && (
         <div className="border border-border rounded bg-card/80 overflow-hidden mt-0.5">
-          <table className="w-full text-[10px] text-left">
+          <table className="w-full text-xs text-left">
             <tbody className="divide-y divide-border/60">
               {proposal.diffSummary.map((d, i) => (
                 <tr key={i} className="hover:bg-secondary/30">
@@ -142,7 +142,7 @@ export function ActionProposalCardView({
         <div className="p-2 rounded border border-primary/20 bg-background/60 flex flex-col gap-1.5 animate-in fade-in duration-150">
           {proposal.toolName === "translate_chapter" || proposal.toolName === "batch_translate_chapters" ? (
             <>
-              <div className="flex items-center justify-between text-[10px]">
+              <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-foreground truncate max-w-[180px]">
                   {translationProgress ? `Đang dịch: ${translationProgress.currentChapterTitle}` : "Đang kết nối AI Gateway..."}
                 </span>
@@ -151,7 +151,7 @@ export function ActionProposalCardView({
                 </span>
               </div>
               <Progress value={translationProgress?.percent ?? 0} className="h-1.5" />
-              <div className="flex items-center justify-between text-[9px] text-muted-foreground">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>
                   {translationProgress && translationProgress.totalBlocks > 0
                     ? `Đoạn ${translationProgress.currentBlock}/${translationProgress.totalBlocks}`
@@ -163,10 +163,10 @@ export function ActionProposalCardView({
                     variant="ghost"
                     size="xs"
                     onClick={onStopTranslation}
-                    className="h-4.5 px-1.5 text-[9px] gap-0.5 text-destructive hover:bg-destructive/10 cursor-pointer"
+                    className="h-5.5 px-2 text-xs gap-1 text-destructive hover:bg-destructive/10 cursor-pointer"
                     title="Dừng tiến trình dịch"
                   >
-                    <Square size={8} />
+                    <Square size={9} />
                     <span>Dừng</span>
                   </Button>
                 )}
@@ -174,7 +174,7 @@ export function ActionProposalCardView({
             </>
           ) : proposal.toolName === "enhance_chapter" ? (
             <>
-              <div className="flex items-center justify-between text-[10px]">
+              <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-foreground truncate">
                   Đang tối ưu & chuẩn hóa chương...
                 </span>
@@ -186,7 +186,7 @@ export function ActionProposalCardView({
                 value={enhanceProgress ? Math.round((enhanceProgress.current / Math.max(1, enhanceProgress.total)) * 100) : 0}
                 className="h-1.5"
               />
-              <div className="flex items-center justify-between text-[9px] text-muted-foreground">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>
                   {enhanceProgress ? `Chương ${enhanceProgress.current}/${enhanceProgress.total}` : "Đang xử lý..."}
                 </span>
@@ -196,10 +196,10 @@ export function ActionProposalCardView({
                     variant="ghost"
                     size="xs"
                     onClick={onStopBatchEnhance}
-                    className="h-4.5 px-1.5 text-[9px] gap-0.5 text-destructive hover:bg-destructive/10 cursor-pointer"
+                    className="h-5.5 px-2 text-xs gap-1 text-destructive hover:bg-destructive/10 cursor-pointer"
                     title="Dừng tiến trình tối ưu"
                   >
-                    <Square size={8} />
+                    <Square size={9} />
                     <span>Dừng</span>
                   </Button>
                 )}
@@ -207,15 +207,15 @@ export function ActionProposalCardView({
             </>
           ) : runningJob ? (
             <>
-              <div className="flex items-center justify-between text-[10px]">
+              <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-foreground truncate">{runningJob.label}</span>
                 <span className="font-mono text-primary font-bold text-xs">{runningJob.progress}%</span>
               </div>
               <Progress value={runningJob.progress} className="h-1.5" />
-              <span className="text-[9px] text-muted-foreground truncate">{runningJob.detail || "Đang xử lý..."}</span>
+              <span className="text-xs text-muted-foreground truncate">{runningJob.detail || "Đang xử lý..."}</span>
             </>
           ) : (
-            <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 size={12} className="animate-spin text-primary shrink-0" />
               <span>Đang thực thi tác vụ...</span>
             </div>
@@ -230,7 +230,7 @@ export function ActionProposalCardView({
             type="button"
             disabled
             size="xs"
-            className="text-[10px] h-6 px-2.5 gap-1.5 font-medium shadow-xs opacity-80 cursor-not-allowed"
+            className="text-xs h-7 px-2.5 gap-1.5 font-medium shadow-xs opacity-80 cursor-not-allowed"
           >
             <Loader2 size={11} className="animate-spin" />
             <span>Đang thực thi...</span>
@@ -243,7 +243,7 @@ export function ActionProposalCardView({
             variant="outline"
             size="xs"
             onClick={() => onConfirm(false)}
-            className="text-[10px] h-6 px-2 text-muted-foreground hover:text-foreground cursor-pointer"
+            className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground cursor-pointer"
           >
             Bỏ qua
           </Button>
@@ -251,7 +251,7 @@ export function ActionProposalCardView({
             type="button"
             size="xs"
             onClick={() => onConfirm(true)}
-            className="text-[10px] h-6 px-2.5 gap-1 font-medium shadow-xs cursor-pointer"
+            className="text-xs h-7 px-2.5 gap-1 font-medium shadow-xs cursor-pointer"
           >
             <Check size={11} />
             <span>Chấp nhận thực thi</span>
