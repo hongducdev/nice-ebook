@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { EntityExtractor, ExtractedEntityCandidate } from "./entityExtractor";
-import { ChapterTextSource } from "../kindle/xrayService";
+import { ChapterTextSource } from "./entityHeuristic";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),

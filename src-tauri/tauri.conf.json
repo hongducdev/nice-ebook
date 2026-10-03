@@ -29,8 +29,8 @@
     "targets": "all",
     "copyright": "Copyright © 2026 hongducdev",
     "category": "Education",
-    "shortDescription": "Desktop studio for AI-assisted EPUB styling, translation, and Kindle packaging",
-    "longDescription": "Next-generation desktop studio for digital book readers, creators, and translators. Features offline Jev heuristics styling, AI translation, Kindle X-Ray/WordWise packaging, and Scanned PDF OCR.",
+    "shortDescription": "Desktop studio for AI-assisted EPUB styling, translation, and OCR conversion",
+    "longDescription": "Next-generation desktop studio for digital book readers, creators, and translators. Features offline Jev heuristics styling, AI translation, EPUB export, and Scanned PDF OCR.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

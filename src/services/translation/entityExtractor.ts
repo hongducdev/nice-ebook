@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { extractXRayHeuristic, ChapterTextSource } from "../kindle/xrayService";
+import { extractEntityCandidates, ChapterTextSource } from "./entityHeuristic";
 
 export interface ExtractedEntityCandidate {
   id: string;
@@ -23,7 +23,7 @@ export interface ProposeEntityOptions {
 
 export class EntityExtractor {
   /**
-   * Scans chapters using pure heuristic engine (reusing X-Ray honorific, dialogue, and phrase scanners)
+   * Scans chapters using the pure heuristic engine (honorific, dialogue, and phrase scanners)
    * plus CJK compound extraction if Chinese/Japanese characters are present.
    */
   public static extractCandidates(
@@ -31,11 +31,11 @@ export class EntityExtractor {
     existingGlossary: Record<string, string> = {},
     maxCandidates = 25
   ): ExtractedEntityCandidate[] {
-    const { people, terms } = extractXRayHeuristic(chapters, maxCandidates * 2);
+    const { people, terms } = extractEntityCandidates(chapters, maxCandidates * 2);
 
     const candidateMap = new Map<string, ExtractedEntityCandidate>();
 
-    // Add people from X-Ray heuristic
+    // Add people from the heuristic scanner
     for (const p of people) {
       const cleanName = p.name.trim();
       if (cleanName.length < 2) continue;
@@ -53,7 +53,7 @@ export class EntityExtractor {
       });
     }
 
-    // Add terms / locations from X-Ray heuristic
+    // Add terms / locations from the heuristic scanner
     for (const t of terms) {
       const cleanTerm = t.name.trim();
       if (cleanTerm.length < 2) continue;

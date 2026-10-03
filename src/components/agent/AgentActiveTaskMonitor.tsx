@@ -1,4 +1,4 @@
-import { Languages, Wand2, Activity, Square, ArrowUpRight, Loader2 } from "lucide-react";
+import { Languages, Wand2, Activity, Square, ArrowUpRight } from "lucide-react";
 import { Progress } from "../ui/progress";
 import { Button } from "../ui/button";
 import { useAppStore, TranslationProgress } from "../../stores/useAppStore";
@@ -12,7 +12,6 @@ export interface AgentActiveTaskMonitorViewProps {
   isBatchEnhancing?: boolean;
   enhanceProgress?: { current: number; total: number; currentChapterHref: string } | null;
   onStopBatchEnhance?: () => void;
-  isExtractingEntities?: boolean;
   runningJob?: WorkflowJob;
   onNavigateTab?: (tab: ActiveTab) => void;
 }
@@ -24,11 +23,10 @@ export function AgentActiveTaskMonitorView({
   isBatchEnhancing = false,
   enhanceProgress = null,
   onStopBatchEnhance,
-  isExtractingEntities = false,
   runningJob,
   onNavigateTab,
 }: AgentActiveTaskMonitorViewProps) {
-  const hasActiveTask = isTranslating || isBatchEnhancing || isExtractingEntities || Boolean(runningJob);
+  const hasActiveTask = isTranslating || isBatchEnhancing || Boolean(runningJob);
   if (!hasActiveTask) return null;
 
   // 1. Translation Active
@@ -159,39 +157,7 @@ export function AgentActiveTaskMonitorView({
     );
   }
 
-  // 3. Kindle X-Ray Extraction Active
-  if (isExtractingEntities) {
-    return (
-      <div className="mx-1 mb-2 p-2.5 rounded-xl border border-primary/40 bg-primary/5 text-foreground flex items-center justify-between gap-2 shadow-xs animate-in fade-in slide-in-from-top-1 duration-200">
-        <div className="flex items-center gap-2 min-w-0">
-          <Loader2 size={14} className="animate-spin text-primary shrink-0" />
-          <div className="flex flex-col min-w-0">
-            <span className="text-[11px] font-semibold text-foreground truncate">
-              Đang trích xuất nhân vật & thuật ngữ (X-Ray)
-            </span>
-            <span className="text-[9px] text-muted-foreground">
-              Đang phân tích sách và phân loại thực thể...
-            </span>
-          </div>
-        </div>
-
-        {onNavigateTab && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            onClick={() => onNavigateTab("kindle")}
-            className="h-5 px-1.5 text-[9px] gap-0.5 text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
-          >
-            <span>Tab Kindle</span>
-            <ArrowUpRight size={10} />
-          </Button>
-        )}
-      </div>
-    );
-  }
-
-  // 4. Other Workflow Job Active
+  // 3. Other Workflow Job Active
   if (runningJob) {
     return (
       <div className="mx-1 mb-2 p-2.5 rounded-xl border border-primary/40 bg-primary/5 text-foreground flex flex-col gap-1.5 shadow-xs animate-in fade-in slide-in-from-top-1 duration-200">
@@ -226,7 +192,6 @@ export function AgentActiveTaskMonitor() {
     isBatchEnhancing,
     enhanceProgress,
     stopBatchEnhance,
-    isExtractingEntities,
     workflowJobs,
     setActiveTab,
   } = useAppStore();
@@ -241,7 +206,6 @@ export function AgentActiveTaskMonitor() {
       isBatchEnhancing={isBatchEnhancing}
       enhanceProgress={enhanceProgress}
       onStopBatchEnhance={stopBatchEnhance}
-      isExtractingEntities={isExtractingEntities}
       runningJob={runningJob}
       onNavigateTab={setActiveTab}
     />

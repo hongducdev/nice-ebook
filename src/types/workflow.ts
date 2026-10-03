@@ -2,7 +2,6 @@ export type WorkflowJobType =
   | "translation"
   | "enhancement"
   | "ocr"
-  | "kindle_xray"
   | "export"
   | "custom";
 

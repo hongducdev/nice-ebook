@@ -4,14 +4,12 @@ import type { ActiveTab } from "../../types/navigation";
 
 const ALL_EXPECTED_TABS: ActiveTab[] = [
   "books",
-  "presets",
   "editor",
   "reader",
   "ai",
   "settings",
   "ai-editor",
   "converter",
-  "kindle",
   "translator",
   "agent",
 ];
@@ -29,7 +27,7 @@ describe("Sidebar Navigation Exhaustiveness", () => {
 
     const allItemIds = groups.flatMap((g) => g.items.map((i) => i.id));
 
-    // 1. Assert all 11 ActiveTab values are present
+    // 1. Assert all 9 expected tabs are present
     for (const expectedTab of ALL_EXPECTED_TABS) {
       expect(allItemIds).toContain(expectedTab);
     }
@@ -41,8 +39,8 @@ describe("Sidebar Navigation Exhaustiveness", () => {
     const uniqueIds = new Set(allItemIds);
     expect(uniqueIds.size).toBe(allItemIds.length);
 
-    // 4. Assert total items count is exactly 11 (10 tabs + 1 agent)
-    expect(allItemIds.length).toBe(11);
+    // 4. Assert total items count is exactly 9 (8 tabs + 1 agent)
+    expect(allItemIds.length).toBe(9);
   });
 
   it("organizes items into pipeline and workspace groups", () => {

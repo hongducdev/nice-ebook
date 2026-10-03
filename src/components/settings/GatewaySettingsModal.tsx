@@ -195,6 +195,7 @@ export function GatewaySettingsModal({
       gateway_type: savedProvider.presetId === "ollama" ? "ollama" : "openai",
       latency_ms: 15,
       api_key: savedProvider.apiKey || undefined,
+      is_user_configured: true,
       configured_providers: [
         {
           provider: savedProvider.presetId,

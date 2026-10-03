@@ -1,4 +1,4 @@
-import { Check, Loader2, Sliders, Square, Languages, Wand2, Sparkles } from "lucide-react";
+import { Check, Loader2, Sliders, Square, Languages, Wand2 } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Progress } from "../ui/progress";
@@ -16,7 +16,6 @@ export interface ActionProposalCardViewProps {
   isBatchEnhancing?: boolean;
   enhanceProgress?: { current: number; total: number; currentChapterHref: string } | null;
   onStopBatchEnhance?: () => void;
-  isExtractingEntities?: boolean;
   runningJob?: WorkflowJob;
 }
 
@@ -30,7 +29,6 @@ export function ActionProposalCardView({
   isBatchEnhancing = false,
   enhanceProgress = null,
   onStopBatchEnhance,
-  isExtractingEntities = false,
   runningJob,
 }: ActionProposalCardViewProps) {
   const isProposalExecuting = status === "executing";
@@ -48,8 +46,7 @@ export function ActionProposalCardView({
     ((proposal.toolName === "translate_chapter" || proposal.toolName === "batch_translate_chapters") &&
       isTranslating &&
       (proposal.toolName === "batch_translate_chapters" || progressMatchesProposal)) ||
-    (proposal.toolName === "enhance_chapter" && isBatchEnhancing) ||
-    (proposal.toolName === "extract_xray_entities" && isExtractingEntities);
+    (proposal.toolName === "enhance_chapter" && isBatchEnhancing);
 
   // Only a still-pending proposal may be "live" through a related task. Requiring
   // `status === "pending"` stops historical cards (executed/rejected) from flipping
@@ -76,8 +73,6 @@ export function ActionProposalCardView({
             <Languages size={13} className="text-primary shrink-0" />
           ) : proposal.toolName === "enhance_chapter" ? (
             <Wand2 size={13} className="text-primary shrink-0" />
-          ) : proposal.toolName === "extract_xray_entities" ? (
-            <Sparkles size={13} className="text-primary shrink-0" />
           ) : (
             <Sliders size={13} className={isActive ? "text-primary shrink-0" : "text-amber-500 shrink-0"} />
           )}
@@ -210,11 +205,6 @@ export function ActionProposalCardView({
                 )}
               </div>
             </>
-          ) : proposal.toolName === "extract_xray_entities" ? (
-            <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-              <Loader2 size={12} className="animate-spin text-primary shrink-0" />
-              <span>Đang quét nội dung sách để nhận diện nhân vật & thuật ngữ...</span>
-            </div>
           ) : runningJob ? (
             <>
               <div className="flex items-center justify-between text-[10px]">
@@ -288,7 +278,6 @@ export function ActionProposalCard({
     isBatchEnhancing,
     enhanceProgress,
     stopBatchEnhance,
-    isExtractingEntities,
     workflowJobs,
   } = useAppStore();
 
@@ -296,8 +285,7 @@ export function ActionProposalCard({
     (j) =>
       j.status === "running" &&
       ((proposal.toolName === "translate_chapter" && j.type === "translation") ||
-        (proposal.toolName === "enhance_chapter" && j.type === "enhancement") ||
-        (proposal.toolName === "extract_xray_entities" && j.type === "kindle_xray"))
+        (proposal.toolName === "enhance_chapter" && j.type === "enhancement"))
   );
 
   return (
@@ -311,7 +299,6 @@ export function ActionProposalCard({
       isBatchEnhancing={isBatchEnhancing}
       enhanceProgress={enhanceProgress}
       onStopBatchEnhance={stopBatchEnhance}
-      isExtractingEntities={isExtractingEntities}
       runningJob={runningJob}
     />
   );

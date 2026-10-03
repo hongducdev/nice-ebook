@@ -234,29 +234,6 @@ describe("AgentToolDispatcher", () => {
     });
   });
 
-  it("creates ActionProposal for extract_xray_entities and executes upon approval", async () => {
-    const mockMutatingCtx: MutatingStoreContext = {
-      updateBookMetadata: vi.fn(),
-      selectPreset: vi.fn(),
-      updateTypography: vi.fn(),
-      setTranslationConfig: vi.fn(),
-      runXRayExtraction: vi.fn().mockResolvedValue({ people: [], terms: [] }),
-      embedXRayAppendixToBook: vi.fn().mockResolvedValue(true),
-    };
-
-    const proposal = AgentToolDispatcher.createActionProposal(
-      "extract_xray_entities",
-      { autoEmbedAppendix: true },
-      mockReadOnlyCtx
-    );
-
-    expect(proposal.toolName).toBe("extract_xray_entities");
-    const result = await AgentToolDispatcher.executeApprovedAction(proposal, mockMutatingCtx);
-    expect(result).toContain("nhúng phụ lục X-Ray");
-    expect(mockMutatingCtx.runXRayExtraction).toHaveBeenCalled();
-    expect(mockMutatingCtx.embedXRayAppendixToBook).toHaveBeenCalled();
-  });
-
   it("creates ActionProposal for import_content_snippet and executes insertion into chapter", async () => {
     const mockMutatingCtx: MutatingStoreContext = {
       updateBookMetadata: vi.fn(),

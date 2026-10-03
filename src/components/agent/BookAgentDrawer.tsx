@@ -59,12 +59,6 @@ const TAB_QUICK_ACTIONS: Record<string, string[]> = {
     "Kiểm tra tình trạng các chương đã tinh chỉnh",
     "Chuyển sang màn hình Đọc thử",
   ],
-  kindle: [
-    "Trích xuất danh sách nhân vật & thuật ngữ (Kindle X-Ray)",
-    "Tự động nhúng phụ lục X-Ray vào cuối sách",
-    "Xuất sách định dạng Kindle AZW3",
-    "Tóm tắt thông tin cuốn sách hiện tại",
-  ],
   converter: [
     "Kiểm tra trạng thái các tác vụ nền (Workflow Jobs)",
     "Chuyển sang tab Đọc thử sau khi chuyển đổi",

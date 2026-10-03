@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { 
   RefreshCw, 
   SlidersHorizontal, 
@@ -13,7 +13,8 @@ import {
   Pencil,
   Trash2,
   Server,
-  Zap
+  Zap,
+  AlertTriangle
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -27,6 +28,9 @@ import {
   loadConfiguredProviders,
   saveConfiguredProviders,
   duplicateProvider,
+  buildGatewayModelList,
+  shouldAutoActivateProvider,
+  persistProviderActivation,
   LINGUAGACHA_PRESETS,
 } from "../../services/ai/linguaGachaProviders";
 import { invoke } from "@tauri-apps/api/core";
@@ -61,34 +65,43 @@ export function GatewayView() {
     jevDecision,
   } = useAppStore();
 
+  const autoActivatedRef = useRef(false);
+
   useEffect(() => {
     const list = loadConfiguredProviders();
     setConfiguredProviders(list);
 
-    // If no active gateway is selected in the store, automatically activate the provider that has isActive === true
-    if (!activeGateway) {
-      const activeProv = list.find((p) => p.isActive);
-      if (activeProv) {
-        handleActivateProvider(activeProv);
-      }
-    }
-  }, [isModalOpen]);
+    // Restore the provider the user had active, but only once the startup port scan has
+    // settled and once a real activation is possible: the latch is burnt from the predicate's
+    // result, never on an early/not-ready render.
+    const target = shouldAutoActivateProvider({
+      alreadyAttempted: autoActivatedRef.current,
+      isScanningGateways,
+      hasActiveGateway: Boolean(activeGateway),
+      providers: list,
+    });
+    if (!target) return;
+    autoActivatedRef.current = true;
+    handleActivateProvider(target);
+  }, [isModalOpen, isScanningGateways, activeGateway]);
 
   // Activate a configured provider
   function handleActivateProvider(prov: ConfiguredProvider) {
-    const updated = configuredProviders.map((p) => ({
-      ...p,
-      isActive: p.id === prov.id,
-    }));
+    // load → transform → save on the PERSISTED list: mapping over the `configuredProviders`
+    // state snapshot persisted `[]` and erased every provider (and the active flag) whenever
+    // this ran before that state had been committed.
+    const updated = persistProviderActivation(prov);
     setConfiguredProviders(updated);
-    saveConfiguredProviders(updated);
+
+    const models = buildGatewayModelList(prov);
 
     selectGateway({
       name: prov.name,
       base_url: prov.baseUrl,
       port: 0,
       is_online: true,
-      models: prov.availableModels.length > 0 ? prov.availableModels : [prov.selectedModel],
+      is_user_configured: true,
+      models,
       gateway_type: prov.presetId === "ollama" ? "ollama" : "openai",
       latency_ms: 10,
       api_key: prov.apiKey || undefined,
@@ -101,7 +114,10 @@ export function GatewayView() {
         },
       ],
     });
-    setSelectedModel(prov.selectedModel);
+    // Keep the model the user already picked when this provider offers it.
+    setSelectedModel(
+      selectedModel && models.includes(selectedModel) ? selectedModel : prov.selectedModel
+    );
     toast.success(`Đã kích hoạt nhà cung cấp: ${prov.name}`);
   }
 
@@ -257,6 +273,22 @@ export function GatewayView() {
           </Button>
         </div>
       </div>
+
+      {/* Saved model has no active gateway to serve it */}
+      {!activeGateway && selectedModel && selectedModel !== "jev-verdict-2.0" && (
+        <div className="p-2.5 rounded-lg border border-amber-500/40 bg-amber-500/10 flex items-start gap-2">
+          <AlertTriangle className="size-4 text-amber-500 mt-0.5 shrink-0" />
+          <div className="flex flex-col gap-0.5">
+            <span className="text-xs font-semibold text-foreground">
+              Mô hình “{selectedModel}” chưa thuộc nhà cung cấp nào đang hoạt động
+            </span>
+            <span className="text-[11px] text-muted-foreground leading-relaxed">
+              Bấm “Kích hoạt” trên nhà cung cấp tương ứng bên dưới (hoặc thêm mới) để dùng
+              mô hình này cho dịch thuật, biên tập và trợ lý chat.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Section 1: Configured Providers (LinguaGacha Style) */}
       <div className="flex flex-col gap-2">

@@ -641,7 +641,7 @@ p {
         //
         // Two sources feed this list: the explicit `extra_chapters` map, and any
         // `chapter_overrides` entry whose href is absent from the archive. The latter matters
-        // because a generated chapter (e.g. the X-Ray appendix) is produced as an override —
+        // because a generated chapter (e.g. an extra chapter) is produced as an override —
         // without this, it would be silently dropped instead of being written and registered.
         let mut new_chapter_sources: Vec<(String, String)> = Vec::new();
 
@@ -807,7 +807,7 @@ p {
             .write_all(custom_css.as_bytes())
             .map_err(|e| format!("Failed to write custom CSS: {}", e))?;
 
-        // 4b. Write newly generated chapter files (e.g. the X-Ray appendix)
+        // 4b. Write newly generated chapter files (e.g. an extra chapter)
         for (_, href, _, html) in &extra_items {
             let full_path = format!("{}{}", opf_base_dir, href);
             zip_writer
@@ -1732,9 +1732,9 @@ mod tests {
         let mut archive = ZipArchive::new(in_buffer).unwrap();
         let mut out_buffer = Cursor::new(Vec::new());
 
-        let appendix_html = "<html><head><title>Dramatis Personae</title></head><body><h1>Nhan vat</h1></body></html>";
+        let appendix_html = "<html><head><title>Phu Luc Nhan Vat</title></head><body><h1>Nhan vat</h1></body></html>";
         let mut extras = HashMap::new();
-        extras.insert("xray_appendix.xhtml".to_string(), appendix_html.to_string());
+        extras.insert("extra_chapter.xhtml".to_string(), appendix_html.to_string());
 
         EpubWriter::repackage_archive(
             &mut archive,
@@ -1751,7 +1751,7 @@ mod tests {
 
         // 1. The new chapter file MUST exist next to the OPF and link the generated CSS.
         let mut appendix_entry = result
-            .by_name("OEBPS/xray_appendix.xhtml")
+            .by_name("OEBPS/extra_chapter.xhtml")
             .expect("appendix file must be written into the archive");
         let mut appendix_read = String::new();
         appendix_entry.read_to_string(&mut appendix_read).unwrap();
@@ -1764,7 +1764,7 @@ mod tests {
         let mut opf_read = String::new();
         opf_entry.read_to_string(&mut opf_read).unwrap();
         assert!(
-            opf_read.contains(r#"<item id="nice-extra-1" href="xray_appendix.xhtml" media-type="application/xhtml+xml"/>"#),
+            opf_read.contains(r#"<item id="nice-extra-1" href="extra_chapter.xhtml" media-type="application/xhtml+xml"/>"#),
             "manifest must declare the new chapter: {}",
             opf_read
         );
@@ -1780,9 +1780,9 @@ mod tests {
         let mut ncx_read = String::new();
         ncx_entry.read_to_string(&mut ncx_read).unwrap();
         assert!(ncx_read.contains(r#"playOrder="2""#), "NCX: {}", ncx_read);
-        assert!(ncx_read.contains("Dramatis Personae"), "NCX: {}", ncx_read);
+        assert!(ncx_read.contains("Phu Luc Nhan Vat"), "NCX: {}", ncx_read);
         assert!(
-            ncx_read.contains(r#"<content src="xray_appendix.xhtml"/>"#),
+            ncx_read.contains(r#"<content src="extra_chapter.xhtml"/>"#),
             "NCX: {}",
             ncx_read
         );
@@ -1793,7 +1793,7 @@ mod tests {
         let mut nav_read = String::new();
         nav_entry.read_to_string(&mut nav_read).unwrap();
         assert!(
-            nav_read.contains(r#"<li><a href="xray_appendix.xhtml">Dramatis Personae</a></li>"#),
+            nav_read.contains(r#"<li><a href="extra_chapter.xhtml">Phu Luc Nhan Vat</a></li>"#),
             "nav doc: {}",
             nav_read
         );
@@ -1868,7 +1868,7 @@ mod tests {
 
     #[test]
     fn test_chapter_override_for_missing_href_becomes_a_new_chapter() {
-        // Regression guard: a generated chapter (e.g. the X-Ray appendix) is produced as a chapter
+        // Regression guard: a generated chapter (e.g. an extra chapter) is produced as a chapter
         // override. Because its href does not exist in the source archive, it must still be written
         // and registered in the manifest/spine rather than silently dropped.
         let mut in_buffer = Cursor::new(Vec::new());
@@ -1907,8 +1907,8 @@ mod tests {
 
         let mut overrides = HashMap::new();
         overrides.insert(
-            "xray_appendix.xhtml".to_string(),
-            "<html><head><title>Dramatis Personae</title></head><body><h1>Nhan vat</h1></body></html>"
+            "extra_chapter.xhtml".to_string(),
+            "<html><head><title>Phu Luc Nhan Vat</title></head><body><h1>Nhan vat</h1></body></html>"
                 .to_string(),
         );
 
@@ -1926,7 +1926,7 @@ mod tests {
         let mut result = ZipArchive::new(out_buffer).unwrap();
 
         assert!(
-            result.by_name("OEBPS/xray_appendix.xhtml").is_ok(),
+            result.by_name("OEBPS/extra_chapter.xhtml").is_ok(),
             "an override for a missing href must be written as a new chapter file"
         );
 
@@ -1934,7 +1934,7 @@ mod tests {
         let mut opf_read = String::new();
         opf_entry.read_to_string(&mut opf_read).unwrap();
         assert!(
-            opf_read.contains(r#"href="xray_appendix.xhtml"#),
+            opf_read.contains(r#"href="extra_chapter.xhtml"#),
             "{}",
             opf_read
         );
@@ -1949,9 +1949,9 @@ mod tests {
     fn test_extract_document_title_prefers_title_then_h1() {
         assert_eq!(
             EpubWriter::extract_document_title(
-                "<html><head><title>Dramatis Personae</title></head><body><h1>Other</h1></body></html>"
+                "<html><head><title>Phu Luc Nhan Vat</title></head><body><h1>Other</h1></body></html>"
             ),
-            Some("Dramatis Personae".to_string())
+            Some("Phu Luc Nhan Vat".to_string())
         );
         assert_eq!(
             EpubWriter::extract_document_title(

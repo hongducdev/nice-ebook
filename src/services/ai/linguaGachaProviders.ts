@@ -270,6 +270,87 @@ export function saveConfiguredProviders(providers: ConfiguredProvider[]): void {
 }
 
 /**
+ * Pure helper: returns a new provider list where only `providerId` is active.
+ *
+ * Callers MUST pass the freshly loaded list (not a `useState` snapshot) — mapping
+ * over a state variable that has not been committed yet silently wipes every
+ * configured provider by persisting an empty array.
+ */
+export function activateProviderInList(
+  list: ConfiguredProvider[],
+  providerId: string
+): ConfiguredProvider[] {
+  if (!list.some((p) => p.id === providerId)) return list;
+  return list.map((p) => ({ ...p, isActive: p.id === providerId }));
+}
+
+/**
+ * Models exposed by a configured provider.
+ *
+ * `selectedModel` always comes first and is never dropped: the user can type a
+ * model name that the endpoint does not advertise, and silently replacing it with
+ * another model is exactly the "model is selected but not active" regression.
+ */
+export function buildGatewayModelList(prov: ConfiguredProvider): string[] {
+  const listed = Array.isArray(prov.availableModels) ? prov.availableModels : [];
+  const ordered = prov.selectedModel ? [prov.selectedModel, ...listed] : [...listed];
+  return Array.from(new Set(ordered.filter((m) => typeof m === "string" && m.trim().length > 0)));
+}
+
+/**
+ * Finds the configured provider that owns a model the user picked.
+ *
+ * Only positive evidence counts (the provider declares the model as its own
+ * selected model, or advertises it), so an unrelated provider is never adopted.
+ */
+export function findProviderOwningModel(
+  list: ConfiguredProvider[],
+  model: string | null | undefined
+): ConfiguredProvider | undefined {
+  if (!model || !model.trim()) return undefined;
+  const wanted = model.trim();
+  return (
+    list.find((p) => p.selectedModel === wanted) ??
+    list.find((p) => (p.availableModels || []).includes(wanted))
+  );
+}
+
+/**
+ * Decides whether the AI tab should restore an active provider on mount.
+ *
+ * Pure on purpose: the caller latches its "already attempted" ref from this result, so the
+ * latch can only be burnt when a real activation is about to happen — otherwise the one-shot
+ * guard would fire during a not-yet-ready render and the user's provider would never come
+ * back on its own.
+ */
+export function shouldAutoActivateProvider(input: {
+  alreadyAttempted: boolean;
+  isScanningGateways: boolean;
+  hasActiveGateway: boolean;
+  providers: ConfiguredProvider[];
+}): ConfiguredProvider | null {
+  const { alreadyAttempted, isScanningGateways, hasActiveGateway, providers } = input;
+  if (alreadyAttempted || isScanningGateways || hasActiveGateway) return null;
+  return providers.find((p) => p.isActive) ?? null;
+}
+
+/**
+ * Activates a provider against the PERSISTED list (load → transform → save) and returns the
+ * list that was written.
+ *
+ * This is the only write path for activation: it must never be handed a `useState` snapshot,
+ * because persisting a not-yet-committed snapshot erases every configured provider — which is
+ * what used to leave the app gateway-less (and the user's model inactive) after a restart.
+ */
+export function persistProviderActivation(provider: ConfiguredProvider): ConfiguredProvider[] {
+  const persisted = loadConfiguredProviders();
+  const base = persisted.some((p) => p.id === provider.id) ? persisted : [...persisted, provider];
+  const updated = activateProviderInList(base, provider.id);
+  saveConfiguredProviders(updated);
+  return updated;
+}
+
+/**
  * Duplicates an existing provider endpoint with an incremental suffix (like LinguaGacha's _副本).
  */
 export function duplicateProvider(

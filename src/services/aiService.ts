@@ -2,7 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { 
   EBOOK_STYLING_SYSTEM_PROMPT, 
   buildStylingUserPrompt, 
-  AiStylingResult 
+  AiStylingResult,
+  AiStyleAuditResult,
+  AI_STYLE_AUDIT_SYSTEM_PROMPT,
+  buildStyleAuditUserPrompt,
+  generateOfflineStyleAuditFallback,
+  sanitizeCssOverrides,
 } from "./prompts/ebookStyling";
 import {
   ChapterTransformer,
@@ -26,6 +31,28 @@ export interface AiRequestOptions {
   author: string;
   sampleText: string;
   jevGenreHint?: string;
+}
+
+export interface AiStyleAuditOptions {
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+  temperature?: number;
+  title: string;
+  author?: string;
+  originalCss: string;
+  signature?: {
+    fontFamily: string | null;
+    fontSize: number | null;
+    lineHeight: number | null;
+    textAlign: "justify" | "left" | null;
+    firstLineIndent: string | null;
+    confidence: number;
+    colors: { bg: string | null; text: string | null; accent: string | null };
+  } | null;
+  signatureSummary?: string;
+  sampleText: string;
+  isVietnamese?: boolean;
 }
 
 export interface ChapterEnhanceRequestOptions {
@@ -324,6 +351,140 @@ export class AiService {
         },
         custom_css: `/* Jev Core Offline Generated Style */\n.drop-cap { color: ${jev.typography.palette.accent_color}; }`,
       };
+
+      return {
+        result: fallbackResult,
+        source: "jev_fallback",
+        error: String(err),
+      };
+    }
+  }
+
+  public static async auditAndFixBookStyle(options: AiStyleAuditOptions): Promise<{
+    result: AiStyleAuditResult;
+    source: "gateway" | "jev_fallback";
+    error?: string;
+  }> {
+    const {
+      baseUrl,
+      apiKey,
+      model,
+      temperature = 0.5,
+      title,
+      author = "",
+      originalCss,
+      signature,
+      signatureSummary,
+      sampleText,
+      isVietnamese = true,
+    } = options;
+
+    const userPrompt = buildStyleAuditUserPrompt({
+      title,
+      author,
+      originalCss,
+      signatureSummary,
+      sampleText,
+      isVietnamese,
+    });
+
+    // Special path: OpenCode CLI free models
+    if (model.startsWith("opencode/") || baseUrl.startsWith("opencode:")) {
+      try {
+        const fullPrompt = `${AI_STYLE_AUDIT_SYSTEM_PROMPT}\n\n${userPrompt}\n\nCRITICAL: Output ONLY valid raw JSON matching the requested structure with keys overallScore, summary, preservationNotes, auditItems, suggestedTypography, customCssOverrides, explanation. Do NOT wrap in markdown or backticks.`;
+        const rawOutput = await invoke<string>("run_opencode_prompt", {
+          model,
+          prompt: fullPrompt,
+        });
+
+        const jsonMatch = rawOutput.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          throw new Error("No JSON structure found in OpenCode output");
+        }
+
+        const parsed: AiStyleAuditResult = JSON.parse(jsonMatch[0]);
+        parsed.customCssOverrides = sanitizeCssOverrides(parsed.customCssOverrides || "");
+        return {
+          result: parsed,
+          source: "gateway",
+        };
+      } catch (openCodeErr) {
+        console.warn("OpenCode CLI execution error, falling back to offline audit:", openCodeErr);
+      }
+    }
+
+    let url = baseUrl.trim();
+    if (url.endsWith("/")) url = url.slice(0, -1);
+    if (!url.endsWith("/chat/completions")) {
+      url = `${url}/chat/completions`;
+    }
+
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      if (apiKey && apiKey.trim().length > 0) {
+        headers["Authorization"] = `Bearer ${apiKey.trim()}`;
+      }
+
+      const body = {
+        model,
+        messages: [
+          { role: "system", content: AI_STYLE_AUDIT_SYSTEM_PROMPT },
+          { role: "user", content: userPrompt },
+        ],
+        temperature,
+        stream: false,
+      };
+
+      const breaker = getCircuitBreaker(baseUrl || "ai-gateway");
+      const response = await breaker.execute(async () => {
+        const res = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(45000),
+        });
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`AI Gateway responded with status ${res.status}: ${errorText.slice(0, 100)}`);
+        }
+        return res;
+      });
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) {
+        throw new Error("Empty response from AI Gateway");
+      }
+
+      const cleanJson = content
+        .replace(/```json/gi, "")
+        .replace(/```/g, "")
+        .trim();
+
+      const parsed: AiStyleAuditResult = JSON.parse(cleanJson);
+      parsed.customCssOverrides = sanitizeCssOverrides(parsed.customCssOverrides || "");
+      if (typeof parsed.overallScore !== "number" || !Array.isArray(parsed.auditItems)) {
+        throw new Error("Invalid response format from AI Gateway for style audit");
+      }
+
+      return {
+        result: parsed,
+        source: "gateway",
+      };
+    } catch (err) {
+      console.warn("AI Gateway style audit failed, falling back to deterministic heuristic:", err);
+
+      const fallbackResult = generateOfflineStyleAuditFallback({
+        title,
+        author,
+        originalCss,
+        signature,
+        isVietnamese,
+      });
 
       return {
         result: fallbackResult,

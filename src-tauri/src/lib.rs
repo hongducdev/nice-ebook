@@ -1,13 +1,11 @@
 pub mod epub;
 pub mod jev;
-pub mod kindle;
 pub mod scanner;
 
 use epub::{
     CreateEpubOptions, EpubMetadata, EpubParser, EpubWriter, MetadataOverrides, StylesheetEntry,
 };
 use jev::{JevClassifier, JevDecision, JevVerdictChapterPlan, JevVerdictEngine};
-use kindle::{SdrExportResult, WordWisePayload, XRayPayload};
 use scanner::{DetectedGateway, GatewayScanner};
 
 #[tauri::command]
@@ -91,35 +89,6 @@ async fn export_epub(
             .map_err(|e| format!("Cannot read exported file metadata: {}", e))?;
         let size = file.metadata().map(|m| m.len()).unwrap_or(0);
         Ok(size)
-    })
-    .await
-    .map_err(|e| format!("Task execution failed: {}", e))?
-}
-
-/// Builds the Kindle-ready EPUB and converts it to AZW3/MOBI in one shot.
-///
-/// The intermediate EPUB is written to the system temp directory and removed on every exit path
-/// (success, build failure, or conversion failure) so a failed export cannot leave files behind.
-#[tauri::command]
-async fn export_kindle_book(
-    input_path: Option<String>,
-    input_bytes: Option<Vec<u8>>,
-    output_path: String,
-    custom_css: String,
-    chapter_overrides: Option<std::collections::HashMap<String, String>>,
-    metadata_overrides: Option<MetadataOverrides>,
-    extra_chapters: Option<std::collections::HashMap<String, String>>,
-) -> Result<kindle::converter::KindleConversionResult, String> {
-    tokio::task::spawn_blocking(move || {
-        kindle::converter::build_kindle_ready_epub_and_convert(
-            input_path.as_deref(),
-            input_bytes.as_deref(),
-            &output_path,
-            &custom_css,
-            chapter_overrides.as_ref(),
-            metadata_overrides.as_ref(),
-            extra_chapters.as_ref(),
-        )
     })
     .await
     .map_err(|e| format!("Task execution failed: {}", e))?
@@ -906,29 +875,6 @@ async fn call_image_generation_api(
     Ok(body)
 }
 
-#[tauri::command]
-async fn export_kindle_sdr(
-    output_dir: String,
-    book_basename: String,
-    asin: String,
-    xray_payload: Option<XRayPayload>,
-    wordwise_payload: Option<WordWisePayload>,
-    allow_missing_book_file: Option<bool>,
-) -> Result<SdrExportResult, String> {
-    tokio::task::spawn_blocking(move || {
-        kindle::sdr_packager::package_kindle_sdr(
-            &output_dir,
-            &book_basename,
-            &asin,
-            xray_payload.as_ref(),
-            wordwise_payload.as_ref(),
-            allow_missing_book_file.unwrap_or(false),
-        )
-    })
-    .await
-    .map_err(|e| format!("Task execution failed: {}", e))?
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -952,10 +898,6 @@ pub fn run() {
             create_new_epub,
             fetch_image_as_data_url,
             fetch_external_json,
-            export_kindle_sdr,
-            export_kindle_book,
-            kindle::converter::kindle_engine_info,
-            kindle::converter::convert_epub_to_kindle,
             call_image_generation_api
         ])
         .run(tauri::generate_context!())

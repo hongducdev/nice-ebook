@@ -1,12 +1,10 @@
 /**
- * Jev Guardrail & Kindle Pipeline - Canonical HTML Sanitizer & Tokenizer
+ * Jev Guardrail - Canonical HTML Sanitizer & Tokenizer
  *
  * Single source of truth for HTML tokenization, structural tag parsing,
  * executable element filtering, and XSS sanitization.
  *
- * Used by:
- * - `kindleExportService.ts` (Kindle KF8 packaging)
- * - `EpubReaderViewer.tsx` (Live Reader Preview)
+ * Used by `EpubReaderViewer.tsx` (Live Reader Preview).
  */
 
 export const READER_BLOCKED_ELEMENTS: ReadonlySet<string> = new Set([
@@ -23,14 +21,6 @@ export const READER_BLOCKED_ELEMENTS: ReadonlySet<string> = new Set([
   "textarea",
 ]);
 
-export const KINDLE_BLOCKED_ELEMENTS: ReadonlySet<string> = new Set([
-  ...READER_BLOCKED_ELEMENTS,
-  "video",
-  "audio",
-  "canvas",
-]);
-
-export const BLOCKED_ELEMENTS = KINDLE_BLOCKED_ELEMENTS;
 export const VOID_ELEMENTS: ReadonlySet<string> = new Set([
   "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
   "track", "wbr",

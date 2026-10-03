@@ -13,8 +13,6 @@ import {
   List,
   Check,
   Search,
-  UserCheck,
-  X,
   Loader2,
   Languages,
   Image as ImageIcon
@@ -22,8 +20,6 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
-import { Card } from "../ui/card";
-import { ScrollArea } from "../ui/scroll-area";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from "../ui/empty";
 import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group";
 import { Input } from "../ui/input";
@@ -56,9 +52,6 @@ export function EpubReaderViewer() {
     modifiedChapters,
     translatedChapters,
     translationConfig,
-    xrayData,
-    runXRayExtraction,
-    isAnalyzingXRay,
     setActiveTab,
   } = useAppStore();
 
@@ -69,20 +62,10 @@ export function EpubReaderViewer() {
   const [isLoadingChapter, setIsLoadingChapter] = useState(false);
   const [showToc, setShowToc] = useState(false);
   const [tocSearch, setTocSearch] = useState("");
-  const [showXRayDrawer, setShowXRayDrawer] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const tocDropdownRef = useRef<HTMLDivElement>(null);
 
   const activeChapter = currentBook?.chapters[activeChapterIndex];
-
-  // Filter X-Ray entities for active chapter
-  const currentChapterEntities = useMemo(() => {
-    if (!xrayData || !activeChapter) return [];
-    const all = [...xrayData.people, ...xrayData.terms];
-    return all.filter((e) =>
-      e.excerpts.some((ex) => ex.chapterHref === activeChapter.href)
-    );
-  }, [xrayData, activeChapter]);
 
   // Close TOC when clicking outside
   useEffect(() => {
@@ -494,24 +477,6 @@ export function EpubReaderViewer() {
             </ToggleGroup>
           )}
 
-          {/* Quick X-Ray Toggle Button */}
-          <Button
-            variant={showXRayDrawer ? "default" : "outline"}
-            size="sm"
-            type="button"
-            onClick={() => setShowXRayDrawer(!showXRayDrawer)}
-            className="h-7 px-2 gap-1 text-xs"
-            title="Bật/Tắt Ngăn Kéo X-Ray (Nhân vật trong chương)"
-          >
-            <UserCheck size={12} />
-            <span>X-Ray</span>
-            {currentChapterEntities.length > 0 && (
-              <Badge variant="secondary" className="text-[9px] h-3.5 px-1 ml-0.5 bg-background/60">
-                {currentChapterEntities.length}
-              </Badge>
-            )}
-          </Button>
-
           <Badge variant="outline" className="text-[10px] h-6 flex items-center gap-1 border-primary/40 text-primary">
             <Sparkles size={10} />
             <span>CSS Hot-Reload</span>
@@ -574,111 +539,6 @@ export function EpubReaderViewer() {
           </div>
         )}
 
-        {/* X-Ray Quick Drawer Panel */}
-        {showXRayDrawer && (
-          <div className="w-80 border-l border-border bg-card flex flex-col h-full z-20 shadow-lg animate-in slide-in-from-right duration-200">
-            <div className="p-3 border-b border-border flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <UserCheck className="size-4 text-primary" />
-                <h3 className="text-xs font-bold text-foreground">X-Ray Trong Chương Này</h3>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                type="button"
-                onClick={() => setShowXRayDrawer(false)}
-                className="size-6 text-muted-foreground"
-              >
-                <X size={14} />
-              </Button>
-            </div>
-
-            <ScrollArea className="flex-1">
-              <div className="p-3 flex flex-col gap-2.5">
-                {!xrayData ? (
-                  <Empty className="p-4 gap-3">
-                    <EmptyDescription className="text-xs text-muted-foreground">
-                      Chưa có dữ liệu phân tích X-Ray cho cuốn sách này.
-                    </EmptyDescription>
-                    <EmptyContent>
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => runXRayExtraction()}
-                        disabled={isAnalyzingXRay}
-                        className="text-xs w-full gap-1.5"
-                      >
-                        {isAnalyzingXRay ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
-                        {isAnalyzingXRay ? "Đang quét..." : "Quét X-Ray Ngay"}
-                      </Button>
-                    </EmptyContent>
-                  </Empty>
-                ) : currentChapterEntities.length === 0 ? (
-                  <Empty className="p-4 gap-3">
-                    <EmptyDescription className="text-xs text-muted-foreground">
-                      Không ghi nhận nhân vật chính nào xuất hiện trong chương này.
-                    </EmptyDescription>
-                    <EmptyContent>
-                      <Button
-                        type="button"
-                        variant="link"
-                        size="sm"
-                        onClick={() => setActiveTab("kindle")}
-                        className="text-xs h-auto p-0"
-                      >
-                        Mở Kindle Companion Studio
-                      </Button>
-                    </EmptyContent>
-                  </Empty>
-                ) : (
-                  currentChapterEntities.map((entity) => {
-                    const initials = entity.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
-                    const excerptInThisChapter = entity.excerpts.find((ex) => ex.chapterHref === activeChapter?.href);
-
-                    return (
-                      <Card
-                        key={entity.id}
-                        className="p-3 bg-background border-border flex flex-col gap-1.5 shadow-2xs"
-                      >
-                        <div className="flex items-center gap-2">
-                          <div className="size-6 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center shrink-0">
-                            {initials}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <h4 className="text-xs font-bold text-foreground truncate">{entity.name}</h4>
-                            {entity.role && (
-                              <span className="text-[10px] text-muted-foreground block truncate">{entity.role}</span>
-                            )}
-                          </div>
-                        </div>
-                        <p className="text-[11px] text-foreground line-clamp-2 leading-relaxed">
-                          {entity.description}
-                        </p>
-                        {excerptInThisChapter && (
-                          <div className="p-1.5 rounded bg-card border border-border text-[10px] text-muted-foreground italic line-clamp-2">
-                            "{excerptInThisChapter.snippet}"
-                          </div>
-                        )}
-                      </Card>
-                    );
-                  })
-                )}
-              </div>
-            </ScrollArea>
-
-            <div className="p-2.5 border-t border-border bg-card">
-              <Button
-                type="button"
-                variant="link"
-                size="sm"
-                onClick={() => setActiveTab("kindle")}
-                className="w-full text-center text-[11px] h-auto p-0"
-              >
-                Quản lý &amp; Biên tập X-Ray Toàn Cuốn Sách →
-              </Button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -35,13 +35,13 @@ describe("WorkflowJobService", () => {
   });
 
   it("marks a job as completed with result data", () => {
-    const jobId = WorkflowJobService.startJob("kindle_xray", "Trích xuất X-Ray");
-    WorkflowJobService.completeJob(jobId, { people: 12, terms: 5 });
+    const jobId = WorkflowJobService.startJob("export", "Đóng gói EPUB");
+    WorkflowJobService.completeJob(jobId, { chapters: 12, bytes: 204800 });
 
     const jobs = WorkflowJobService.getActiveJobs();
     expect(jobs[0].status).toBe("completed");
     expect(jobs[0].progress).toBe(100);
-    expect(jobs[0].result).toEqual({ people: 12, terms: 5 });
+    expect(jobs[0].result).toEqual({ chapters: 12, bytes: 204800 });
   });
 
   it("marks a job as failed with error message", () => {

@@ -100,6 +100,89 @@ describe("AiService - OpenCode Free Model Routing", () => {
     expect(response.result.colors.accent).toBe("#06b6d4");
   });
 
+  it("auditAndFixBookStyle routes to OpenCode and parses returned audit JSON", async () => {
+    const mockAuditJson = JSON.stringify({
+      overallScore: 88,
+      summary: "Style gốc cuốn sách bảo toàn tốt, cải thiện font và độ thoáng",
+      preservationNotes: "Giữ nguyên nền vàng nhạt và tiêu đề đỏ mận của nhà xuất bản",
+      auditItems: [
+        {
+          category: "typography",
+          status: "warning",
+          title: "Cần bổ sung font tiếng Việt",
+          detail: "Font gốc thiếu dấu hỏi/ngã",
+          fixRecommendation: "Thêm Literata vào đầu font-family",
+        },
+      ],
+      suggestedTypography: {
+        fontFamily: "'Literata', serif",
+        lineHeight: 1.75,
+        firstLineIndent: "1.5em",
+        textAlign: "justify",
+      },
+      customCssOverrides: "p { text-indent: 1.5em; }",
+      explanation: "Đã tối ưu hóa trải nghiệm đọc",
+    });
+
+    (invoke as any).mockImplementation((cmd: string) => {
+      if (cmd === "run_opencode_prompt") {
+        return Promise.resolve(mockAuditJson);
+      }
+      return Promise.resolve({});
+    });
+
+    const response = await AiService.auditAndFixBookStyle({
+      baseUrl: "opencode://cli",
+      model: "opencode/qwen-2.5-coder",
+      title: "Sách Mẫu Gốc",
+      originalCss: "body { font-family: Arial; }",
+      sampleText: "Đây là nội dung chương đầu tiên.",
+      isVietnamese: true,
+    });
+
+    expect(response.source).toBe("gateway");
+    expect(response.result.overallScore).toBe(88);
+    expect(response.result.preservationNotes).toContain("Giữ nguyên");
+    expect(response.result.customCssOverrides).toBe("p { text-indent: 1.5em; }");
+  });
+
+  it("auditAndFixBookStyle falls back to deterministic heuristic when gateway fails", async () => {
+    (invoke as any).mockImplementation((cmd: string) => {
+      if (cmd === "run_opencode_prompt") {
+        return Promise.reject(new Error("Network offline"));
+      }
+      return Promise.resolve({});
+    });
+
+    const response = await AiService.auditAndFixBookStyle({
+      baseUrl: "opencode://cli",
+      model: "opencode/qwen-2.5-coder",
+      title: "Truyện Kiều",
+      author: "Nguyễn Du",
+      originalCss: "body { font-size: 14px; }",
+      signature: {
+        fontFamily: "Times New Roman",
+        fontSize: 14,
+        lineHeight: 1.2,
+        textAlign: "justify",
+        firstLineIndent: "0",
+        confidence: 0.7,
+        colors: { bg: "#ffffff", text: "#000000", accent: null },
+      },
+      sampleText: "Trăm năm trong cõi người ta...",
+      isVietnamese: true,
+    });
+
+    expect(response.source).toBe("jev_fallback");
+    expect(response.result.overallScore).toBeGreaterThan(50);
+    expect(response.result.auditItems.length).toBeGreaterThan(0);
+    // Should detect non-Vietnamese font and low line-height
+    const warnings = response.result.auditItems.filter((i) => i.status === "warning");
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(response.result.suggestedTypography.fontFamily).toContain("Literata");
+    expect(response.result.customCssOverrides).toContain("line-height");
+  });
+
   it("enhanceChapter processes chapter and emits formatted logs matching terminal output", async () => {
     const mockPlanJson = JSON.stringify({
       h1_title: "Chương Mở Đầu: Thay Đổi Cuộc Đời",

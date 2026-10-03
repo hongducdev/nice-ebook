@@ -26,7 +26,7 @@
  * Known duplicate detector (deliberate, with an exit condition)
  * -------------------------------------------------------------
  * `vietnameseHelper.detectIsVietnameseBook()` still exists and is still used by
- * 12 legacy call sites (font selection, export CSS, Kindle, reader). It uses a
+ * 12 legacy call sites (font selection, export CSS, reader). It uses a
  * looser rule: Vietnamese metadata OR Vietnamese title OR description OR sample.
  *
  * The divergence is exactly one case: metadata says `vi` but the body text is
@@ -474,15 +474,15 @@ export function buildWorkflowSteps(profile?: BookProfile | null): WorkflowStep[]
   steps.push({
     id: "style",
     label: "Định kiểu",
-    tab: "presets",
-    description: "Áp dụng phong cách trình bày và kiểu chữ",
+    tab: "editor",
+    description: "Kiểm tra và tinh chỉnh kiểu chữ trên style gốc của sách",
   });
 
   steps.push({
     id: "read",
     label: "Xuất bản",
     tab: "reader",
-    description: "Đọc thử, soát lỗi rồi xuất EPUB / Kindle",
+    description: "Đọc thử, soát lỗi rồi xuất EPUB",
   });
 
   return steps;

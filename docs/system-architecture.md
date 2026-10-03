@@ -60,6 +60,11 @@
   - Ports probed: `20128` (9router default), `8000`, `3000`, `5000` (Cockpit), `8080`, `11434` (Ollama), `1234` (LM Studio).
   - Health check endpoint: `GET /v1/models` or root ping.
   - Auto-selects active provider and notifies UI via Tauri event.
+- **Gateways & model restoration at startup (`scanGateways`, `lg-selected-model` / `lg-active-gateway-name`):**
+  - Activation priority (explicit user choice always wins): saved gateway name matching a scanned local gateway → configured provider flagged active → **provider that owns the persisted model** → first online local gateway.
+  - The persisted model is never silently dropped for a user-configured provider (`port === 0`): if it is missing from `availableModels` it is kept and prepended to the model list, so the picked model stays selected/active after a restart.
+  - Only an auto-detected local server may substitute a model that it does not advertise; that substitution is written to the terminal log instead of failing silently. A saved model no provider can serve also logs a warning.
+  - Activation state must be persisted from a freshly loaded provider list (never from a `useState` snapshot), otherwise the configured-provider list — including the active flag — is erased.
 
 ### C. EPUB Processing Engine
 - Reads EPUB container (`mimetype`, `META-INF/container.xml`, `.opf` package, `.ncx` / `nav.xhtml`).

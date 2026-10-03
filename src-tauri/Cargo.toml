@@ -1,7 +1,7 @@
 [package]
 name = "nice-ebook"
 version = "0.1.0"
-description = "Next-gen desktop studio for AI-assisted EPUB styling, translation, OCR conversion & Kindle companion packaging (AZW3/MOBI/X-Ray/WordWise)"
+description = "Next-gen desktop studio for AI-assisted EPUB styling, translation & OCR conversion"
 authors = ["hongducdev <contact.hongduc@gmail.com>"]
 edition = "2021"
 repository = "https://github.com/hongducdev/nice-ebook"
@@ -33,10 +33,6 @@ tokio = { version = "1", features = ["full"] }
 regex = "1.10"
 base64 = "0.22"
 url = "2.5"
-rusqlite = { version = "0.32", features = ["bundled"] }
-# Self-contained EPUB -> Kindle (KF8/AZW3, Dual MOBI) writer.
-# `default-features = false` drops its bundled CLI so we only link the library.
-epub3-kindle = { version = "0.4", default-features = false }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

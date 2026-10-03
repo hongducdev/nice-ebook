@@ -877,14 +877,14 @@ export function BookView() {
                 variant="ghost"
                 size="lg"
                 onClick={async () => {
-                  toast.loading("AI đang tạo kiểu sách độc bản...", { id: "ai-deep" });
+                  toast.loading("AI đang kiểm tra và tinh chỉnh style gốc...", { id: "ai-style" });
                   const ok = await runAiDeepStyling();
                   if (ok) {
-                    toast.success("Đã hoàn tất định kiểu độc bản!", { id: "ai-deep" });
+                    toast.success("Đã kiểm tra và tối ưu style gốc!", { id: "ai-style" });
                   } else {
-                    toast.info("Đã áp dụng phong cách phù hợp", { id: "ai-deep" });
+                    toast.info("Đã áp dụng thông số style phù hợp", { id: "ai-style" });
                   }
-                  setActiveTab("reader");
+                  setActiveTab("editor");
                 }}
                 disabled={isAiGenerating}
                 className="text-xs"
@@ -894,7 +894,7 @@ export function BookView() {
                 ) : (
                   <Wand2 size={14} />
                 )}
-                <span>AI Tạo Kiểu Sâu</span>
+                <span>AI Sửa Style Gốc</span>
               </Button>
 
               <Button

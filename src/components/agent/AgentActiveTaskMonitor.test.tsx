@@ -55,18 +55,6 @@ describe("AgentActiveTaskMonitor Component", () => {
     expect(html).toContain("Dừng");
   });
 
-  it("renders X-Ray extraction status when extracting entities", () => {
-    const html = renderToStaticMarkup(
-      <AgentActiveTaskMonitorView
-        isExtractingEntities={true}
-        onNavigateTab={vi.fn()}
-      />
-    );
-
-    expect(html).toContain("Đang trích xuất nhân vật &amp; thuật ngữ (X-Ray)");
-    expect(html).toContain("Tab Kindle");
-  });
-
   it("renders generic running workflow job when active", () => {
     const html = renderToStaticMarkup(
       <AgentActiveTaskMonitorView

@@ -15,12 +15,12 @@ import {
   type BookStyleSignature,
   type StylesheetSource,
 } from "../utils/bookStyleAnalyzer";
-import { injectWordWiseRuby, stripWordWiseRuby } from "../services/kindle/wordWiseService";
-import { extractXRayHeuristic, generateXRayAppendixHtml, XRayBookData, ChapterTextSource } from "../services/kindle/xrayService";
+import { ChapterTextSource } from "../services/translation/entityHeuristic";
 import { TranslationService } from "../services/translation/translationService";
 import { ChapterTranslator } from "../utils/chapterTranslator";
 import { TranslationTone, TONE_DESCRIPTIONS } from "../services/prompts/bookTranslator";
 import { LanguageDetector, LanguageDetectionResult } from "../utils/languageDetector";
+import type { AiStyleAuditResult } from "../services/prompts/ebookStyling";
 import type { ActiveTab } from "../types/navigation";
 import type { WorkflowJob } from "../types/workflow";
 import {
@@ -38,7 +38,12 @@ import { AgentService, AgentChatMessage } from "../services/agent/agentService";
 import { AgentToolDispatcher, ReadOnlyStoreContext, MutatingStoreContext } from "../services/agent/agentTools";
 import { WorkflowJobService } from "../services/workflow/workflowJobService";
 import { type CavemanMode } from "../utils/cavemanOptimizer";
-import { loadConfiguredProviders } from "../services/ai/linguaGachaProviders";
+import {
+  loadConfiguredProviders,
+  buildGatewayModelList,
+  findProviderOwningModel,
+  type ConfiguredProvider,
+} from "../services/ai/linguaGachaProviders";
 import { toast } from "sonner";
 
 export type { CavemanMode };
@@ -110,6 +115,8 @@ export interface DetectedGateway {
   gateway_type: string;
   latency_ms: number;
   api_key?: string;
+  /** True when this descriptor came from a user-configured provider rather than a port scan. */
+  is_user_configured?: boolean;
   configured_providers?: ConfiguredProviderInfo[];
 }
 
@@ -361,10 +368,16 @@ export interface AppState {
   /** CSS gốc lấy từ EPUB, chỉ giữ trong phiên để nhúng vào trình đọc thử. */
   bookStyleCss: string | null;
   isAnalyzingBookStyle: boolean;
+  /** Báo cáo kiểm tra và tinh chỉnh style từ AI trên nền CSS gốc. */
+  styleAuditReport: AiStyleAuditResult | null;
+  isAuditingStyle: boolean;
   /** Bật/tắt việc tự động áp dụng style gốc khi mở một sách mới. */
   autoStyleFromBook: boolean;
   setAutoStyleFromBook: (enabled: boolean) => void;
   analyzeBookStyle: (opts?: { apply?: boolean }) => Promise<BookStyleSignature | null>;
+  auditAndFixBookStyle: () => Promise<AiStyleAuditResult | null>;
+  applyAiStyleFixes: (report?: AiStyleAuditResult) => void;
+  revertToOriginalStyle: () => void;
 
   // Actions
   loadBookFromPath: (filePath: string) => Promise<boolean>;
@@ -422,21 +435,6 @@ export interface AppState {
   deleteProject: (projectId: string) => void;
   saveActiveProject: () => void;
   closeActiveProject: () => void;
-
-  // Kindle Companion State & Actions
-  wordWiseSettings: {
-    maxDifficulty: 1 | 2 | 3 | 4 | 5;
-    language: "vi" | "en";
-    maxOccurrencesPerWord: number;
-  };
-  setWordWiseSettings: (settings: Partial<AppState["wordWiseSettings"]>) => void;
-  xrayData: XRayBookData | null;
-  setXRayData: (data: XRayBookData | null) => void;
-  isAnalyzingXRay: boolean;
-  runXRayExtraction: () => Promise<XRayBookData | null>;
-  applyWordWiseToBook: () => Promise<number>;
-  removeWordWiseFromBook: () => Promise<number>;
-  embedXRayAppendixToBook: () => Promise<boolean>;
 
   // Book Translation State & Actions
   translationConfig: TranslationConfig;
@@ -729,7 +727,7 @@ async function buildChapterTitleOverrides(
 
 export const useAppStore = create<AppState>((set, get) => ({
   activeTab: "books",
-  setActiveTab: (tab) => set({ activeTab: tab }),
+  setActiveTab: (tab) => set({ activeTab: (tab === "presets" ? "editor" : tab) as ActiveTab }),
 
   pendingConverterFile: null,
   setPendingConverterFile: (file) => set({ pendingConverterFile: file }),
@@ -985,16 +983,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   setIsFallbackEnabled: (enabled) => set({ isFallbackEnabled: enabled }),
   modelTestResults: {},
 
-  activePresetId: "classic-hardcover",
-  activePreset: STYLE_PRESETS.find((p) => p.id === "classic-hardcover") || STYLE_PRESETS[0],
-  customCss: (STYLE_PRESETS.find((p) => p.id === "classic-hardcover") || STYLE_PRESETS[0]).cssTemplate,
+  activePresetId: NATIVE_PRESET_ID,
+  activePreset: buildNativePreset(emptySignature(), STYLE_PRESETS[0], true),
+  customCss: "",
   fontSize: 16,
   textAlign: "justify",
-  dropCaps: true,
+  dropCaps: false,
   lineHeight: 1.75,
-  firstLineIndent: "2em",
-  sceneDivider: "♦ ♦ ♦",
-  fontFamily: (STYLE_PRESETS.find((p) => p.id === "classic-hardcover") || STYLE_PRESETS[0]).vietnameseFontFamily || (STYLE_PRESETS.find((p) => p.id === "classic-hardcover") || STYLE_PRESETS[0]).fontFamily,
+  firstLineIndent: "1.5em",
+  sceneDivider: "* * *",
+  fontFamily: "'Literata', 'Noto Serif', serif",
   setFontFamily: (font) => set({ fontFamily: font }),
 
   bookStyleSignature: null,
@@ -1002,20 +1000,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   isAnalyzingBookStyle: false,
   autoStyleFromBook: true,
   setAutoStyleFromBook: (enabled) => set({ autoStyleFromBook: enabled }),
+  styleAuditReport: null,
+  isAuditingStyle: false,
 
-  // Kindle Companion Initial State
-  wordWiseSettings: {
-    maxDifficulty: 3,
-    language: "vi",
-    maxOccurrencesPerWord: 3,
-  },
-  setWordWiseSettings: (settings) =>
-    set((state) => ({
-      wordWiseSettings: { ...state.wordWiseSettings, ...settings },
-    })),
-  xrayData: null,
-  setXRayData: (data) => set({ xrayData: data }),
-  isAnalyzingXRay: false,
+  // Book Translation Initial State
 
   loadBookFromPath: async (filePath: string) => {
     get().stopBatchEnhance();
@@ -1056,6 +1044,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         // Chữ ký/ CSS gốc của sách trước không còn giá trị cho sách mới.
         bookStyleSignature: null,
         bookStyleCss: null,
+        styleAuditReport: null,
         autoConfigResult: null,
       });
 
@@ -1109,6 +1098,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         // Chữ ký/ CSS gốc của sách trước không còn giá trị cho sách mới.
         bookStyleSignature: null,
         bookStyleCss: null,
+        styleAuditReport: null,
         autoConfigResult: null,
       });
 
@@ -1170,6 +1160,30 @@ export const useAppStore = create<AppState>((set, get) => ({
       const list = await invoke<DetectedGateway[]>("scan_ai_gateways");
       const onlineList = list.filter((g) => g.is_online);
 
+      // Single source of truth for turning a user-configured provider into a gateway
+      // descriptor: both the active-provider path and the model-owner path use it so the
+      // two can never drift (a dropped selectedModel here is what made a chosen model
+      // invisible / inactive in the UI).
+      const configuredProviderToGateway = (prov: ConfiguredProvider): DetectedGateway => ({
+        name: prov.name,
+        base_url: prov.baseUrl,
+        port: 0,
+        is_online: true,
+        models: buildGatewayModelList(prov),
+        gateway_type: prov.presetId === "ollama" ? "ollama" : "openai",
+        latency_ms: 10,
+        api_key: prov.apiKey || undefined,
+        is_user_configured: true,
+        configured_providers: [
+          {
+            provider: prov.presetId,
+            name: prov.name,
+            is_active: true,
+            test_status: "active",
+          },
+        ],
+      });
+
       // Check saved user gateway preference
       const savedGwName =
         typeof window !== "undefined" && window.localStorage
@@ -1185,53 +1199,61 @@ export const useAppStore = create<AppState>((set, get) => ({
       const isSavedConfigured = savedGwName && configuredList.some((p) => p.name === savedGwName);
 
       const configuredGw: DetectedGateway | null = activeConfigured
-        ? {
-            name: activeConfigured.name,
-            base_url: activeConfigured.baseUrl,
-            port: 0,
-            is_online: true,
-            models:
-              activeConfigured.availableModels && activeConfigured.availableModels.length > 0
-                ? activeConfigured.availableModels
-                : [activeConfigured.selectedModel],
-            gateway_type: activeConfigured.presetId === "ollama" ? "ollama" : "openai",
-            latency_ms: 10,
-            api_key: activeConfigured.apiKey || undefined,
-            configured_providers: [
-              {
-                provider: activeConfigured.presetId,
-                name: activeConfigured.name,
-                is_active: true,
-                test_status: "active",
-              },
-            ],
-          }
+        ? configuredProviderToGateway(activeConfigured)
         : null;
-
-      // Determine active gateway:
-      // 1. If saved gateway matches a local online gateway, use that local gateway
-      // 2. If saved gateway matches an active configured cloud provider (or a configured provider is active), use that
-      // 3. Otherwise default to first online local gateway if any
-      let activeGw: DetectedGateway | null = null;
-      if (matchedGw) {
-        activeGw = matchedGw;
-      } else if (configuredGw && (isSavedConfigured || activeConfigured?.isActive)) {
-        activeGw = configuredGw;
-      } else if (onlineList.length > 0) {
-        activeGw = onlineList[0];
-      }
 
       // Check saved user model preference
       const savedModel =
         typeof window !== "undefined" && window.localStorage
           ? window.localStorage.getItem(SELECTED_MODEL_STORAGE_KEY)
           : null;
+      const preferredModel = get().selectedModel || savedModel;
 
-      // Keep user's chosen model if available on this gateway; otherwise fallback to active gateway's first model
-      let activeModel = get().selectedModel || savedModel;
-      if (activeGw && activeGw.models.length > 0) {
-        if (!activeModel || !activeGw.models.includes(activeModel)) {
+      // Determine active gateway (explicit user choices win, in this order):
+      // 1. saved gateway name matching a scanned local gateway
+      // 2. a configured provider flagged active (or named by the saved preference)
+      // 3. the configured provider that OWNS the persisted model — the user picked that
+      //    model, so restoring it without the provider would leave it inactive
+      // 4. otherwise the first online local gateway
+      let activeGw: DetectedGateway | null = null;
+      if (matchedGw) {
+        activeGw = matchedGw;
+      } else if (configuredGw && (isSavedConfigured || activeConfigured?.isActive)) {
+        activeGw = configuredGw;
+      } else {
+        const owner = findProviderOwningModel(configuredList, preferredModel);
+        if (owner) {
+          activeGw = configuredProviderToGateway(owner);
+          get().addTerminalLog({
+            type: "info",
+            text: `🤖 [Cổng AI] Khôi phục nhà cung cấp "${owner.name}" theo mô hình đã chọn (${preferredModel}).`,
+          });
+        } else if (onlineList.length > 0) {
+          activeGw = onlineList[0];
+        } else if (preferredModel && preferredModel !== "jev-verdict-2.0") {
+          // Nothing can serve the saved model: say so instead of booting silently into the
+          // offline core while the UI still shows the user's cloud model.
+          get().addTerminalLog({
+            type: "warning",
+            text: `⚠️ [Cổng AI] Mô hình "${preferredModel}" không thuộc nhà cung cấp nào đang cấu hình và không có dịch vụ cục bộ nào trực tuyến. Hãy mở tab Cổng AI & Mô hình để kích hoạt lại nhà cung cấp.`,
+          });
+        }
+      }
+
+      // Keep the user's chosen model. It is only substituted when the resolved gateway is
+      // an auto-detected local server (its model list is authoritative); a user-configured
+      // provider must never silently drop a model the user typed or picked.
+      let activeModel = preferredModel;
+      if (activeGw && activeGw.models.length > 0 && (!activeModel || !activeGw.models.includes(activeModel))) {
+        if (activeGw.is_user_configured === true && activeModel) {
+          activeGw = { ...activeGw, models: [activeModel, ...activeGw.models] };
+        } else {
+          const substituted = activeModel;
           activeModel = activeGw.models[0];
+          get().addTerminalLog({
+            type: "warning",
+            text: `⚠️ [Cổng AI] Mô hình "${substituted ?? "(trống)"}" không thuộc ${activeGw.name} — tạm dùng "${activeModel}". Chọn lại mô hình trong tab Cổng AI & Mô hình nếu cần.`,
+          });
         }
       }
 
@@ -1343,65 +1365,123 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  runAiDeepStyling: async () => {
-    const { currentBook, activeGateway, selectedModel, jevDecision } = get();
-    if (!currentBook || !currentBook.sample_text) {
-      return false;
-    }
+  auditAndFixBookStyle: async () => {
+    const {
+      currentBook,
+      activeGateway,
+      selectedModel,
+      bookStyleSignature,
+      bookStyleCss,
+      isVietnameseBook,
+    } = get();
 
-    set({ isAiGenerating: true });
+    if (!currentBook) return null;
+
+    set({ isAuditingStyle: true });
+
     try {
+      let signature = bookStyleSignature;
+      let rawCss = bookStyleCss || "";
+
+      if (!signature) {
+        signature = await get().analyzeBookStyle({ apply: true });
+        rawCss = get().bookStyleCss || "";
+      }
+
       const baseUrl = activeGateway ? activeGateway.base_url : "http://100.118.3.52:20128/v1";
       const apiKey = activeGateway?.api_key;
-      const model = selectedModel || "claude-3-5-sonnet";
+      const model = selectedModel || "opencode/gemini-2.5-flash";
 
-      const { result, source } = await AiService.generateStyling({
+      const sampleText =
+        currentBook.sample_text ||
+        currentBook.chapters[0]?.preview_text ||
+        "Nội dung chương mẫu sách...";
+
+      const { result } = await AiService.auditAndFixBookStyle({
         baseUrl,
         apiKey,
         model,
         title: currentBook.title,
         author: currentBook.author,
-        sampleText: currentBook.sample_text,
-        jevGenreHint: jevDecision?.genre_label,
+        originalCss: rawCss,
+        signature,
+        signatureSummary: signature?.evidence?.join(", "),
+        sampleText,
+        isVietnamese: isVietnameseBook,
       });
-
-      // Construct dynamic custom preset from AI output
-      const dynamicPreset: StylePreset = {
-        id: "ai-generated-custom",
-        name: result.theme_name,
-        genre: "ai-custom",
-        genreLabel: "AI Độc Bản",
-        description: result.genre_analysis,
-        fontFamily: result.typography.font_family,
-        lineHeight: result.typography.line_height,
-        firstLineIndent: result.typography.first_line_indent,
-        dropCaps: result.typography.drop_caps,
-        sceneDivider: result.typography.scene_divider,
-        colors: {
-          bg: result.colors.bg,
-          text: result.colors.text,
-          accent: result.colors.accent,
-          border: result.colors.border,
-          cardBg: result.colors.cardBg || "#1c1c22",
-        },
-        cssTemplate: result.custom_css || "",
-      };
 
       set({
-        activePresetId: "ai-generated-custom",
-        activePreset: dynamicPreset,
-        customCss: result.custom_css,
-        fontFamily: result.typography.font_family,
-        lineHeight: result.typography.line_height,
-        firstLineIndent: result.typography.first_line_indent,
-        dropCaps: result.typography.drop_caps,
-        sceneDivider: result.typography.scene_divider,
-        isAiGenerating: false,
+        styleAuditReport: result,
+        isAuditingStyle: false,
       });
 
-      get().markWorkflowStepComplete("style");
+      return result;
+    } catch (err) {
+      console.error("Failed to audit and fix book style:", err);
+      set({ isAuditingStyle: false });
+      return null;
+    }
+  },
 
-      return source === "gateway";
+  applyAiStyleFixes: (report) => {
+    const targetReport = report || get().styleAuditReport;
+    if (!targetReport) return;
+
+    const typographyUpdates: {
+      fontSize?: number;
+      textAlign?: "justify" | "left";
+      dropCaps?: boolean;
+      lineHeight?: number;
+      firstLineIndent?: string;
+      sceneDivider?: string;
+      customCss?: string;
+      fontFamily?: string;
+    } = {};
+
+    if (targetReport.suggestedTypography) {
+      const sug = targetReport.suggestedTypography;
+      if (sug.fontFamily) typographyUpdates.fontFamily = sug.fontFamily;
+      if (sug.fontSize) typographyUpdates.fontSize = sug.fontSize;
+      if (sug.lineHeight) typographyUpdates.lineHeight = sug.lineHeight;
+      if (sug.textAlign) typographyUpdates.textAlign = sug.textAlign;
+      if (sug.firstLineIndent) typographyUpdates.firstLineIndent = sug.firstLineIndent;
+      if (typeof sug.dropCaps === "boolean") typographyUpdates.dropCaps = sug.dropCaps;
+      if (sug.sceneDivider) typographyUpdates.sceneDivider = sug.sceneDivider;
+    }
+
+    if (targetReport.customCssOverrides) {
+      typographyUpdates.customCss = targetReport.customCssOverrides;
+    }
+
+    get().updateTypography(typographyUpdates);
+    get().markWorkflowStepComplete("style");
+  },
+
+  revertToOriginalStyle: () => {
+    const { bookStyleSignature, isVietnameseBook } = get();
+    if (bookStyleSignature) {
+      set(nativeStylePatch(bookStyleSignature, STYLE_PRESETS[0], isVietnameseBook));
+    } else {
+      set({
+        activePresetId: NATIVE_PRESET_ID,
+        activePreset: buildNativePreset(emptySignature(), STYLE_PRESETS[0], isVietnameseBook),
+        customCss: "",
+      });
+    }
+  },
+
+  runAiDeepStyling: async () => {
+    const { currentBook } = get();
+    if (!currentBook) return false;
+
+    set({ isAiGenerating: true });
+    try {
+      const report = await get().auditAndFixBookStyle();
+      if (report) {
+        get().applyAiStyleFixes(report);
+      }
+      set({ isAiGenerating: false });
+      return true;
     } catch (err) {
       console.error("Failed to run AI deep styling:", err);
       set({ isAiGenerating: false });
@@ -2126,170 +2206,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     } finally {
       isAutoSavingFile = false;
     }
-  },
-
-  // Kindle Companion Actions Implementation
-  runXRayExtraction: async () => {
-    const { currentBook, currentFilePath, currentFileBytes, modifiedChapters } = get();
-    if (!currentBook || currentBook.chapters.length === 0) return null;
-
-    set({ isAnalyzingXRay: true });
-    try {
-      const chapterSources: ChapterTextSource[] = [];
-      // Read chapters
-      for (const ch of currentBook.chapters) {
-        let html = modifiedChapters[ch.href];
-        if (!html) {
-          try {
-            if (currentFilePath) {
-              html = await invoke<string>("read_chapter", { path: currentFilePath, href: ch.href });
-            } else if (currentFileBytes) {
-              html = await invoke<string>("read_chapter_bytes", { bytes: currentFileBytes, href: ch.href });
-            }
-          } catch (e) {
-            console.warn(`Could not read ${ch.href}:`, e);
-          }
-        }
-        if (html) {
-          chapterSources.push({ href: ch.href, title: ch.title, html });
-        }
-      }
-
-      const { people, terms } = extractXRayHeuristic(chapterSources);
-      const totalOccurrences = people.reduce((acc, p) => acc + p.occurrencesCount, 0) +
-        terms.reduce((acc, t) => acc + t.occurrencesCount, 0);
-
-      const generatedAsin = currentBook.isbn?.replace(/[^A-Za-z0-9]/g, "") ||
-        `B0${Math.abs(currentBook.title.split("").reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)).toString(36).toUpperCase().padStart(8, "0")}`.slice(0, 10);
-
-      const bookData: XRayBookData = {
-        bookTitle: currentBook.title,
-        asin: generatedAsin,
-        people,
-        terms,
-        totalOccurrences,
-      };
-
-      set({ xrayData: bookData, isAnalyzingXRay: false });
-      return bookData;
-    } catch (err) {
-      console.error("X-Ray extraction failed:", err);
-      set({ isAnalyzingXRay: false });
-      return null;
-    }
-  },
-
-  applyWordWiseToBook: async () => {
-    const { currentBook, currentFilePath, currentFileBytes, modifiedChapters, wordWiseSettings, activeProjectId } = get();
-    if (!currentBook || currentBook.chapters.length === 0) return 0;
-
-    const updatedModified = { ...modifiedChapters };
-    let totalAnnotated = 0;
-
-    for (const ch of currentBook.chapters) {
-      let html = updatedModified[ch.href];
-      if (!html) {
-        try {
-          if (currentFilePath) {
-            html = await invoke<string>("read_chapter", { path: currentFilePath, href: ch.href });
-          } else if (currentFileBytes) {
-            html = await invoke<string>("read_chapter_bytes", { bytes: currentFileBytes, href: ch.href });
-          }
-        } catch (e) {
-          console.warn(`Could not read ${ch.href}:`, e);
-        }
-      }
-
-      if (html) {
-        const result = injectWordWiseRuby(html, wordWiseSettings);
-        if (result.annotatedCount > 0) {
-          updatedModified[ch.href] = result.html;
-          totalAnnotated += result.annotatedCount;
-        }
-      }
-    }
-
-    set({ modifiedChapters: updatedModified });
-    if (activeProjectId) {
-      saveChaptersToDb(activeProjectId, updatedModified);
-      get().saveActiveProject();
-    }
-    return totalAnnotated;
-  },
-
-  removeWordWiseFromBook: async () => {
-    const { currentBook, modifiedChapters, activeProjectId } = get();
-    if (!currentBook) return 0;
-
-    const updatedModified = { ...modifiedChapters };
-    let strippedCount = 0;
-
-    for (const ch of currentBook.chapters) {
-      const html = updatedModified[ch.href];
-      if (html && html.includes("kindle-wordwise")) {
-        updatedModified[ch.href] = stripWordWiseRuby(html);
-        strippedCount++;
-      }
-    }
-
-    set({ modifiedChapters: updatedModified });
-    if (activeProjectId) {
-      saveChaptersToDb(activeProjectId, updatedModified);
-      get().saveActiveProject();
-    }
-    return strippedCount;
-  },
-
-  embedXRayAppendixToBook: async () => {
-    const { currentBook, modifiedChapters, xrayData, activeProjectId } = get();
-    if (!currentBook) return false;
-
-    let activeXRay = xrayData;
-    if (!activeXRay) {
-      activeXRay = await get().runXRayExtraction();
-    }
-    if (!activeXRay) return false;
-
-    const appendixHref = "xray_appendix.xhtml";
-    const appendixHtml = generateXRayAppendixHtml(activeXRay);
-
-    const updatedModified = {
-      ...modifiedChapters,
-      [appendixHref]: appendixHtml,
-    };
-
-    // If not already in chapters list, add to chapters
-    let updatedChapters = [...currentBook.chapters];
-    const existingIdx = updatedChapters.findIndex((c) => c.href === appendixHref);
-    const appendixItem: ChapterItem = {
-      id: "xray-appendix",
-      href: appendixHref,
-      title: "Dramatis Personae & World Guide (X-Ray)",
-      preview_text: `Bách khoa toàn thư nhân vật và thuật ngữ cho cuốn sách ${currentBook.title}.`,
-    };
-
-    if (existingIdx >= 0) {
-      updatedChapters[existingIdx] = appendixItem;
-    } else {
-      updatedChapters.push(appendixItem);
-    }
-
-    const updatedBook = {
-      ...currentBook,
-      chapters: updatedChapters,
-      chapter_count: updatedChapters.length,
-    };
-
-    set({
-      currentBook: updatedBook,
-      modifiedChapters: updatedModified,
-    });
-
-    if (activeProjectId) {
-      saveChaptersToDb(activeProjectId, updatedModified);
-      get().saveActiveProject();
-    }
-    return true;
   },
 
   createProject: (meta, source) => {
@@ -3755,7 +3671,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       dropCaps,
       fontFamily,
       textAlign,
-      xrayData,
       activeChapterIndex,
       activeTab,
       modifiedChapters,
@@ -3772,7 +3687,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       dropCaps,
       fontFamily,
       textAlign,
-      xrayData,
       activeChapterIndex,
       activeTab,
       modifiedChapters,
@@ -3952,8 +3866,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       translateSingleChapter: get().translateSingleChapter,
       batchTranslateChapters: get().batchTranslateChapters,
       enhanceSingleChapter: get().enhanceSingleChapter,
-      runXRayExtraction: get().runXRayExtraction,
-      embedXRayAppendixToBook: get().embedXRayAppendixToBook,
       cleanWatermarksInBook: get().cleanWatermarksInBook,
       openExportModal: () => set({ isExportOpen: true }),
       setActiveTab: (t) => get().setActiveTab(t),

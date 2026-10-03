@@ -2109,3 +2109,91 @@ describe("useAppStore - Translation Abort State", () => {
     expect(useAppStore.getState().translationProgress).toBeNull();
   });
 });
+
+describe("useAppStore - AI Style Audit & Fix on Original Styles", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAppStore.setState({
+      currentBook: {
+        title: "Dế Mèn Phiêu Lưu Ký",
+        author: "Tô Hoài",
+        language: "vi",
+        description: null,
+        cover_data_url: null,
+        chapter_count: 1,
+        file_size_bytes: 100,
+        chapters: [{ id: "c1", href: "ch1.xhtml", title: "Chương 1", preview_text: "Tôi sống độc lập..." }],
+        sample_text: "Tôi sống độc lập từ thuở bé...",
+      },
+      currentFilePath: "test.epub",
+      currentFileBytes: null,
+      isVietnameseBook: true,
+      bookStyleSignature: {
+        fontFamily: "Arial",
+        fontSize: 14,
+        lineHeight: 1.3,
+        textAlign: "left",
+        firstLineIndent: "0",
+        colors: { bg: null, text: null, accent: null, border: null, cardBg: null },
+        dropCaps: false,
+        sceneDivider: null,
+        confidence: 0.75,
+        evidence: ["font-family: Arial", "line-height: 1.3"],
+        stylesheetCount: 1,
+        chapterHooks: [],
+      },
+      bookStyleCss: "body { font-family: Arial; line-height: 1.3; }",
+      styleAuditReport: null,
+      isAuditingStyle: false,
+      customCss: "",
+    });
+  });
+
+  it("auditAndFixBookStyle inspects original CSS and populates styleAuditReport", async () => {
+    const report = await useAppStore.getState().auditAndFixBookStyle();
+
+    expect(report).toBeDefined();
+    expect(report?.overallScore).toBeGreaterThan(50);
+    expect(useAppStore.getState().styleAuditReport).toEqual(report);
+    expect(useAppStore.getState().isAuditingStyle).toBe(false);
+  });
+
+  it("applyAiStyleFixes updates typography and customCss and marks style step complete", async () => {
+    const mockReport = {
+      overallScore: 88,
+      summary: "Tốt",
+      preservationNotes: "Bảo tồn màu sắc",
+      auditItems: [],
+      suggestedTypography: {
+        fontFamily: "'Literata', serif",
+        lineHeight: 1.75,
+        firstLineIndent: "1.5em",
+        textAlign: "justify" as const,
+      },
+      customCssOverrides: "p { text-indent: 1.5em; }",
+      explanation: "Tối ưu hóa",
+    };
+
+    useAppStore.getState().applyAiStyleFixes(mockReport);
+
+    const state = useAppStore.getState();
+    expect(state.fontFamily).toBe("'Literata', serif");
+    expect(state.lineHeight).toBe(1.75);
+    expect(state.firstLineIndent).toBe("1.5em");
+    expect(state.textAlign).toBe("justify");
+    expect(state.customCss).toBe("p { text-indent: 1.5em; }");
+    expect(state.workflowCompletedSteps).toContain("style");
+  });
+
+  it("revertToOriginalStyle clears customCss and restores native style patch", () => {
+    useAppStore.setState({
+      customCss: "body { background: purple; }",
+      lineHeight: 2.2,
+    });
+
+    useAppStore.getState().revertToOriginalStyle();
+
+    const state = useAppStore.getState();
+    expect(state.customCss).toBe("");
+  });
+});

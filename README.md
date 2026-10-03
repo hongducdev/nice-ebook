@@ -2,7 +2,7 @@
 
 # 📚 NiceEbook Studio
 
-**Next-Generation Desktop Studio for AI-Assisted EPUB Styling, Translation, OCR Conversion & Kindle Companion Packaging.**
+**Next-Generation Desktop Studio for AI-Assisted EPUB Styling, Translation & OCR Conversion.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Tauri v2](https://img.shields.io/badge/Tauri-v2-blue.svg?logo=tauri)](https://tauri.app/)
@@ -30,7 +30,7 @@
 
 ## 🌟 Overview
 
-**NiceEbook Studio** is an all-in-one desktop application designed for digital book readers, creators, and translators. It solves the friction of ugly formatting, untranslated foreign web novels, scanned PDF ebooks, and tedious Kindle sidecar file creation.
+**NiceEbook Studio** is an all-in-one desktop application designed for digital book readers, creators, and translators. It solves the friction of ugly formatting, untranslated foreign web novels, and scanned PDF ebooks.
 
 Powered by **Tauri v2** and **Rust**, NiceEbook Studio boots in under half a second, runs with a minimal RAM footprint (~35MB), and operates completely offline for core styling tasks—while seamlessly unlocking cutting-edge Large Language Models when connected to local or cloud AI gateways.
 
@@ -49,13 +49,7 @@ Powered by **Tauri v2** and **Rust**, NiceEbook Studio boots in under half a sec
 - **Entity Extraction & Auto-Glossary:** Generates contextual research briefs and terminology glossaries for character names, martial arts techniques, and world-building terms.
 - **Bilingual & Monolingual Modes:** Read parallel source and translated text, or replace directly into target language with translated chapter navigation.
 
-### 3. 📱 Kindle Companion & Native Converter
-- **Self-Contained EPUB to Kindle Engine:** Direct packaging to AZW3 (KF8) and Dual-MOBI without external KindleGen dependencies.
-- **Automated X-Ray SQLite Generator:** Builds production-grade `X-Ray.entities.<ASIN>.asc` SQLite sidecar databases containing people, terms, and book-wide occurrences.
-- **Word Wise Dictionary Database:** Generates `LanguageLayer.en.<ASIN>.kll` databases with difficulty ratings and definitions for English vocabulary learning on e-ink Kindles.
-- **SDR Directory Packager:** Automatically bundles `.azw3`, `.sdr`, `.asc`, and `.kll` files ready for drag-and-drop into Kindle e-readers via USB.
-
-### 4. 🔍 Scanned PDF OCR & Format Converter
+### 3. 🔍 Scanned PDF OCR & Format Converter
 - **Auto-Detection for Scanned PDFs:** Computes character density and blank/image page ratios to reliably detect scanned books.
 - **Dual OCR Engine:**
   - **Local Offline OCR:** In-browser Tesseract.js Web Worker supporting Vietnamese and English with zero network dependency.
@@ -63,7 +57,7 @@ Powered by **Tauri v2** and **Rust**, NiceEbook Studio boots in under half a sec
 - **Layout Reconstruction:** Coordinate sorting, de-hyphenation, running header/footer stripping, and Vietnamese diacritic repair.
 - **1-Click Studio Integration:** Instantly converts PDF, TXT, and Markdown files into standards-compliant EPUB 3 archives and loads them directly into the reader.
 
-### 5. 🔌 Auto-Discovering AI Gateway
+### 4. 🔌 Auto-Discovering AI Gateway
 - **Loopback Auto-Probing:** Scans `127.0.0.1` upon startup for local models and proxies:
   - `20128` (9router default)
   - `11434` (Ollama)
@@ -72,12 +66,12 @@ Powered by **Tauri v2** and **Rust**, NiceEbook Studio boots in under half a sec
 - **Universal OpenAI-Compatible API:** Connect to OpenAI, Anthropic (via proxy), Google Gemini, DeepSeek, or custom servers.
 - **Resilient Circuit Breaker:** Exponential backoff, timeout handling, and failure tripwires prevent UI freezes during network instability.
 
-### 6. 🤖 Interactive Book Chat Agent
+### 5. 🤖 Interactive Book Chat Agent
 - **Slide-out Assistant Drawer:** Inquire about characters, plot points, lore summaries, or writing styles from the active book.
 - **Agent Tools with Guardrails:** Safe execution gates for inspection, styling, and navigation with clear confirmation dialogs.
 - **Context-Aware Ingestion:** Automatically injects current chapter text, book metadata, and reading progress into the conversation.
 
-### 7. 🛡️ JEV Security & Reliability Guardrails
+### 6. 🛡️ JEV Security & Reliability Guardrails
 - **Pre-Commit Secret Scrubber:** Automatically scrubs leaked API keys and bearer tokens prior to git commits.
 - **Network Circuit Breaker:** Halts cascading retries and alerts users when gateway connections degrade.
 - **XHTML/HTML Sanitizer:** Neutralizes malicious scripts or dangerous tags from unverified community EPUBs before previewing in the reader.
@@ -95,7 +89,7 @@ Powered by **Tauri v2** and **Rust**, NiceEbook Studio boots in under half a sec
 │   - Library Shelf │   - Jev Heuristics Trigger │   - Sandboxed Iframe  │
 │   - Presets       │   - Typography Controls    │   - Real-time CSS Hot │
 │   - AI Gateway    │   - AI Translation Panel   │     Reloading (CSSOM) │
-│   - Kindle Studio │   - Scanned PDF OCR Deck   │   - Page Flipping &   │
+│   - EPUB Export   │   - Scanned PDF OCR Deck   │   - Page Flipping &   │
 │   - Chat Agent    │   - Metadata & Cover Search│     TOC Navigation    │
 ├───────────────────┴────────────────────────────┴───────────────────────┤
 │ Status Bar: [9Router: Online (20128)] [Jev: Heuristics] [Circuit: Safe]│
@@ -105,9 +99,9 @@ Powered by **Tauri v2** and **Rust**, NiceEbook Studio boots in under half a sec
 ┌────────────────────────────────────────────────────────────────────────┐
 │                         TAURI V2 (RUST BACKEND)                        │
 ├─────────────────┬──────────────────┬─────────────────┬─────────────────┤
-│   epub_engine   │     jev_core     │  kindle_engine  │   port_scanner  │
-│   (zip / xml /  │   (Heuristics &  │ (AZW3/MOBI/SDR/ │ (Loopback Probe │
-│   dom / writer) │   CSS Generator) │ X-Ray/WordWise) │   & AI Client)  │
+│   epub_engine   │     jev_core     │  image_engine   │   port_scanner  │
+│   (zip / xml /  │   (Heuristics &  │  (AI Cover Img  │ (Loopback Probe │
+│   dom / writer) │   CSS Generator) │   Generation)   │   & AI Client)  │
 └─────────────────┴──────────────────┴─────────────────┴─────────────────┘
 ```
 
@@ -149,8 +143,7 @@ Transform plain ebooks into exquisite, immersive reading editions:
 | **Styling** | [Tailwind CSS v4](https://tailwindcss.com/) + Lucide Icons | Pixel-perfect aesthetic, dark/light theme, seamless transitions |
 | **EPUB Preview** | Sandboxed Iframe + DOM parser | 1:1 e-reader rendering, real-time CSS hot injection |
 | **Code / CSS Editor** | [CodeMirror 6](https://codemirror.net/) | Syntax highlighting for custom styles and prompt templates |
-| **Ebook Processing** | Rust (`zip`, `quick-xml`, `epub3-kindle`) | Blazing fast parallel ZIP unbundling, XML DOM repair, AZW3/KF8 generation |
-| **Database** | `rusqlite` (Bundled SQLite 3) | Generation of Kindle X-Ray and Word Wise database structures |
+| **Ebook Processing** | Rust (`zip`, `quick-xml`) | Blazing fast parallel ZIP unbundling, XML DOM repair, EPUB 3 writing |
 | **OCR Engine** | Tesseract.js & Multimodal AI Vision | Local offline and cloud AI document character recognition |
 | **State Management** | [Zustand 5](https://zustand-demo.pmnd.rs/) | Lightweight, decoupled global application state |
 

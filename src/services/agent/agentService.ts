@@ -47,10 +47,6 @@ export class AgentService {
         return job && (job.status === "running" || job.status === "in_progress");
       }
     );
-    const xrayEntitiesCount =
-      (ctx.xrayData?.people?.length || 0) +
-      (ctx.xrayData?.terms?.length || 0);
-
     const bookInfo = ctx.currentBook
       ? `• Tác phẩm: "${ctx.currentBook.title}" (Tác giả: ${ctx.currentBook.author || "Khuyết danh"}, Ngôn ngữ gốc: ${ctx.currentBook.language.toUpperCase()})
 • Quy mô: ${ctx.currentBook.chapter_count} chương | Đã biên tập/dịch: ${modifiedCount}/${ctx.currentBook.chapter_count} chương
@@ -58,7 +54,6 @@ export class AgentService {
 • Chương đang chọn xem: #${ctx.activeChapterIndex + 1} - ${chapterName}
 • Phong cách hiển thị (Preset): "${ctx.activePresetId}" | Cỡ chữ: ${ctx.fontSize}px | Giãn dòng: ${ctx.lineHeight} | Drop caps: ${ctx.dropCaps ? "Bật" : "Tắt"}
 • Cấu hình dịch thuật: ${ctx.translationConfig.sourceLang} ➔ ${ctx.translationConfig.targetLang} (${ctx.translationConfig.mode === "replace" ? "Chỉ bản dịch" : "Song ngữ đối chiếu"}) | Glossary: ${glossaryCount} thuật ngữ
-• Kindle X-Ray: ${xrayEntitiesCount > 0 ? `${xrayEntitiesCount} thực thể đã trích xuất` : "Chưa trích xuất"}
 • Tác vụ nền: ${runningJobs.length > 0 ? `${runningJobs.length} tác vụ đang chạy` : "Không có tác vụ nền nào đang chạy"}`
       : "Hiện tại người dùng chưa nạp cuốn sách nào vào NiceEbook Studio.";
 
@@ -67,7 +62,7 @@ export class AgentService {
   Tham số: ${JSON.stringify(t.parameters.properties)}`;
     }).join("\n");
 
-    return `Bạn là Trợ lý AI Thông Minh (Book Project Agent) trong NiceEbook Studio - ứng dụng desktop chuyên nghiệp biên tập, tinh chỉnh CSS, dịch thuật AI và đóng gói sách điện tử (EPUB / Kindle AZW3).
+    return `Bạn là Trợ lý AI Thông Minh (Book Project Agent) trong NiceEbook Studio - ứng dụng desktop chuyên nghiệp biên tập, tinh chỉnh CSS, dịch thuật AI và đóng gói sách điện tử (EPUB).
 Bạn có thể trò chuyện, phân tích nội dung, tóm tắt chương, tra cứu ngữ cảnh và hỗ trợ người dùng thực hiện các thao tác trong studio.
 
 [THÔNG TIN DỰ ÁN VÀ MÔI TRƯỜNG HIỆN TẠI]:

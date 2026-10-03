@@ -6,13 +6,11 @@ import { AppTitlebar } from "./components/layout/AppTitlebar";
 import { StatusBar } from "./components/layout/StatusBar";
 import { AppSplashScreen } from "./components/layout/AppSplashScreen";
 import { BookView } from "./components/books/BookView";
-import { PresetGallery } from "./components/styles/PresetGallery";
 import { TypographyControls } from "./components/styles/TypographyControls";
 import { EpubReaderViewer } from "./components/preview/EpubReaderViewer";
 import { GatewayView } from "./components/ai/GatewayView";
 import { ChapterEnhancerView } from "./components/ai/ChapterEnhancerView";
 import { BookTranslatorView } from "./components/translation/BookTranslatorView";
-import { KindleCompanionView } from "./components/kindle/KindleCompanionView";
 import { ExportModal } from "./components/export/ExportModal";
 import { ConverterView } from "./components/converter/ConverterView";
 import { BookAgentDrawer } from "./components/agent/BookAgentDrawer";
@@ -88,6 +86,13 @@ export default function App() {
       isMounted = false;
     };
   }, [scanGateways]);
+  // Clean migration: Redirect legacy 'presets' tab to 'editor'
+  useEffect(() => {
+    if (activeTab === "presets") {
+      setActiveTab("editor");
+    }
+  }, [activeTab, setActiveTab]);
+
   // Setup Tauri native window drag & drop listener
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -217,12 +222,10 @@ export default function App() {
           {activeTab === "books" && <BookView />}
           {activeTab === "converter" && <ConverterView />}
           {activeTab === "reader" && <EpubReaderViewer />}
-          {activeTab === "presets" && <PresetGallery />}
-          {activeTab === "editor" && <TypographyControls />}
+          {(activeTab === "editor" || activeTab === "presets") && <TypographyControls />}
           {activeTab === "ai" && <GatewayView />}
           {activeTab === "ai-editor" && <ChapterEnhancerView />}
           {activeTab === "translator" && <BookTranslatorView />}
-          {activeTab === "kindle" && <KindleCompanionView />}
           {activeTab === "agent" && <BookAgentFullView />}
           {activeTab === "settings" && (
             <div className="flex-1 flex flex-col p-6 overflow-y-auto max-w-4xl mx-auto w-full gap-5">

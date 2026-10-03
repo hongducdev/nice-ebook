@@ -13,7 +13,6 @@ vi.mock("../../stores/useAppStore", () => {
 });
 
 const { EpubReaderViewer } = await import("../preview/EpubReaderViewer");
-const { KindleCompanionView } = await import("../kindle/KindleCompanionView");
 const { BookTranslatorView } = await import("./BookTranslatorView");
 const { categorizeGatewayModels } = await import("../../utils/gatewayModelCategorizer");
 
@@ -54,27 +53,22 @@ describe("UI Polish & Parity Checks", () => {
     };
   });
 
-  it("renders identical Empty card structure and button for Step 6 and Step 7 when no book is loaded", () => {
+  it("renders the Empty card structure and button in the reader when no book is loaded", () => {
     mockStoreState.currentBook = null;
 
-    const step6Html = renderToStaticMarkup(<EpubReaderViewer />);
-    const step7Html = renderToStaticMarkup(<KindleCompanionView />);
+    const readerHtml = renderToStaticMarkup(<EpubReaderViewer />);
 
-    // Both should use the border border-border bg-card Empty card
-    expect(step6Html).toContain("max-w-lg border border-border bg-card");
-    expect(step7Html).toContain("max-w-lg border border-border bg-card");
+    // Shared Empty card shell
+    expect(readerHtml).toContain("max-w-lg border border-border bg-card");
 
-    // Both should have the circular icon container with size-16 rounded-full bg-muted
-    expect(step6Html).toContain("size-16 rounded-full bg-muted text-muted-foreground");
-    expect(step7Html).toContain("size-16 rounded-full bg-muted text-muted-foreground");
+    // Circular icon container with size-16 rounded-full bg-muted
+    expect(readerHtml).toContain("size-16 rounded-full bg-muted text-muted-foreground");
 
-    // Both should have matching font size for EmptyTitle
-    expect(step6Html).toContain("text-lg font-semibold text-foreground");
-    expect(step7Html).toContain("text-lg font-semibold text-foreground");
+    // EmptyTitle font size
+    expect(readerHtml).toContain("text-lg font-semibold text-foreground");
 
-    // Both should have synchronized button label "Đến Thư Viện Sách"
-    expect(step6Html).toContain("Đến Thư Viện Sách");
-    expect(step7Html).toContain("Đến Thư Viện Sách");
+    // Library button label
+    expect(readerHtml).toContain("Đến Thư Viện Sách");
   });
 
   it("renders Language Pairs and Glossary sections with bounded width and responsive layout in BookTranslatorView", () => {

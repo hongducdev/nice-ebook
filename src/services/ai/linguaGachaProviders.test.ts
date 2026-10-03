@@ -5,6 +5,11 @@ import {
   loadConfiguredProviders,
   saveConfiguredProviders,
   duplicateProvider,
+  activateProviderInList,
+  buildGatewayModelList,
+  findProviderOwningModel,
+  shouldAutoActivateProvider,
+  persistProviderActivation,
 } from "./linguaGachaProviders";
 
 describe("linguaGachaProviders", () => {
@@ -107,5 +112,131 @@ describe("linguaGachaProviders", () => {
 
     const copy2 = duplicateProvider(copy1, [original, copy1]);
     expect(copy2.name).toBe("DeepSeek Official_BảnSao2");
+  });
+
+  describe("activation & model-list helpers", () => {
+    const base: ConfiguredProvider[] = [
+      {
+        id: "prov_ds",
+        presetId: "deepseek",
+        name: "DeepSeek Official",
+        baseUrl: "https://api.deepseek.com/v1",
+        apiKey: "sk-1",
+        selectedModel: "deepseek-chat",
+        availableModels: ["deepseek-chat"],
+        isActive: true,
+        createdAt: 1,
+      },
+      {
+        id: "prov_gm",
+        presetId: "gemini",
+        name: "Google Gemini API",
+        baseUrl: "https://example.test/v1",
+        apiKey: "sk-2",
+        selectedModel: "gemini-2.5-pro",
+        availableModels: ["gemini-2.5-pro", "gemini-2.0-flash"],
+        isActive: false,
+        createdAt: 2,
+      },
+    ];
+
+    it("activateProviderInList keeps every provider while switching the active flag", () => {
+      const updated = activateProviderInList(base, "prov_gm");
+
+      // Regression guard: the old code mapped over a not-yet-committed state snapshot and
+      // persisted an EMPTY array, erasing every configured provider (and the active flag).
+      expect(updated).toHaveLength(2);
+      expect(updated.map((p) => p.id)).toEqual(["prov_ds", "prov_gm"]);
+      expect(updated.find((p) => p.id === "prov_gm")?.isActive).toBe(true);
+      expect(updated.find((p) => p.id === "prov_ds")?.isActive).toBe(false);
+      expect(updated.find((p) => p.id === "prov_ds")?.apiKey).toBe("sk-1");
+    });
+
+    it("activateProviderInList is a no-op for an unknown id", () => {
+      expect(activateProviderInList(base, "prov_missing")).toBe(base);
+    });
+
+    it("buildGatewayModelList puts the selected model first, dedupes and never drops it", () => {
+      const prov: ConfiguredProvider = {
+        ...base[1],
+        selectedModel: "gemini-2.5-pro",
+        availableModels: ["gemini-2.0-flash", "gemini-2.5-pro", ""],
+      };
+
+      const models = buildGatewayModelList(prov);
+      expect(models[0]).toBe("gemini-2.5-pro");
+      expect(models.filter((m) => m === "gemini-2.5-pro")).toHaveLength(1);
+      expect(models).toEqual(["gemini-2.5-pro", "gemini-2.0-flash"]);
+    });
+
+    it("buildGatewayModelList still exposes a model typed by the user but absent from availableModels", () => {
+      const models = buildGatewayModelList({
+        ...base[1],
+        selectedModel: "gemini-3.9-experimental",
+        availableModels: ["gemini-2.0-flash"],
+      });
+      expect(models).toContain("gemini-3.9-experimental");
+    });
+
+    it("findProviderOwningModel only adopts the provider with positive evidence", () => {
+      expect(findProviderOwningModel(base, "gemini-2.5-pro")?.id).toBe("prov_gm");
+      expect(findProviderOwningModel(base, "deepseek-chat")?.id).toBe("prov_ds");
+      // Unrelated model: no provider may be adopted for it.
+      expect(findProviderOwningModel(base, "gpt-4o")).toBeUndefined();
+      expect(findProviderOwningModel(base, null)).toBeUndefined();
+      expect(findProviderOwningModel(base, "   ")).toBeUndefined();
+    });
+
+    it("findProviderOwningModel matches a provider whose only model is its selected one", () => {
+      const defaultOnly: ConfiguredProvider = {
+        ...base[0],
+        id: "prov_bare",
+        selectedModel: "my-custom-model",
+        availableModels: [],
+      };
+      expect(findProviderOwningModel([defaultOnly], "my-custom-model")?.id).toBe("prov_bare");
+      expect(findProviderOwningModel([defaultOnly], "other-model")).toBeUndefined();
+    });
+
+    it("shouldAutoActivateProvider only fires once the scan settled and a provider is flagged active", () => {
+      const attempted = { alreadyAttempted: false, isScanningGateways: false, hasActiveGateway: false };
+
+      // Waiting for the startup scan: must NOT activate (and must not burn the caller's latch).
+      expect(shouldAutoActivateProvider({ ...attempted, isScanningGateways: true, providers: base })).toBeNull();
+      // A gateway is already active: nothing to restore.
+      expect(shouldAutoActivateProvider({ ...attempted, hasActiveGateway: true, providers: base })).toBeNull();
+      // Already attempted this mount: never fight a deliberate de-activation.
+      expect(shouldAutoActivateProvider({ ...attempted, alreadyAttempted: true, providers: base })).toBeNull();
+      // Nothing flagged active: nothing to restore automatically.
+      expect(
+        shouldAutoActivateProvider({ ...attempted, providers: base.map((p) => ({ ...p, isActive: false })) })
+      ).toBeNull();
+      // Ready: restore the flagged provider.
+      expect(shouldAutoActivateProvider({ ...attempted, providers: base })?.id).toBe("prov_ds");
+    });
+
+    it("persistProviderActivation keeps every stored provider and persists the flags (no wipe)", () => {
+      saveConfiguredProviders(base);
+
+      const updated = persistProviderActivation(base[1]);
+      expect(updated).toHaveLength(2);
+
+      // Re-read from storage: this is the regression that used to erase the list.
+      const reloaded = loadConfiguredProviders();
+      expect(reloaded.map((p) => p.id)).toEqual(["prov_ds", "prov_gm"]);
+      expect(reloaded.find((p) => p.id === "prov_gm")?.isActive).toBe(true);
+      expect(reloaded.find((p) => p.id === "prov_ds")?.isActive).toBe(false);
+      expect(reloaded.find((p) => p.id === "prov_ds")?.apiKey).toBe("sk-1");
+    });
+
+    it("persistProviderActivation appends a provider that is not stored yet", () => {
+      saveConfiguredProviders([base[0]]);
+      const fresh: ConfiguredProvider = { ...base[1], id: "prov_new", isActive: false };
+
+      persistProviderActivation(fresh);
+
+      const reloaded = loadConfiguredProviders();
+      expect(reloaded.map((p) => p.id)).toEqual(["prov_ds", "prov_new"]);
+    });
   });
 });

@@ -2,7 +2,6 @@ import {
   Layers, 
   BookOpenCheck, 
   Palette, 
-  SlidersHorizontal, 
   Boxes, 
   Settings, 
   Sun, 
@@ -10,7 +9,6 @@ import {
   Monitor,
   Wand2,
   RefreshCw,
-  Sparkles,
   Languages,
   Bot
 } from "lucide-react";
@@ -78,28 +76,16 @@ export function buildNavigationGroups(context: {
           badgeTone: "success"
         },
         { 
-          id: "presets" as const, 
-          label: "4. Thư viện phong cách", 
+          id: "editor" as const, 
+          label: "4. Định kiểu & Kiểu chữ", 
           icon: Palette 
         },
         { 
-          id: "editor" as const, 
-          label: "5. Kiểu chữ & Bố cục", 
-          icon: SlidersHorizontal 
-        },
-        { 
           id: "reader" as const, 
-          label: "6. Đọc thử & Kiểm tra", 
+          label: "5. Đọc thử & Kiểm tra", 
           icon: BookOpenCheck,
           badge: bilingualActive ? "Song ngữ" : null,
           badgeTone: "success"
-        },
-        { 
-          id: "kindle" as const, 
-          label: "7. Gói Kindle & Xuất bản", 
-          icon: Sparkles,
-          badge: "X-Ray",
-          badgeTone: "neutral"
         },
       ],
     },

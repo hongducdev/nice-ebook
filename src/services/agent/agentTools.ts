@@ -76,10 +76,6 @@ export interface ReadOnlyStoreContext {
     glossary: Record<string, string>;
   };
   workflowJobs?: Record<string, unknown>;
-  xrayData?: {
-    people?: Array<{ name: string; description?: string }>;
-    terms?: Array<{ name: string; description?: string }>;
-  } | null;
   readChapterText: (index: number) => Promise<string>;
   setActiveTab: (tab: ActiveTab) => void;
   setActiveChapterIndex: (index: number) => void;
@@ -100,8 +96,6 @@ export interface MutatingStoreContext {
   translateSingleChapter?: (chapterIndex: number) => Promise<boolean>;
   batchTranslateChapters?: (chapterIndices?: number[], skipAlreadyTranslated?: boolean) => Promise<boolean>;
   enhanceSingleChapter?: (chapterIndex: number, features?: Record<string, unknown>) => Promise<boolean>;
-  runXRayExtraction?: () => Promise<unknown>;
-  embedXRayAppendixToBook?: () => Promise<boolean>;
   cleanWatermarksInBook?: (keywords?: string[]) => Promise<unknown>;
   setActiveTab?: (tab: ActiveTab) => void;
   openExportModal?: () => void;
@@ -174,7 +168,7 @@ export const AGENT_TOOLS: ToolDefinition[] = [
   },
   {
     name: "navigate_tab",
-    description: "Chuyển giao diện làm việc sang tab khác trong ứng dụng (ví dụ: 'reader' để đọc sách, 'translator' để dịch, 'editor' để chỉnh font/CSS, 'presets' để chọn phong cách).",
+    description: "Chuyển giao diện làm việc sang tab khác trong ứng dụng (ví dụ: 'reader' để đọc sách, 'translator' để dịch, 'editor' để định kiểu và chỉnh font/CSS).",
     isMutating: false,
     parameters: {
       type: "object",
@@ -182,7 +176,7 @@ export const AGENT_TOOLS: ToolDefinition[] = [
         tab: {
           type: "string",
           description: "Tên tab cần chuyển đến",
-          enum: ["books", "presets", "editor", "reader", "ai", "settings", "ai-editor", "converter", "kindle", "translator"],
+          enum: ["books", "editor", "reader", "ai", "settings", "ai-editor", "converter", "translator"],
         },
         chapterIndex: { type: "number", description: "Chỉ số chương cần chuyển đến (tùy chọn)" },
       },
@@ -266,7 +260,7 @@ export const AGENT_TOOLS: ToolDefinition[] = [
   },
   {
     name: "get_workflow_status",
-    description: "Tra cứu trạng thái các tác vụ nền đang chạy (dịch thuật, enhance, trích xuất X-Ray, OCR...).",
+    description: "Tra cứu trạng thái các tác vụ nền đang chạy (dịch thuật, enhance, OCR, xuất file...).",
     isMutating: false,
     parameters: {
       type: "object",
@@ -353,27 +347,16 @@ export const AGENT_TOOLS: ToolDefinition[] = [
     },
   },
   {
-    name: "extract_xray_entities",
-    description: "Đề xuất trích xuất danh sách nhân vật, địa danh và thuật ngữ cho tính năng Kindle X-Ray. Yêu cầu người dùng phê duyệt.",
-    isMutating: true,
-    parameters: {
-      type: "object",
-      properties: {
-        autoEmbedAppendix: { type: "boolean", description: "Tự động nhúng phụ lục X-Ray vào cuối sách (mặc định true)" },
-      },
-    },
-  },
-  {
     name: "export_book",
-    description: "Đề xuất xuất sách đã tinh chỉnh sang định dạng chuẩn (EPUB, AZW3, MOBI). Yêu cầu người dùng phê duyệt.",
+    description: "Đề xuất xuất sách đã tinh chỉnh thành file EPUB chuẩn. Yêu cầu người dùng phê duyệt.",
     isMutating: true,
     parameters: {
       type: "object",
       properties: {
         format: {
           type: "string",
-          description: "Định dạng xuất (epub, azw3, mobi)",
-          enum: ["epub", "azw3", "mobi"],
+          description: "Định dạng xuất (epub)",
+          enum: ["epub"],
         },
       },
       required: ["format"],
@@ -645,7 +628,9 @@ export class AgentToolDispatcher {
       }
 
       case "navigate_tab": {
-        const tab = String(params.tab) as ActiveTab;
+        const rawTab = String(params.tab);
+        const VALID_TABS: ActiveTab[] = ["books", "editor", "reader", "ai", "settings", "ai-editor", "converter", "translator", "agent"];
+        const tab: ActiveTab = rawTab === "presets" ? "editor" : (VALID_TABS.includes(rawTab as ActiveTab) ? (rawTab as ActiveTab) : "books");
         ctx.setActiveTab(tab);
         if (typeof params.chapterIndex === "number") {
           ctx.setActiveChapterIndex(params.chapterIndex);
@@ -896,20 +881,6 @@ export class AgentToolDispatcher {
           diffSummary: [
             { field: "Chương xử lý", before: chTitle, after: `Chuẩn hóa H1 & dọn dẹp nội dung` },
             { field: "Xóa Watermark", before: "Chưa lọc", after: params.cleanWatermarks !== false ? "Bật" : "Tắt" },
-          ],
-          createdAt: Date.now(),
-        };
-      }
-
-      case "extract_xray_entities": {
-        return {
-          id: proposalId,
-          toolName,
-          title: `Trích xuất nhân vật & thuật ngữ (Kindle X-Ray)`,
-          description: `Đề xuất quét toàn bộ sách để nhận diện nhân vật, địa danh và thuật ngữ chính nhằm tạo phụ lục Kindle X-Ray.`,
-          parameters: params,
-          diffSummary: [
-            { field: "Tính năng", before: "Chưa phân tích", after: "Trích xuất thực thể & Nhúng phụ lục X-Ray" },
           ],
           createdAt: Date.now(),
         };
@@ -1223,21 +1194,6 @@ export class AgentToolDispatcher {
           throw new Error(`Biên tập tối ưu chương ${chIdx + 1} thất bại.`);
         }
         return `Đã chuẩn hóa tiêu đề H1 và tối ưu định dạng chương ${chIdx + 1} thành công.`;
-      }
-
-      case "extract_xray_entities": {
-        if (!ctx.runXRayExtraction) {
-          throw new Error("Chức năng trích xuất X-Ray không khả dụng.");
-        }
-        const data = await ctx.runXRayExtraction();
-        if (!data) {
-          throw new Error("Không thể trích xuất thực thể X-Ray từ sách.");
-        }
-        if (parameters.autoEmbedAppendix !== false && ctx.embedXRayAppendixToBook) {
-          await ctx.embedXRayAppendixToBook();
-          return `Đã trích xuất nhân vật/thuật ngữ và tự động nhúng phụ lục X-Ray vào sách thành công.`;
-        }
-        return `Đã trích xuất danh sách thực thể X-Ray thành công.`;
       }
 
       case "export_book": {
