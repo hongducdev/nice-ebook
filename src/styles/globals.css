@@ -26,7 +26,7 @@
   --secondary: #e8eaee;
   --secondary-foreground: #4d535d;
   --muted: #e5e7eb;
-  --muted-foreground: #717783;
+  --muted-foreground: #5c6473;
   --accent: #eef0f3;
   --accent-foreground: #4b515b;
   --destructive: oklch(0.61 0.18 28);
@@ -54,7 +54,7 @@
   --sidebar-primary-foreground: #fff7ed;
   --sidebar-accent: #e1e5eb;
   --sidebar-accent-foreground: #4b515b;
-  --sidebar-border: #d2d7df;
+  --sidebar-border: var(--border);
   --sidebar-ring: #d97924;
   --ui-titlebar-surface: #f4f5f7;
 
@@ -110,7 +110,7 @@
   --ui-table-row-height: 38px;
   --ui-table-divider: color-mix(in srgb, var(--border) 72%, transparent);
   --ui-table-divider-soft: color-mix(in srgb, var(--border) 55%, transparent);
-  --ui-table-hover: color-mix(in srgb, var(--accent) 78%, transparent);
+  --ui-table-hover: #e9ebee;
   --ui-table-selected: color-mix(in srgb, var(--accent) 96%, transparent);
   --radius: 0.5rem;
 }
@@ -149,7 +149,7 @@
   --sidebar-primary-foreground: #2b1b0f;
   --sidebar-accent: #20242b;
   --sidebar-accent-foreground: #eef1f5;
-  --sidebar-border: #303640;
+  --sidebar-border: var(--border);
   --sidebar-ring: #f4a261;
   --ui-titlebar-surface: #121319;
 
@@ -196,7 +196,7 @@
   --ui-shadow-overlay: 0 24px 52px -20px color-mix(in srgb, black 72%, transparent);
   --ui-table-divider: color-mix(in srgb, var(--border) 80%, transparent);
   --ui-table-divider-soft: color-mix(in srgb, var(--border) 62%, transparent);
-  --ui-table-hover: color-mix(in srgb, var(--accent) 86%, transparent);
+  --ui-table-hover: #262c35;
   --ui-table-selected: color-mix(in srgb, var(--accent) 100%, transparent);
   --radius: 0.5rem;
 }
